@@ -19,6 +19,21 @@ if (isMockMode) {
   initializeLocalStorageState();
 }
 
+function getFinancialYearStr(date = new Date()) {
+  const d = new Date(date);
+  const year = d.getFullYear();
+  const month = d.getMonth();
+  let startYear, endYear;
+  if (month >= 3) {
+    startYear = year;
+    endYear = year + 1;
+  } else {
+    startYear = year - 1;
+    endYear = year;
+  }
+  return startYear.toString().slice(-2) + endYear.toString().slice(-2);
+}
+
 /**
  * Fetch all product categories
  */
@@ -116,14 +131,16 @@ export async function updateProductCategory(categoryId, updatedData) {
  */
 export async function createCostingRequest(requestData, currentUser) {
   const { customerName, productUnit, specs } = requestData;
+  const fyStr = getFinancialYearStr(new Date());
 
   if (isMockMode) {
     // Simulate atomic transaction in localStorage
-    const counterObj = JSON.parse(localStorage.getItem("systemSettings_costRequestCounter") || '{"current":1000}');
-    const nextCounter = (counterObj.current || 1000) + 1;
+    const counterKey = `costRequestCounter_${fyStr}`;
+    const counterObj = JSON.parse(localStorage.getItem(counterKey) || '{"current":0}');
+    const nextCounter = (counterObj.current || 0) + 1;
     
     // Increment counter
-    localStorage.setItem("systemSettings_costRequestCounter", JSON.stringify({ current: nextCounter }));
+    localStorage.setItem(counterKey, JSON.stringify({ current: nextCounter }));
     
     const nowStr = new Date().toISOString();
     const overdueStr = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString();
@@ -133,9 +150,13 @@ export async function createCostingRequest(requestData, currentUser) {
     const categoryFields = activeCategory ? (activeCategory.fields || []) : [];
     const categoryFieldsJson = JSON.stringify(categoryFields);
 
+    const seqNum = String(nextCounter).padStart(4, "0");
+    const unitCode = productUnit && productUnit.toString().toLowerCase().startsWith("hort") ? "H" : "B";
+    const costRequestNo = `${fyStr}-C-${unitCode}-${seqNum}`;
+
     const newRequest = {
-      id: `req-${nextCounter}`,
-      costRequestNo: nextCounter,
+      id: `req-${Date.now()}`,
+      costRequestNo,
       customerName,
       productUnit,
       categoryFieldsJson,
@@ -165,8 +186,8 @@ export async function createCostingRequest(requestData, currentUser) {
       userId: null,
       role: "finance",
       costRequestId: newRequest.id,
-      costRequestNo: nextCounter,
-      message: `New costing request #${nextCounter} is awaiting Finance.`,
+      costRequestNo: costRequestNo,
+      message: `New costing request #${costRequestNo} is awaiting Finance.`,
       read: false,
       readBy: [],
       createdAt: nowStr
@@ -177,12 +198,13 @@ export async function createCostingRequest(requestData, currentUser) {
       success: true,
       data: {
         id: newRequest.id,
-        costRequestNo: nextCounter
+        costRequestNo: costRequestNo
       }
     };
   } else {
-    // Perform client-side transaction to securely and atomically create request and increment counter
-    const counterRef = doc(db, "systemSettings", "costRequestCounter");
+    const fyStr = getFinancialYearStr(new Date());
+    const counterDocId = `costRequestCounter_${fyStr}`;
+    const counterRef = doc(db, "systemSettings", counterDocId);
     const requestRef = doc(collection(db, "costRequests"));
     const notificationRef = doc(collection(db, "notifications"));
 
@@ -194,9 +216,9 @@ export async function createCostingRequest(requestData, currentUser) {
         const categoryDoc = await transaction.get(categoryRef);
 
         // 2. Perform calculations
-        let currentCounter = 1000; // Starting counter default
+        let currentCounter = 0; // Starting counter default
         if (counterDoc.exists()) {
-          currentCounter = counterDoc.data().current || 1000;
+          currentCounter = counterDoc.data().current || 0;
         }
 
         const nextCounter = currentCounter + 1;
@@ -211,8 +233,12 @@ export async function createCostingRequest(requestData, currentUser) {
           now.toMillis() + 2 * 24 * 60 * 60 * 1000 // 2 days in milliseconds
         );
 
+        const seqNum = String(nextCounter).padStart(4, "0");
+        const unitCode = productUnit && productUnit.toString().toLowerCase().startsWith("hort") ? "H" : "B";
+        const costRequestNo = `${fyStr}-C-${unitCode}-${seqNum}`;
+
         const newRequest = {
-          costRequestNo: nextCounter,
+          costRequestNo,
           customerName,
           productUnit,
           categoryFieldsJson,
@@ -236,8 +262,8 @@ export async function createCostingRequest(requestData, currentUser) {
           userId: null,
           role: "finance",
           costRequestId: requestRef.id,
-          costRequestNo: nextCounter,
-          message: `New costing request #${nextCounter} is awaiting Finance.`,
+          costRequestNo: costRequestNo,
+          message: `New costing request #${costRequestNo} is awaiting Finance.`,
           read: false,
           readBy: [],
           createdAt: now
@@ -246,7 +272,7 @@ export async function createCostingRequest(requestData, currentUser) {
 
         return {
           id: requestRef.id,
-          costRequestNo: nextCounter
+          costRequestNo: costRequestNo
         };
       });
 
@@ -376,7 +402,7 @@ export async function getCostingRequests(filters = {}) {
     }
 
     // Sort by requestNo desc
-    requests.sort((a, b) => b.costRequestNo - a.costRequestNo);
+    requests.sort((a, b) => String(b.costRequestNo).localeCompare(String(a.costRequestNo), undefined, { numeric: true, sensitivity: 'base' }));
 
     return requests;
   } else {
@@ -428,7 +454,7 @@ export async function getCostingRequests(filters = {}) {
       requests = requests.filter(r => new Date(r.requestDate) <= to);
     }
 
-    requests.sort((a, b) => b.costRequestNo - a.costRequestNo);
+    requests.sort((a, b) => String(b.costRequestNo).localeCompare(String(a.costRequestNo), undefined, { numeric: true, sensitivity: 'base' }));
     return requests;
   }
 }

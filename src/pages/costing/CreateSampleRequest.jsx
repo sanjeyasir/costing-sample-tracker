@@ -5,6 +5,7 @@ import * as sampleService from "../../services/firebase/sampleService";
 import { Button, Card, Row, Col, Typography, Alert, Modal, Space, Tag, Spin, Upload } from "antd";
 import { LeftOutlined, PlusCircleOutlined, CheckCircleFilled, PlusOutlined, DeleteOutlined, DownloadOutlined, UploadOutlined } from "@ant-design/icons";
 import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 
 // Handsontable imports
 import { HotTable } from "@handsontable/react";
@@ -36,8 +37,6 @@ export default function CreateSampleRequest() {
 
   // Table 2 data (requisition items)
   const [table2Data, setTable2Data] = useState([
-    { product: "", quantity: 1, sampleType: "New Development", description: "", specialNotes: "" },
-    { product: "", quantity: 1, sampleType: "New Development", description: "", specialNotes: "" },
     { product: "", quantity: 1, sampleType: "New Development", description: "", specialNotes: "" }
   ]);
 
@@ -101,12 +100,65 @@ export default function CreateSampleRequest() {
   };
 
   // Excel template downloader
-  const handleDownloadTemplate = () => {
-    const headers = ["Product Name", "Quantity", "Sample Type", "Description", "Special Notes"];
-    const worksheet = XLSX.utils.aoa_to_sheet([headers]);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Sample_Requisition_Template");
-    XLSX.writeFile(workbook, "Sample_Requisition_Template.xlsx");
+  const handleDownloadTemplate = async () => {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet("Requisition Template");
+
+    // Define columns and headers
+    worksheet.columns = [
+      { header: "Product Name", key: "product", width: 25 },
+      { header: "Quantity", key: "quantity", width: 15 },
+      { header: "Sample Type", key: "sampleType", width: 25 },
+      { header: "Description", key: "description", width: 35 },
+      { header: "Special Notes", key: "specialNotes", width: 30 }
+    ];
+
+    // Style the header row
+    const headerRow = worksheet.getRow(1);
+    headerRow.font = { name: "Arial", size: 11, bold: true, color: { argb: "FFFFFFFF" } };
+    headerRow.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FF4F46E5" } // Indigo background
+    };
+    headerRow.alignment = { vertical: "middle", horizontal: "center" };
+    headerRow.height = 25;
+
+    // Add 100 dummy empty rows to receive the validations
+    for (let i = 2; i <= 100; i++) {
+      worksheet.getRow(i).getCell(2).value = ""; // Quantity default
+      
+      // Add data validation for Column 3 ("Sample Type")
+      worksheet.getRow(i).getCell(3).dataValidation = {
+        type: "list",
+        allowBlank: true,
+        formulae: ['"New Development,Pre Production"'],
+        showErrorMessage: true,
+        errorTitle: "Invalid Value",
+        error: "Please select a valid Sample Type from the dropdown list."
+      };
+      
+      // Add numeric validation for Column 2 ("Quantity")
+      worksheet.getRow(i).getCell(2).dataValidation = {
+        type: "whole",
+        operator: "greaterThan",
+        allowBlank: true,
+        formulae: ["0"],
+        showErrorMessage: true,
+        errorTitle: "Invalid Quantity",
+        error: "Quantity must be a positive integer greater than 0."
+      };
+    }
+
+    // Write to buffer and download
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "Sample_Requisition_Template.xlsx";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   // Excel parser upload
@@ -136,7 +188,7 @@ export default function CreateSampleRequest() {
           { key: "specialNotes", label: "Special Notes" }
         ];
 
-        const parsed = rowsData.map(row => {
+        const parsed = rowsData.map((row, rIdx) => {
           const item = {};
           sampleFieldsMapping.forEach(f => {
             const colIdx = headers.findIndex(
@@ -144,11 +196,29 @@ export default function CreateSampleRequest() {
             );
             if (colIdx !== -1) {
               let val = row[colIdx];
-              if (f.key === "quantity" && val !== undefined && val !== "") {
-                val = Number(val);
+              
+              // Validate empty check for required fields: Product Name, Quantity, Description
+              const isRequired = ["product", "quantity", "description"].includes(f.key);
+              if (isRequired && (val === undefined || val === null || val.toString().trim() === "")) {
+                throw new Error(`Row #${rIdx + 2}: "${f.label}" is required and cannot be empty.`);
               }
-              item[f.key] = val !== undefined ? val : "";
+
+              if (val !== undefined && val !== null && val !== "") {
+                if (f.key === "quantity") {
+                  if (isNaN(Number(val)) || Number(val) <= 0) {
+                    throw new Error(`Row #${rIdx + 2}: "Quantity" must be a positive numeric value.`);
+                  }
+                  val = Number(val);
+                }
+                item[f.key] = val;
+              } else {
+                item[f.key] = f.key === "quantity" ? 1 : f.key === "sampleType" ? "New Development" : "";
+              }
             } else {
+              const isRequired = ["product", "quantity", "description"].includes(f.key);
+              if (isRequired) {
+                throw new Error(`Column "${f.label}" is missing from the Excel sheet.`);
+              }
               item[f.key] = f.key === "quantity" ? 1 : f.key === "sampleType" ? "New Development" : "";
             }
           });
@@ -168,7 +238,7 @@ export default function CreateSampleRequest() {
         }
       } catch (err) {
         console.error("Failed to parse Excel file:", err);
-        setError("Failed to parse uploaded Excel file.");
+        setError(err.message || "Failed to parse uploaded Excel file.");
       }
     };
     reader.readAsArrayBuffer(file);
@@ -199,7 +269,7 @@ export default function CreateSampleRequest() {
     }
 
     const filledItems = currentTable2Data.filter(row => 
-      Object.values(row).some(val => val !== "" && val !== null && val !== undefined)
+      row.product && row.product.trim() !== ""
     );
 
     if (filledItems.length === 0) {
@@ -264,16 +334,16 @@ export default function CreateSampleRequest() {
 
   const table1Columns = [
     { data: "customerName", type: "text", placeholder: "Enter Customer Name" },
-    { data: "requestedBy", type: "text", placeholder: "Officer Name" },
+    { data: "requestedBy", type: "text", readOnly: true },
     { data: "requiredDate", type: "date", dateFormat: "YYYY-MM-DD", correctFormat: true },
-    { data: "productUnit", type: "dropdown", source: ["Horticulture", "Bedding"] },
-    { data: "requestType", type: "dropdown", source: ["Top Urgent", "Urgent", "Normal"] }
+    { data: "productUnit", type: "dropdown", source: ["Horticulture", "Bedding"], visibleRows: 10 },
+    { data: "requestType", type: "dropdown", source: ["Top Urgent", "Urgent", "Normal"], visibleRows: 10 }
   ];
 
   const table2Columns = [
     { data: "product", type: "text", placeholder: "e.g. Coir Mat" },
     { data: "quantity", type: "numeric", placeholder: "Qty" },
-    { data: "sampleType", type: "dropdown", source: ["New Development", "Pre Production"] },
+    { data: "sampleType", type: "dropdown", source: ["New Development", "Pre Production"], visibleRows: 10 },
     { data: "description", type: "text", placeholder: "Size, specifications etc." },
     { data: "specialNotes", type: "text", placeholder: "Remarks/Notes" }
   ];
@@ -302,7 +372,7 @@ export default function CreateSampleRequest() {
         {/* Table 1: General Info */}
         <Col span={24}>
           <Card 
-            title="1. General Information (Excel Grid)" 
+            title="1. General Information" 
             bordered={true} 
             style={{ borderLeft: "4px solid #6366f1", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 12 }}
             styles={{ body: { padding: 24 } }}
@@ -315,9 +385,9 @@ export default function CreateSampleRequest() {
                   columns={table1Columns}
                   colHeaders={["Customer Name", "Requested By Officer", "Required Date (Double Click)", "Product Unit", "Urgency"]}
                   rowHeaders={false}
-                  height="auto"
+                  height="250"
                   licenseKey="non-commercial-and-evaluation"
-                  stretchH="all"
+                  colWidths={[200, 180, 200, 150, 150]}
                 />
               )}
             </div>
@@ -328,7 +398,7 @@ export default function CreateSampleRequest() {
         {/* Table 2: Requisition Items */}
         <Col span={24}>
           <Card 
-            title="2. Requisition Items (Excel Grid)" 
+            title="2. Requisition Items" 
             extra={
               <Space wrap>
                 <Button 
@@ -368,6 +438,11 @@ export default function CreateSampleRequest() {
             style={{ borderLeft: "4px solid #0ea5e9", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 12 }}
             styles={{ body: { padding: 24 } }}
           >
+            <div style={{ marginBottom: 16 }}>
+              <Tag color="blue" style={{ fontSize: "0.85rem", padding: "4px 8px" }}>
+                Hint: Save Excel template as a standard Excel file (.xlsx) before uploading with public tag
+              </Tag>
+            </div>
             <div className="hot-container">
               <HotTable
                 ref={hotTable2Ref}
@@ -377,7 +452,7 @@ export default function CreateSampleRequest() {
                 rowHeaders={true}
                 height="300"
                 licenseKey="non-commercial-and-evaluation"
-                stretchH="all"
+                colWidths={[200, 100, 180, 250, 200]}
                 manualColumnResize={true}
               />
             </div>

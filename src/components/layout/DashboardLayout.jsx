@@ -31,12 +31,15 @@ const { Text } = Typography;
 export default function DashboardLayout({ children }) {
   const { currentUser, logout, isMockMode, tenant, role } = useAuth();
   const { notifications, markAsRead, markAllAsRead } = useNotifications();
+  const activeNotifications = notifications.filter(n => !n.read && !(n.readBy && n.readBy.includes(currentUser?.uid)));
   const navigate = useNavigate();
   const location = useLocation();
   const screens = useBreakpoint();
   
   const isMobile = !screens.md;
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
 
   const handleNotificationClick = async (notif) => {
     await markAsRead(notif.id);
@@ -71,6 +74,9 @@ export default function DashboardLayout({ children }) {
 
   // 1. Dashboard (Always visible)
   menuItems.push({ label: "Dashboard", key: "/dashboard", icon: <DashboardOutlined /> });
+
+  // 1b. Notifications Center (Always visible)
+  menuItems.push({ label: "Notifications", key: "/notifications", icon: <BellOutlined /> });
 
   // 2. Costing Section (visible if has costing access)
   if (hasCostingAccess) {
@@ -145,50 +151,7 @@ export default function DashboardLayout({ children }) {
     return "default";
   };
 
-  const notificationMenu = (
-    <Card 
-      title={<div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <Text strong>Notifications ({notifications.length})</Text>
-        {notifications.length > 0 && (
-          <Button type="link" size="small" onClick={markAllAllRead} style={{ padding: 0 }}>
-            Mark all read
-          </Button>
-        )}
-      </div>}
-      styles={{ body: { padding: 0 } }}
-      style={{ width: 320, maxHeight: 400, overflowY: "auto", boxShadow: "0 6px 16px rgba(0, 0, 0, 0.08)", border: "1px solid #e2e8f0" }}
-    >
-      {notifications.length === 0 ? (
-        <div style={{ padding: 24, textAlign: "center" }}>
-          <Text type="secondary">No new notifications.</Text>
-        </div>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column" }}>
-          {notifications.map((notif) => (
-            <div
-              key={notif.id}
-              onClick={() => handleNotificationClick(notif)}
-              style={{
-                padding: "12px 16px",
-                borderBottom: "1px solid #f1f5f9",
-                cursor: "pointer",
-                transition: "background 0.2s"
-              }}
-              onMouseEnter={(e) => e.currentTarget.style.background = "#f8fafc"}
-              onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
-            >
-              <div style={{ fontWeight: 600, fontSize: "0.85rem", color: "#0f172a", lineHeight: 1.4 }}>
-                {notif.message}
-              </div>
-              <div style={{ fontSize: "0.7rem", color: "#94a3b8", marginTop: 4 }}>
-                {new Date(notif.createdAt).toLocaleDateString()} {new Date(notif.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </Card>
-  );
+
 
   async function markAllAllRead() {
     await markAllAsRead();
@@ -210,16 +173,18 @@ export default function DashboardLayout({ children }) {
   const sidebarContent = (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "#ffffff", color: "#0f172a" }}>
       {/* Brand Header */}
-      <div style={{ padding: "24px 20px", display: "flex", alignItems: "center", gap: 12 }}>
+      <div style={{ padding: collapsed ? "16px 0" : "24px 20px", display: "flex", justifyContent: collapsed ? "center" : "flex-start", alignItems: "center", gap: 12 }}>
         <Avatar style={{ backgroundColor: "#10b981", display: "flex", alignItems: "center", justifyContent: "center" }} icon={<BranchesOutlined />} />
-        <div>
-          <div style={{ fontWeight: 800, color: "#0f172a", fontSize: "0.95rem", lineHeight: 1.1 }}>
-            Hayfibre Ops
+        {!collapsed && (
+          <div>
+            <div style={{ fontWeight: 800, color: "#0f172a", fontSize: "0.95rem", lineHeight: 1.1 }}>
+              Hayfibre Ops
+            </div>
+            <div style={{ color: "#64748b", fontSize: "0.7rem", letterSpacing: "0.05em", marginTop: 2 }}>
+              MARKETING HUB
+            </div>
           </div>
-          <div style={{ color: "#64748b", fontSize: "0.7rem", letterSpacing: "0.05em", marginTop: 2 }}>
-            MARKETING HUB
-          </div>
-        </div>
+        )}
       </div>
       
       <hr style={{ border: 0, borderTop: "1px solid #f1f5f9", margin: 0 }} />
@@ -229,6 +194,7 @@ export default function DashboardLayout({ children }) {
         <Menu
           mode="inline"
           theme="light"
+          inlineCollapsed={collapsed}
           selectedKeys={[getSelectedKey()]}
           onClick={handleMenuClick}
           items={filteredMenuItems}
@@ -239,30 +205,40 @@ export default function DashboardLayout({ children }) {
       <hr style={{ border: 0, borderTop: "1px solid #f1f5f9", margin: 0 }} />
 
       {/* User Footer Profile */}
-      <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 12 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <Avatar style={{ backgroundColor: "#10b981", fontWeight: 700 }}>
-            {currentUser?.displayName 
-              ? currentUser.displayName[0].toUpperCase() 
-              : (currentUser?.email ? currentUser.email[0].toUpperCase() : "U")}
-          </Avatar>
-          <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            <div style={{ fontWeight: 700, color: "#0f172a", fontSize: "0.85rem" }}>
-              {currentUser?.displayName || currentUser?.email?.split("@")?.[0] || "User"}
-            </div>
-            <div style={{ color: "#64748b", fontSize: "0.75rem" }}>
-              {currentUser?.email}
+      <div style={{ padding: collapsed ? "12px" : "20px", display: "flex", flexDirection: "column", gap: 12 }}>
+        {!collapsed ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <Avatar style={{ backgroundColor: "#10b981", fontWeight: 700 }}>
+              {currentUser?.displayName 
+                ? currentUser.displayName[0].toUpperCase() 
+                : (currentUser?.email ? currentUser.email[0].toUpperCase() : "U")}
+            </Avatar>
+            <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              <div style={{ fontWeight: 700, color: "#0f172a", fontSize: "0.85rem" }}>
+                {currentUser?.displayName || currentUser?.email?.split("@")?.[0] || "User"}
+              </div>
+              <div style={{ color: "#64748b", fontSize: "0.75rem" }}>
+                {currentUser?.email}
+              </div>
             </div>
           </div>
-        </div>
+        ) : (
+          <div style={{ display: "flex", justifyContent: "center" }}>
+            <Avatar style={{ backgroundColor: "#10b981", fontWeight: 700 }}>
+              {currentUser?.displayName 
+                ? currentUser.displayName[0].toUpperCase() 
+                : (currentUser?.email ? currentUser.email[0].toUpperCase() : "U")}
+            </Avatar>
+          </div>
+        )}
         <Button 
           type="default" 
           danger 
           icon={<LogoutOutlined />} 
           onClick={logout} 
-          style={{ background: "rgba(239, 68, 68, 0.04)", borderColor: "rgba(239, 68, 68, 0.15)", width: "100%" }}
+          style={{ background: "rgba(239, 68, 68, 0.04)", borderColor: "rgba(239, 68, 68, 0.15)", width: "100%", padding: collapsed ? 0 : "4px 15px" }}
         >
-          Sign Out
+          {!collapsed && "Sign Out"}
         </Button>
       </div>
     </div>
@@ -274,6 +250,10 @@ export default function DashboardLayout({ children }) {
       {!isMobile && (
         <Sider
           width={260}
+          collapsedWidth={80}
+          collapsible
+          collapsed={collapsed}
+          trigger={null}
           style={{
             position: "fixed",
             height: "100vh",
@@ -301,7 +281,14 @@ export default function DashboardLayout({ children }) {
         {sidebarContent}
       </Drawer>
 
-      <Layout style={{ marginLeft: isMobile ? 0 : 260, minHeight: "100vh", display: "flex", flexDirection: "column" }}>
+      <Layout style={{ 
+        marginLeft: isMobile ? 0 : (collapsed ? 80 : 260), 
+        marginRight: isMobile ? 0 : 320,
+        minHeight: "100vh", 
+        display: "flex", 
+        flexDirection: "column",
+        transition: "all 0.2s"
+      }}>
         {/* Top Header */}
         <Header
           style={{
@@ -311,21 +298,29 @@ export default function DashboardLayout({ children }) {
             borderBottom: "1px solid #e2e8f0",
             position: "fixed",
             top: 0,
-            right: 0,
-            left: isMobile ? 0 : 260,
+            right: isMobile ? 0 : 320,
+            left: isMobile ? 0 : (collapsed ? 80 : 260),
             zIndex: 90,
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            height: 64
+            height: 64,
+            transition: "all 0.2s"
           }}
         >
           <Space size="middle">
-            {isMobile && (
+            {isMobile ? (
               <Button
                 type="text"
                 icon={<MenuOutlined />}
                 onClick={() => setMobileOpen(!mobileOpen)}
+                style={{ fontSize: "16px", width: 40, height: 40, color: "#0f172a" }}
+              />
+            ) : (
+              <Button
+                type="text"
+                icon={<MenuOutlined />}
+                onClick={() => setCollapsed(!collapsed)}
                 style={{ fontSize: "16px", width: 40, height: 40, color: "#0f172a" }}
               />
             )}
@@ -372,16 +367,17 @@ export default function DashboardLayout({ children }) {
               </Tag>
             )}
 
-            {/* Notifications Popover Dropdown */}
-            <Dropdown dropdownRender={() => notificationMenu} trigger={["click"]} placement="bottomRight">
-              <Badge count={notifications.length} overflowCount={9} style={{ backgroundColor: "#ef4444" }}>
+            {/* Notifications Bell (Drawer Toggle - Mobile Only) */}
+            {isMobile && (
+              <Badge count={notifications.filter(n => !n.read && !(n.readBy && n.readBy.includes(currentUser?.uid))).length} overflowCount={9} style={{ backgroundColor: "#ef4444" }}>
                 <Button 
                   shape="circle" 
                   icon={<BellOutlined />} 
+                  onClick={() => setNotificationsOpen(true)}
                   style={{ border: "1px solid #cbd5e1", background: "transparent", color: "#0f172a" }}
                 />
               </Badge>
-            </Dropdown>
+            )}
           </Space>
         </Header>
 
@@ -408,6 +404,184 @@ export default function DashboardLayout({ children }) {
           </div>
         </Content>
       </Layout>
+
+      {/* Permanent Right Notifications Panel (visible on desktop) */}
+      {!isMobile && (
+        <div style={{
+          width: 320,
+          background: "#ffffff",
+          borderLeft: "1px solid #e2e8f0",
+          height: "100vh",
+          position: "fixed",
+          top: 0,
+          right: 0,
+          bottom: 0,
+          zIndex: 100,
+          display: "flex",
+          flexDirection: "column"
+        }}>
+          <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+            <div style={{ padding: "16px 20px", borderBottom: "1px solid #f1f5f9", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#f8fafc" }}>
+              <span style={{ fontSize: "0.95rem", fontWeight: 800, color: "#0f172a" }}>
+                Notifications ({activeNotifications.length})
+              </span>
+              {activeNotifications.length > 0 && (
+                <Button type="link" size="small" onClick={markAllAsRead} style={{ padding: 0, fontSize: "0.75rem" }}>
+                  Mark all read
+                </Button>
+              )}
+            </div>
+            <div style={{ flexGrow: 1, overflowY: "auto" }}>
+              {activeNotifications.length === 0 ? (
+                <div style={{ padding: 40, textAlign: "center" }}>
+                  <BellOutlined style={{ fontSize: 32, color: "#cbd5e1", marginBottom: 12 }} />
+                  <div><Text type="secondary" style={{ fontSize: "0.85rem" }}>No new notifications.</Text></div>
+                </div>
+              ) : (
+                activeNotifications.map((notif) => {
+                  const isRead = notif.read || (notif.readBy && notif.readBy.includes(currentUser?.uid));
+                  return (
+                    <div
+                      key={notif.id}
+                      style={{
+                        padding: "12px 16px",
+                        borderBottom: "1px solid #f1f5f9",
+                        background: isRead ? "#f8fafc" : "#ffffff",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "flex-start",
+                        gap: 8,
+                        transition: "all 0.2s"
+                      }}
+                    >
+                      <div 
+                        onClick={() => handleNotificationClick(notif)}
+                        style={{ cursor: "pointer", flexGrow: 1 }}
+                      >
+                        <div style={{ 
+                          fontWeight: isRead ? 500 : 700, 
+                          fontSize: "0.82rem", 
+                          color: isRead ? "#64748b" : "#0f172a", 
+                          lineHeight: 1.35,
+                          textDecoration: isRead ? "line-through" : "none" 
+                        }}>
+                          {notif.message}
+                        </div>
+                        <div style={{ fontSize: "0.7rem", color: "#94a3b8", marginTop: 4 }}>
+                          {new Date(notif.createdAt).toLocaleDateString()} {new Date(notif.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                      </div>
+                      
+                      {!isRead && (
+                        <Tooltip title="Mark as Completed/Read">
+                          <Button
+                            type="text"
+                            shape="circle"
+                            size="small"
+                            icon={<CheckCircleOutlined style={{ color: "#10b981", fontSize: 16 }} />}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              markAsRead(notif.id);
+                            }}
+                            style={{ marginTop: -2 }}
+                          />
+                        </Tooltip>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Side Notifications Drawer Panel */}
+      <Drawer
+        title={
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: "1.1rem", fontWeight: 800, color: "#0f172a" }}>
+              Notifications ({activeNotifications.length})
+            </span>
+            {activeNotifications.length > 0 && (
+              <Button type="link" size="small" onClick={markAllAsRead} style={{ padding: 0 }}>
+                Mark all read
+              </Button>
+            )}
+          </div>
+        }
+        placement="right"
+        onClose={() => setNotificationsOpen(false)}
+        open={notificationsOpen}
+        width={isMobile ? "100%" : 380}
+        styles={{ body: { padding: 0 } }}
+      >
+        {activeNotifications.length === 0 ? (
+          <div style={{ padding: 40, textAlign: "center" }}>
+            <BellOutlined style={{ fontSize: 48, color: "#cbd5e1", marginBottom: 16 }} />
+            <div><Text type="secondary" style={{ fontSize: "0.95rem" }}>No new notifications.</Text></div>
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+            <div style={{ flexGrow: 1, overflowY: "auto" }}>
+              {activeNotifications.map((notif) => {
+                const isRead = notif.read || (notif.readBy && notif.readBy.includes(currentUser?.uid));
+                return (
+                  <div
+                    key={notif.id}
+                    style={{
+                      padding: "16px 20px",
+                      borderBottom: "1px solid #f1f5f9",
+                      background: isRead ? "#f8fafc" : "#ffffff",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "flex-start",
+                      gap: 12,
+                      transition: "all 0.2s"
+                    }}
+                  >
+                    <div 
+                      onClick={() => {
+                        handleNotificationClick(notif);
+                        setNotificationsOpen(false);
+                      }}
+                      style={{ cursor: "pointer", flexGrow: 1 }}
+                    >
+                      <div style={{ 
+                        fontWeight: isRead ? 500 : 700, 
+                        fontSize: "0.9rem", 
+                        color: isRead ? "#64748b" : "#0f172a", 
+                        lineHeight: 1.4,
+                        textDecoration: isRead ? "line-through" : "none" 
+                      }}>
+                        {notif.message}
+                      </div>
+                      <div style={{ fontSize: "0.75rem", color: "#94a3b8", marginTop: 6 }}>
+                        {new Date(notif.createdAt).toLocaleDateString()} {new Date(notif.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                    </div>
+                    
+                    {!isRead && (
+                      <Tooltip title="Mark as Completed/Read">
+                        <Button
+                          type="text"
+                          shape="circle"
+                          icon={<CheckCircleOutlined style={{ color: "#10b981", fontSize: 18 }} />}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            markAsRead(notif.id);
+                          }}
+                          style={{ marginTop: -4 }}
+                        />
+                      </Tooltip>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </Drawer>
     </Layout>
   );
 }

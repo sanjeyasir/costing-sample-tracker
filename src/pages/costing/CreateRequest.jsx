@@ -53,7 +53,7 @@ export default function CreateRequest() {
           setTable1Data([{ customerName: "", categoryName: defaultCat.name }]);
           
           const defaultFields = (defaultCat.fields || []).filter(f => f.owner === "marketing");
-          const emptyRows = Array.from({ length: 3 }, () => createDefaultRow(defaultFields));
+          const emptyRows = Array.from({ length: 1 }, () => createDefaultRow(defaultFields));
           setTable2Data(emptyRows);
         }
       } catch (err) {
@@ -96,7 +96,7 @@ export default function CreateRequest() {
       setProductUnit(matchedCat.id);
       
       const defaultFields = (matchedCat.fields || []).filter(f => f.owner === "marketing");
-      const emptyRows = Array.from({ length: 3 }, () => createDefaultRow(defaultFields));
+      const emptyRows = Array.from({ length: 1 }, () => createDefaultRow(defaultFields));
       setTable2Data(emptyRows);
     }
   };
@@ -175,7 +175,7 @@ export default function CreateRequest() {
         const headers = jsonData[0];
         const rowsData = jsonData.slice(1);
 
-        const parsedItems = rowsData.map(row => {
+        const parsedItems = rowsData.map((row, rIdx) => {
           const item = {};
           marketingFields.forEach(field => {
             const colIdx = headers.findIndex(
@@ -183,11 +183,26 @@ export default function CreateRequest() {
             );
             if (colIdx !== -1) {
               let val = row[colIdx];
-              if (field.type === "number" && val !== undefined && val !== "") {
-                val = Number(val);
+              // Validation: required fields must not be empty
+              if (field.required && (val === undefined || val === null || val.toString().trim() === "")) {
+                throw new Error(`Row #${rIdx + 2}: "${field.label}" is required and cannot be empty.`);
               }
-              item[field.key] = val !== undefined ? val : "";
+
+              if (val !== undefined && val !== null && val !== "") {
+                if (field.type === "number") {
+                  if (isNaN(Number(val))) {
+                    throw new Error(`Row #${rIdx + 2}: "${field.label}" must be a numeric value.`);
+                  }
+                  val = Number(val);
+                }
+                item[field.key] = val;
+              } else {
+                item[field.key] = "";
+              }
             } else {
+              if (field.required) {
+                throw new Error(`Column "${field.label}" is missing from the Excel sheet.`);
+              }
               item[field.key] = "";
             }
           });
@@ -207,7 +222,7 @@ export default function CreateRequest() {
         }
       } catch (err) {
         console.error("Failed to parse Excel file:", err);
-        setError("Failed to parse uploaded Excel file. Please ensure it is in the correct format.");
+        setError(err.message || "Failed to parse uploaded Excel file.");
       }
     };
     reader.readAsArrayBuffer(file);
@@ -226,9 +241,12 @@ export default function CreateRequest() {
     const hot2 = hotTable2Ref.current?.hotInstance;
     const currentTable2Data = hot2 ? hot2.getSourceData() : table2Data;
 
-    // Filter out completely empty rows
+    // Filter out completely empty rows (checking only actual marketing input fields)
     const filledItems = currentTable2Data.filter(row => 
-      Object.values(row).some(val => val !== "" && val !== null && val !== undefined)
+      marketingFields.some(field => {
+        const val = row[field.key];
+        return val !== undefined && val !== null && val.toString().trim() !== "";
+      })
     );
 
     if (filledItems.length === 0) {
@@ -296,7 +314,8 @@ export default function CreateRequest() {
     {
       data: "categoryName",
       type: "dropdown",
-      source: categories.map(c => c.name)
+      source: categories.map(c => c.name),
+      visibleRows: 10
     }
   ];
 
@@ -310,6 +329,7 @@ export default function CreateRequest() {
     } else if (f.type === "select") {
       colObj.type = "dropdown";
       colObj.source = f.options || [];
+      colObj.visibleRows = 10;
     } else {
       colObj.type = "text";
     }
@@ -340,7 +360,7 @@ export default function CreateRequest() {
         {/* Table 1: General Info */}
         <Col span={24}>
           <Card 
-            title="1. General Information (Excel Grid)" 
+            title="1. General Information" 
             bordered={true} 
             style={{ borderLeft: "4px solid #6366f1", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 12 }}
             styles={{ body: { padding: 24 } }}
@@ -352,10 +372,10 @@ export default function CreateRequest() {
                 columns={table1Columns}
                 colHeaders={["Customer Name", "Product Category"]}
                 rowHeaders={false}
-                height="auto"
+                height="250"
                 licenseKey="non-commercial-and-evaluation"
                 afterChange={handleTable1Change}
-                stretchH="all"
+                colWidths={[300, 250]}
               />
             </div>
             <Text type="secondary">Double-click on cells to type or select from the dropdown options.</Text>
@@ -365,7 +385,7 @@ export default function CreateRequest() {
         {/* Table 2: Specifications List */}
         <Col span={24}>
           <Card 
-            title={`2. Specifications List - ${activeCategory?.name || ""} (Excel Grid)`}
+            title={`2. Specifications List - ${activeCategory?.name || ""}`}
             extra={
               <Space wrap>
                 <Button 
@@ -405,6 +425,11 @@ export default function CreateRequest() {
             style={{ borderLeft: "4px solid #0ea5e9", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 12 }}
             styles={{ body: { padding: 24 } }}
           >
+            <div style={{ marginBottom: 16 }}>
+              <Tag color="blue" style={{ fontSize: "0.85rem", padding: "4px 8px" }}>
+                Hint: Save Excel template as a standard Excel file (.xlsx) before uploading with public tag
+              </Tag>
+            </div>
             <div className="hot-container">
               {table2Columns.length > 0 ? (
                 <HotTable
@@ -415,7 +440,7 @@ export default function CreateRequest() {
                   rowHeaders={true}
                   height="300"
                   licenseKey="non-commercial-and-evaluation"
-                  stretchH="all"
+                  colWidths={180}
                   manualColumnResize={true}
                 />
               ) : (

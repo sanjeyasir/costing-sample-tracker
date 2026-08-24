@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import * as sampleService from "../../services/firebase/sampleService";
 import { downloadSamplePDF } from "../../utils/pdfGenerator";
+import * as notificationService from "../../services/firebase/notificationService";
 import { Row, Col, Card, Typography, Button, Tag, Space, Input, DatePicker, Alert, Spin, Descriptions, Divider, Upload, Timeline } from "antd";
 import {
   LeftOutlined,
@@ -161,7 +162,7 @@ export default function SampleRequestDetails() {
     const currentTable2Data = hot2 ? hot2.getSourceData() : table2Data;
 
     const filledItems = currentTable2Data.filter(row => 
-      Object.values(row).some(val => val !== "" && val !== null && val !== undefined)
+      row.product && row.product.trim() !== ""
     );
 
     if (filledItems.length === 0) {
@@ -230,6 +231,27 @@ export default function SampleRequestDetails() {
       loadRequest();
     } catch (err) {
       setError(err.message || "Failed to mark as completed.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleNudgeSample = async () => {
+    try {
+      setError("");
+      setSaving(true);
+      
+      await notificationService.createNotification({
+        userId: null,
+        role: "sample",
+        sampleRequestId: request.id,
+        sampleRequestNo: request.sampleRequestNo,
+        message: `Marketing Officer ${currentUser.displayName || currentUser.email} is requesting an update on Sample Requisition #${request.sampleRequestNo}.`
+      });
+      setSuccessMsg("Nudge notification sent to Sample Team successfully.");
+    } catch (err) {
+      console.error(err);
+      setError("Failed to send nudge notification.");
     } finally {
       setSaving(false);
     }
@@ -325,7 +347,7 @@ export default function SampleRequestDetails() {
   const tableColumns = [
     { data: "product", type: "text", readOnly: !isResubmitting },
     { data: "quantity", type: "numeric", readOnly: !isResubmitting },
-    { data: "sampleType", type: "dropdown", source: ["New Development", "Pre Production"], readOnly: !isResubmitting },
+    { data: "sampleType", type: "dropdown", source: ["New Development", "Pre Production"], readOnly: !isResubmitting, visibleRows: 10 },
     { data: "description", type: "text", readOnly: !isResubmitting },
     { data: "specialNotes", type: "text", readOnly: !isResubmitting }
   ];
@@ -353,16 +375,29 @@ export default function SampleRequestDetails() {
         </Col>
 
         <Col>
-          <Button
-            type="primary"
-            danger
-            icon={<FilePdfOutlined />}
-            onClick={() => downloadSamplePDF(request)}
-            size="large"
-            style={{ borderRadius: 8, fontWeight: 700 }}
-          >
-            Download Sample Request PDF
-          </Button>
+          <Space>
+            {["Submitted", "In Progress", "Overdue"].includes(request.status) && (
+              <Button
+                type="primary"
+                ghost
+                onClick={handleNudgeSample}
+                loading={saving}
+                style={{ borderRadius: 8 }}
+              >
+                Nudge Sample Developer
+              </Button>
+            )}
+            <Button
+              type="primary"
+              danger
+              icon={<FilePdfOutlined />}
+              onClick={() => downloadSamplePDF(request)}
+              size="large"
+              style={{ borderRadius: 8, fontWeight: 700 }}
+            >
+              Download Sample Request PDF
+            </Button>
+          </Space>
         </Col>
       </Row>
 
@@ -408,7 +443,7 @@ export default function SampleRequestDetails() {
 
             {/* Specifications Card (Handsontable) */}
             <Card 
-              title={<span style={{ color: "#0f172a" }}>Sample Requisition Items (Excel View)</span>}
+              title={<span style={{ color: "#0f172a" }}>Sample Requisition Items</span>}
               extra={
                 isResubmitting && (
                   <Space>
@@ -446,7 +481,7 @@ export default function SampleRequestDetails() {
                   rowHeaders={true}
                   height="auto"
                   licenseKey="non-commercial-and-evaluation"
-                  stretchH="all"
+                  colWidths={[200, 100, 180, 250, 200]}
                   manualColumnResize={true}
                 />
               </div>

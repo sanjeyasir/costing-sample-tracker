@@ -3,6 +3,8 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import * as costingService from "../../services/firebase/costingService";
 import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
+import * as notificationService from "../../services/firebase/notificationService";
 import { Row, Col, Card, Typography, Button, Tag, Space, Input, Select, Alert, Spin, Descriptions, Divider, Modal, Upload } from "antd";
 import {
   LeftOutlined,
@@ -313,6 +315,151 @@ export default function RequestDetails() {
     }
   };
 
+  const handleNudgeFinance = async () => {
+    try {
+      setError("");
+      setSaving(true);
+      const targetUser = request.financeOfficer?.uid || null;
+      const targetRole = request.financeOfficer?.uid ? null : "finance";
+      
+      await notificationService.createNotification({
+        userId: targetUser,
+        role: targetRole,
+        costRequestId: request.id,
+        costRequestNo: request.costRequestNo,
+        message: `Marketing Officer ${currentUser.displayName || currentUser.email} is requesting an update on costing for Request #${request.costRequestNo}.`
+      });
+      setSuccessMsg("Nudge notification sent to Finance successfully.");
+    } catch (err) {
+      console.error(err);
+      setError("Failed to send nudge notification.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDownloadCostSheet = async () => {
+    try {
+      setError("");
+      setSaving(true);
+
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet("Customer Cost Sheet");
+
+      // Set page details
+      worksheet.addRow([]);
+      worksheet.addRow(["Hayfibre Marketing Operations - Cost Sheet"]).font = { size: 16, bold: true, color: { argb: "FF0F172A" } };
+      worksheet.addRow([`Request No: ${request.costRequestNo}`]).font = { bold: true };
+      worksheet.addRow([`Customer Name: ${request.customerName}`]).font = { bold: true };
+      worksheet.addRow([`Product Category: ${request.productUnit}`]).font = { bold: true };
+      worksheet.addRow([`Date: ${new Date(request.requestDate).toLocaleDateString()}`]);
+      worksheet.addRow([]);
+
+      // Get line items
+      const itemsList = request.specs?.items && request.specs.items.length > 0 
+        ? request.specs.items 
+        : [request.specs || {}];
+      
+      const costingList = request.specs?.items
+        ? (request.costing?.items || [])
+        : [request.costing || {}];
+
+      // Identify active columns (exclude empty ones)
+      const activeMarketingFields = marketingFields.filter(f => {
+        return itemsList.some(item => item[f.key] !== undefined && item[f.key] !== null && item[f.key] !== "" && item[f.key] !== "-");
+      });
+
+      const activeFinanceFields = financeFields.filter(f => {
+        return costingList.some((cItem, idx) => {
+          const itemCost = request.specs?.items ? costingList[idx] : request.costing;
+          const val = itemCost ? itemCost[f.key] : undefined;
+          return val !== undefined && val !== null && val !== "" && val !== "-";
+        });
+      });
+
+      // Construct table headers
+      const headers = ["Item #"];
+      activeMarketingFields.forEach(f => headers.push(f.label));
+      activeFinanceFields.forEach(f => headers.push(f.label));
+
+      const headerRowIndex = 8;
+      const headerRow = worksheet.getRow(headerRowIndex);
+      headers.forEach((h, colIdx) => {
+        headerRow.getCell(colIdx + 1).value = h;
+      });
+
+      // Style header row
+      headerRow.font = { name: "Arial", size: 11, bold: true, color: { argb: "FFFFFFFF" } };
+      headerRow.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FF0EA5E9" } // Sky blue
+      };
+      headerRow.alignment = { vertical: "middle", horizontal: "center" };
+      headerRow.height = 25;
+
+      // Add Data rows
+      itemsList.forEach((item, idx) => {
+        const itemCosting = request.specs?.items ? costingList[idx] : request.costing;
+        const rowData = [idx + 1];
+
+        activeMarketingFields.forEach(f => {
+          rowData.push(item[f.key] !== undefined ? item[f.key] : "");
+        });
+
+        activeFinanceFields.forEach(f => {
+          let val = itemCosting ? itemCosting[f.key] : "";
+          if (f.key === "unitCost" && val !== undefined && val !== "") {
+            val = `$${Number(val).toFixed(2)}`;
+          }
+          rowData.push(val);
+        });
+
+        const dataRow = worksheet.getRow(headerRowIndex + 1 + idx);
+        rowData.forEach((val, colIdx) => {
+          dataRow.getCell(colIdx + 1).value = val;
+          dataRow.getCell(colIdx + 1).border = {
+            top: { style: "thin", color: { argb: "FFE2E8F0" } },
+            bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
+            left: { style: "thin", color: { argb: "FFE2E8F0" } },
+            right: { style: "thin", color: { argb: "FFE2E8F0" } }
+          };
+        });
+        dataRow.height = 22;
+      });
+
+      // Format column widths
+      worksheet.columns.forEach((col, colIdx) => {
+        let maxLen = 15;
+        worksheet.eachRow((row, rIdx) => {
+          if (rIdx >= headerRowIndex) {
+            const cellVal = row.getCell(colIdx + 1).value;
+            if (cellVal) {
+              maxLen = Math.max(maxLen, cellVal.toString().length + 4);
+            }
+          }
+        });
+        col.width = Math.min(maxLen, 40);
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `Cost_Sheet_CR_${request.costRequestNo}_${request.customerName.replace(/\s+/g, "_")}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      setSuccessMsg("Customer Cost Sheet downloaded successfully.");
+    } catch (err) {
+      console.error("Error exporting cost sheet:", err);
+      setError("Failed to generate and download Customer Cost Sheet.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   // Excel Single Export / Download
   const handleSingleExport = () => {
     if (!request) return;
@@ -403,6 +550,7 @@ export default function RequestDetails() {
     else if (f.type === "select") {
       col.type = "dropdown";
       col.source = f.options || [];
+      col.visibleRows = 10;
     }
     gridColumns.push(col);
   });
@@ -417,6 +565,7 @@ export default function RequestDetails() {
     else if (f.type === "select") {
       col.type = "dropdown";
       col.source = f.options || [];
+      col.visibleRows = 10;
     }
     gridColumns.push(col);
   });
@@ -445,6 +594,30 @@ export default function RequestDetails() {
 
         <Col>
           <Space>
+            {["Submitted", "Costing in Progress", "Overdue"].includes(request.status) && (
+              <Button
+                type="primary"
+                ghost
+                onClick={handleNudgeFinance}
+                loading={saving}
+                style={{ borderRadius: 8 }}
+              >
+                Nudge Finance
+              </Button>
+            )}
+
+            {request.status === "Costing Completed" && (
+              <Button
+                type="primary"
+                icon={<DownloadOutlined />}
+                onClick={handleDownloadCostSheet}
+                loading={saving}
+                style={{ borderRadius: 8, background: "#10b981", borderColor: "#10b981" }}
+              >
+                Download Customer Cost Sheet
+              </Button>
+            )}
+
             {(isCompleted || isAdmin) && (
               <Button
                 icon={<DownloadOutlined />}
@@ -623,7 +796,7 @@ export default function RequestDetails() {
         {!request.specs?.excelFile && (
           <Col span={24}>
             <Card 
-              title="Specifications & Costing Grid (Excel View)" 
+              title="Specifications & Costing Grid" 
               bordered={true}
               style={{ borderLeft: "4px solid #0ea5e9", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 12 }}
               extra={
@@ -651,7 +824,7 @@ export default function RequestDetails() {
                   rowHeaders={false}
                   height="auto"
                   licenseKey="non-commercial-and-evaluation"
-                  stretchH="all"
+                  colWidths={(index) => index === 0 ? 50 : 180}
                   afterChange={handleDetailsTableChange}
                   manualColumnResize={true}
                 />

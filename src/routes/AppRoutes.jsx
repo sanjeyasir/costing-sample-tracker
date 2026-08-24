@@ -18,6 +18,7 @@ import Users from "../pages/admin/Users";
 import Categories from "../pages/admin/Categories";
 import Settings from "../pages/admin/Settings";
 import ChangePassword from "../pages/auth/ChangePassword";
+import Notifications from "../pages/notifications/Notifications";
 
 export default function AppRoutes() {
   return (
@@ -122,6 +123,17 @@ export default function AppRoutes() {
           <ProtectedRoute module="sample" allowedModuleRoles={["sample_marketing", "sample_sampling", "sample_viewer"]}>
             <DashboardLayout>
               <Reports />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/notifications"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout>
+              <Notifications />
             </DashboardLayout>
           </ProtectedRoute>
         }

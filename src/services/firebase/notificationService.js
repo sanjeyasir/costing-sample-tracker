@@ -8,7 +8,9 @@ import {
   updateDoc, 
   onSnapshot,
   arrayUnion,
-  writeBatch
+  writeBatch,
+  addDoc,
+  Timestamp
 } from "firebase/firestore";
 import { db, isMockMode } from "./config";
 import { initializeLocalStorageState } from "./mockData";
@@ -203,3 +205,34 @@ export async function markAllNotificationsAsRead(currentUser, activeNotification
     await batch.commit();
   }
 }
+
+/**
+ * Creates a new notification (user-specific or role broadcast)
+ */
+export async function createNotification(notificationData) {
+  const now = new Date();
+  const payload = {
+    userId: notificationData.userId || null,
+    role: notificationData.role || null,
+    costRequestId: notificationData.costRequestId || null,
+    sampleRequestId: notificationData.sampleRequestId || null,
+    costRequestNo: notificationData.costRequestNo || null,
+    sampleRequestNo: notificationData.sampleRequestNo || null,
+    message: notificationData.message,
+    read: false,
+    readBy: [],
+    createdAt: isMockMode ? now.toISOString() : Timestamp.fromDate(now)
+  };
+
+  if (isMockMode) {
+    const notifications = JSON.parse(localStorage.getItem("notifications") || "[]");
+    payload.id = `not-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    notifications.push(payload);
+    localStorage.setItem("notifications", JSON.stringify(notifications));
+    window.dispatchEvent(new Event("storage"));
+  } else {
+    const ref = collection(db, "notifications");
+    await addDoc(ref, payload);
+  }
+}
+

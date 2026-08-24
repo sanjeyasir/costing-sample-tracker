@@ -180,8 +180,9 @@ export async function createSampleRequest(requestData, currentUser) {
     const nextCounter = (counterObj.current || 0) + 1;
     localStorage.setItem(counterKey, JSON.stringify({ current: nextCounter }));
     
-    const seqNum = String(nextCounter).padStart(3, "0");
-    const sampleRequestNo = `${fyStr}-${seqNum}`;
+    const seqNum = String(nextCounter).padStart(4, "0");
+    const unitCode = requestData.productUnit === "Horticulture" ? "H" : "B";
+    const sampleRequestNo = `${fyStr}-S-${unitCode}-${seqNum}`;
 
     const requests = JSON.parse(localStorage.getItem("sampleRequests") || "[]");
     
@@ -256,8 +257,9 @@ export async function createSampleRequest(requestData, currentUser) {
       const nextCounter = currentCounter + 1;
       transaction.set(counterRef, { current: nextCounter }, { merge: true });
       
-      const seqNum = String(nextCounter).padStart(3, "0");
-      const sampleRequestNo = `${fyStr}-${seqNum}`;
+      const seqNum = String(nextCounter).padStart(4, "0");
+      const unitCode = requestData.productUnit === "Horticulture" ? "H" : "B";
+      const sampleRequestNo = `${fyStr}-S-${unitCode}-${seqNum}`;
 
       const newRequest = {
         sampleRequestNo,

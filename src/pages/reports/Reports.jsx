@@ -3,6 +3,7 @@ import * as sampleService from "../../services/firebase/sampleService";
 import * as costingService from "../../services/firebase/costingService";
 import { downloadSamplePDF } from "../../utils/pdfGenerator";
 import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 import { Row, Col, Card, Typography, Tag, Button, Space, DatePicker, Select, Tabs, Statistic, Alert, Progress, Tooltip } from "antd";
 import {
   DownloadOutlined,
@@ -47,6 +48,7 @@ export default function Reports() {
   const [status, setStatus] = useState("");
   const [requestType, setRequestType] = useState("");
   const [customerName, setCustomerName] = useState("");
+  const [marketingOfficer, setMarketingOfficer] = useState("");
 
   // Refs for Handsontables
   const hotSamplesRef = useRef(null);
@@ -58,7 +60,7 @@ export default function Reports() {
 
   useEffect(() => {
     applyFilters();
-  }, [sampleRequests, costingRequests, dateRange, productUnit, status, requestType, customerName]);
+  }, [sampleRequests, costingRequests, dateRange, productUnit, status, requestType, customerName, marketingOfficer]);
 
   const loadData = async () => {
     try {
@@ -94,6 +96,9 @@ export default function Reports() {
     if (customerName) {
       samplesResult = samplesResult.filter(r => r.customerName === customerName);
     }
+    if (marketingOfficer) {
+      samplesResult = samplesResult.filter(r => r.requestedBy === marketingOfficer);
+    }
     if (dateRange && dateRange[0] && dateRange[1]) {
       const start = dateRange[0].format("YYYY-MM-DD");
       const end = dateRange[1].format("YYYY-MM-DD");
@@ -104,11 +109,9 @@ export default function Reports() {
     // 2. Filter Costing Requests
     let costingsResult = [...costingRequests];
     if (productUnit) {
-      // productUnit for costing is category ID (lowercase bedding/horticulture)
       costingsResult = costingsResult.filter(r => r.productUnit?.toLowerCase() === productUnit.toLowerCase());
     }
     if (status) {
-      // Costing request statuses differ from sample request statuses slightly
       const costStatusMap = {
         "Submitted": "Submitted",
         "In Progress": "Costing in Progress",
@@ -120,6 +123,9 @@ export default function Reports() {
     }
     if (customerName) {
       costingsResult = costingsResult.filter(r => r.customerName === customerName);
+    }
+    if (marketingOfficer) {
+      costingsResult = costingsResult.filter(r => r.marketingOfficer?.name === marketingOfficer);
     }
     if (dateRange && dateRange[0] && dateRange[1]) {
       const start = dateRange[0].format("YYYY-MM-DD");
@@ -135,6 +141,7 @@ export default function Reports() {
     setStatus("");
     setRequestType("");
     setCustomerName("");
+    setMarketingOfficer("");
   };
 
   // Get dynamic fields union for costing report
@@ -331,84 +338,204 @@ export default function Reports() {
 
   const customerAnalysisData = getCustomerAnalysis();
 
+  const removeEmptyColumns = (data) => {
+    if (data.length === 0) return data;
+    const keys = Object.keys(data[0]);
+    const activeKeys = keys.filter(key => {
+      return data.some(row => {
+        const val = row[key];
+        return val !== undefined && val !== null && val !== "" && val !== "-" && val !== "N/A" && val !== "n/a";
+      });
+    });
+
+    return data.map(row => {
+      const cleaned = {};
+      activeKeys.forEach(k => {
+        cleaned[k] = row[k];
+      });
+      return cleaned;
+    });
+  };
+
   // Exports
-  const handleExcelExport = () => {
-    const workbook = XLSX.utils.book_new();
+  const handleExcelExport = async () => {
+    const workbook = new ExcelJS.Workbook();
+    const sheetName = reportSubTab === "samples" ? "Sample Requisitions" : "Costing Requests";
+    const worksheet = workbook.addWorksheet(sheetName);
+
+    const titleText = reportSubTab === "samples" 
+      ? "MANAGEMENT REPORT - SAMPLE REQUISITIONS" 
+      : "MANAGEMENT REPORT - COSTING REQUESTS";
+      
+    let durationText = "Duration: All Time";
+    if (dateRange && dateRange[0] && dateRange[1]) {
+      durationText = `Duration: ${dateRange[0].format("YYYY-MM-DD")} to ${dateRange[1].format("YYYY-MM-DD")}`;
+    }
+
+    // Add Title Row
+    const titleRow = worksheet.addRow([titleText]);
+    titleRow.font = { name: "Arial", size: 14, bold: true, color: { argb: "0F172A" } };
+    worksheet.mergeCells("A1:H1");
+
+    // Add Duration Row
+    const durationRow = worksheet.addRow([durationText]);
+    durationRow.font = { name: "Arial", size: 10, italic: true, color: { argb: "64748B" } };
+    worksheet.mergeCells("A2:H2");
+
+    // Add blank row
+    worksheet.addRow([]);
+
+    let cleanedData = [];
+    let headers = [];
+    let keys = [];
 
     if (reportSubTab === "samples") {
       const flatSamples = getMultiplicatedSamples();
       if (flatSamples.length === 0) return;
-      const worksheet = XLSX.utils.json_to_sheet(flatSamples);
-      XLSX.utils.book_append_sheet(workbook, worksheet, "Sample Requisitions");
+      cleanedData = removeEmptyColumns(flatSamples);
+      keys = Object.keys(cleanedData[0]);
+      headers = keys.map(k => {
+        const colIdx = sampleGridColumns.findIndex(c => c.data === k);
+        if (colIdx !== -1) return sampleHeaders[colIdx];
+        return k;
+      });
     } else {
       const flatCostings = getMultiplicatedCostings();
       if (flatCostings.length === 0) return;
-      const worksheet = XLSX.utils.json_to_sheet(flatCostings);
-      XLSX.utils.book_append_sheet(workbook, worksheet, "Costing Requests");
+      cleanedData = removeEmptyColumns(flatCostings);
+      keys = Object.keys(cleanedData[0]);
+      headers = keys.map(k => {
+        const colIdx = costingGridColumns.findIndex(c => c.data === k);
+        if (colIdx !== -1) return costingHeaders[colIdx];
+        return k;
+      });
     }
 
-    XLSX.writeFile(workbook, `Management_Report_${reportSubTab}_${new Date().toISOString().split("T")[0]}.xlsx`);
+    // Add Headers row
+    const headerRow = worksheet.addRow(headers);
+    headerRow.height = 28;
+    headerRow.eachCell((cell) => {
+      cell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "10B981" } // Emerald Green
+      };
+      cell.font = {
+        name: "Arial",
+        size: 10,
+        bold: true,
+        color: { argb: "FFFFFF" }
+      };
+      cell.alignment = { vertical: "middle", horizontal: "center" };
+      cell.border = {
+        top: { style: "thin", color: { argb: "E2E8F0" } },
+        bottom: { style: "medium", color: { argb: "047857" } },
+        left: { style: "thin", color: { argb: "E2E8F0" } },
+        right: { style: "thin", color: { argb: "E2E8F0" } }
+      };
+    });
+
+    // Add data rows
+    cleanedData.forEach(row => {
+      const rowData = keys.map(k => row[k]);
+      const dataRow = worksheet.addRow(rowData);
+      dataRow.height = 20;
+      dataRow.eachCell((cell) => {
+        cell.font = { name: "Arial", size: 9 };
+        cell.alignment = { vertical: "middle" };
+        cell.border = {
+          top: { style: "thin", color: { argb: "F1F5F9" } },
+          bottom: { style: "thin", color: { argb: "F1F5F9" } },
+          left: { style: "thin", color: { argb: "F1F5F9" } },
+          right: { style: "thin", color: { argb: "F1F5F9" } }
+        };
+      });
+    });
+
+    // Auto-fit Column Widths
+    worksheet.columns.forEach((column) => {
+      let maxLen = 12;
+      column.eachCell({ includeEmpty: false }, (cell) => {
+        if (cell.row > 3) {
+          const cellValue = cell.value ? cell.value.toString() : "";
+          if (cellValue.length > maxLen) {
+            maxLen = cellValue.length;
+          }
+        }
+      });
+      column.width = Math.min(maxLen + 4, 40);
+    });
+
+    // Generate blob and download
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `Management_Report_${reportSubTab}_${new Date().toISOString().split("T")[0]}.xlsx`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const handleCSVExport = () => {
     let csvContent = "";
     let filename = "";
 
+    const titleText = reportSubTab === "samples" 
+      ? "MANAGEMENT REPORT - SAMPLE REQUISITIONS" 
+      : "MANAGEMENT REPORT - COSTING REQUESTS";
+      
+    let durationText = "Duration: All Time";
+    if (dateRange && dateRange[0] && dateRange[1]) {
+      durationText = `Duration: ${dateRange[0].format("YYYY-MM-DD")} to ${dateRange[1].format("YYYY-MM-DD")}`;
+    }
+
+    csvContent += `"${titleText.replace(/"/g, '""')}"\n`;
+    csvContent += `"${durationText.replace(/"/g, '""')}"\n\n`;
+
     if (reportSubTab === "samples") {
       const flatSamples = getMultiplicatedSamples();
       if (flatSamples.length === 0) return;
+      const cleanedSamples = removeEmptyColumns(flatSamples);
       
-      const headers = ["Request No", "Request Date", "Required Date", "Customer", "Officer", "Unit", "Urgency", "Status", "Item No", "Product", "Quantity", "Sample Type", "Description", "Special Notes"];
-      csvContent += headers.join(",") + "\n";
+      const keys = Object.keys(cleanedSamples[0]);
+      const headerRow = keys.map(k => {
+        const colIdx = sampleGridColumns.findIndex(c => c.data === k);
+        if (colIdx !== -1) return sampleHeaders[colIdx];
+        return k;
+      });
 
-      flatSamples.forEach(r => {
-        const row = [
-          r.sampleRequestNo,
-          r.requestDate,
-          r.requiredDate,
-          `"${(r.customerName || "").replace(/"/g, '""')}"`,
-          r.requestedBy,
-          r.productUnit,
-          r.requestType,
-          r.status,
-          r.itemNo,
-          `"${(r.product || "").replace(/"/g, '""')}"`,
-          r.quantity,
-          r.sampleType,
-          `"${(r.description || "").replace(/"/g, '""')}"`,
-          `"${(r.specialNotes || "").replace(/"/g, '""')}"`
-        ];
-        csvContent += row.join(",") + "\n";
+      csvContent += headerRow.map(h => `"${h.replace(/"/g, '""')}"`).join(",") + "\n";
+      
+      cleanedSamples.forEach(row => {
+        const line = keys.map(k => {
+          const val = row[k] !== undefined && row[k] !== null ? row[k].toString() : "";
+          return `"${val.replace(/"/g, '""')}"`;
+        });
+        csvContent += line.join(",") + "\n";
       });
       filename = `Management_Sample_Report_${new Date().toISOString().split("T")[0]}.csv`;
     } else {
       const flatCostings = getMultiplicatedCostings();
       if (flatCostings.length === 0) return;
+      const cleanedCostings = removeEmptyColumns(flatCostings);
 
-      const headers = ["Request No", "Request Date", "Customer", "Category", "Marketing Officer", "Finance Officer", "Status", "Item No"];
-      costingMarketingFields.forEach(f => headers.push(f.label));
-      costingFinanceFields.forEach(f => headers.push(f.label));
-      
-      csvContent += headers.join(",") + "\n";
+      const keys = Object.keys(cleanedCostings[0]);
+      const headerRow = keys.map(k => {
+        const colIdx = costingGridColumns.findIndex(c => c.data === k);
+        if (colIdx !== -1) return costingHeaders[colIdx];
+        return k;
+      });
 
-      flatCostings.forEach(r => {
-        const row = [
-          r.costRequestNo,
-          r.requestDate,
-          `"${(r.customerName || "").replace(/"/g, '""')}"`,
-          r.productCategory,
-          r.marketingOfficer,
-          r.financeOfficer,
-          r.status,
-          r.itemNo
-        ];
-        costingMarketingFields.forEach(f => {
-          row.push(`"${(r[`spec_${f.key}`] || "").toString().replace(/"/g, '""')}"`);
+      csvContent += headerRow.map(h => `"${h.replace(/"/g, '""')}"`).join(",") + "\n";
+
+      cleanedCostings.forEach(row => {
+        const line = keys.map(k => {
+          const val = row[k] !== undefined && row[k] !== null ? row[k].toString() : "";
+          return `"${val.replace(/"/g, '""')}"`;
         });
-        costingFinanceFields.forEach(f => {
-          row.push(`"${(r[`cost_${f.key}`] || "").toString().replace(/"/g, '""')}"`);
-        });
-        csvContent += row.join(",") + "\n";
+        csvContent += line.join(",") + "\n";
       });
       filename = `Management_Costing_Report_${new Date().toISOString().split("T")[0]}.csv`;
     }
@@ -474,6 +601,16 @@ export default function Reports() {
     costingHeaders.push(`${f.label} (Fin)`);
   });
 
+  const uniqueCustomers = Array.from(new Set([
+    ...sampleRequests.map(r => r.customerName).filter(Boolean),
+    ...costingRequests.map(r => r.customerName).filter(Boolean)
+  ])).sort();
+
+  const uniqueOfficers = Array.from(new Set([
+    ...sampleRequests.map(r => r.requestedBy).filter(Boolean),
+    ...costingRequests.map(r => r.marketingOfficer?.name).filter(Boolean)
+  ])).sort();
+
   return (
     <div style={{ paddingBottom: 48 }}>
       {/* Header */}
@@ -502,9 +639,8 @@ export default function Reports() {
 
       {/* Reports Filters Card */}
       <Card 
-        bordered={true} 
-        style={{ marginBottom: 32, background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 12 }}
-        styles={{ body: { padding: 20 } }}
+        title={<span><FilterOutlined /> Filter Operations Database</span>}
+        style={{ marginBottom: 32, background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 12, boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}
       >
         <Row gutter={[16, 16]} align="bottom">
           <Col xs={24} sm={12} md={6}>
@@ -515,7 +651,7 @@ export default function Reports() {
               onChange={(val) => setDateRange(val)}
             />
           </Col>
-          <Col xs={24} sm={12} md={5}>
+          <Col xs={24} sm={12} md={4}>
             <div style={{ marginBottom: 8, color: "#475569", fontWeight: 600 }}>Product Unit / Category</div>
             <Select style={{ width: "100%" }} value={productUnit} onChange={(v) => setProductUnit(v)} placeholder="All Units">
               <Option value="">All Units</Option>
@@ -523,7 +659,7 @@ export default function Reports() {
               <Option value="Bedding">Bedding</Option>
             </Select>
           </Col>
-          <Col xs={24} sm={12} md={5}>
+          <Col xs={24} sm={12} md={4}>
             <div style={{ marginBottom: 8, color: "#475569", fontWeight: 600 }}>Requisition Status</div>
             <Select style={{ width: "100%" }} value={status} onChange={(v) => setStatus(v)} placeholder="All Statuses">
               <Option value="">All Statuses</Option>
@@ -534,7 +670,7 @@ export default function Reports() {
               <Option value="Completed">Completed</Option>
             </Select>
           </Col>
-          <Col xs={24} sm={12} md={5}>
+          <Col xs={24} sm={12} md={4}>
             <div style={{ marginBottom: 8, color: "#475569", fontWeight: 600 }}>Urgency</div>
             <Select style={{ width: "100%" }} value={requestType} onChange={(v) => setRequestType(v)} placeholder="All Urgencies">
               <Option value="">All Urgencies</Option>
@@ -543,7 +679,21 @@ export default function Reports() {
               <Option value="Normal">Normal</Option>
             </Select>
           </Col>
-          <Col xs={24} md={3} style={{ textAlign: "right" }}>
+          <Col xs={24} sm={12} md={6}>
+            <div style={{ marginBottom: 8, color: "#475569", fontWeight: 600 }}>Customer</div>
+            <Select style={{ width: "100%" }} value={customerName} onChange={(v) => setCustomerName(v)} placeholder="All Customers">
+              <Option value="">All Customers</Option>
+              {uniqueCustomers.map(c => <Option key={c} value={c}>{c}</Option>)}
+            </Select>
+          </Col>
+          <Col xs={24} sm={12} md={6}>
+            <div style={{ marginBottom: 8, color: "#475569", fontWeight: 600 }}>Marketing Officer</div>
+            <Select style={{ width: "100%" }} value={marketingOfficer} onChange={(v) => setMarketingOfficer(v)} placeholder="All Officers">
+              <Option value="">All Officers</Option>
+              {uniqueOfficers.map(o => <Option key={o} value={o}>{o}</Option>)}
+            </Select>
+          </Col>
+          <Col xs={24} sm={12} md={4}>
             <Button block type="dashed" onClick={handleClearFilters} style={{ borderRadius: 8 }}>
               Clear
             </Button>
@@ -577,9 +727,9 @@ export default function Reports() {
                     columns={sampleGridColumns}
                     colHeaders={sampleHeaders}
                     rowHeaders={true}
+                    colWidths={150}
                     height="400"
                     licenseKey="non-commercial-and-evaluation"
-                    stretchH="all"
                     manualColumnResize={true}
                   />
                 </div>
@@ -600,9 +750,9 @@ export default function Reports() {
                     columns={costingGridColumns}
                     colHeaders={costingHeaders}
                     rowHeaders={true}
+                    colWidths={150}
                     height="400"
                     licenseKey="non-commercial-and-evaluation"
-                    stretchH="all"
                     manualColumnResize={true}
                   />
                 </div>
