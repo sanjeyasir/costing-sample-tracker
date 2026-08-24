@@ -1,0 +1,76 @@
+/* Custom global styles for Firebase Costing Management System */
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: #f8fafc;
+  color: #0f172a;
+  font-family: 'Outfit', 'Inter', sans-serif;
+  overflow-x: hidden;
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f8fafc;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Custom Handsontable styles to match premium design system */
+.handsontable {
+  font-family: 'Outfit', 'Inter', sans-serif !important;
+  font-size: 14px !important;
+  color: #0f172a !important;
+}
+
+.handsontable th {
+  background-color: #f1f5f9 !important;
+  color: #475569 !important;
+  font-weight: 700 !important;
+  border-color: #cbd5e1 !important;
+  padding: 10px 14px !important;
+  vertical-align: middle !important;
+}
+
+.handsontable td {
+  border-color: #e2e8f0 !important;
+  padding: 10px 14px !important;
+  vertical-align: middle !important;
+}
+
+.handsontable tr:hover td {
+  background-color: #f8fafc !important;
+}
+
+.handsontable .htSelected {
+  background-color: rgba(99, 102, 241, 0.08) !important;
+}
+
+.hot-container {
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  background: white;
+  margin-bottom: 24px;
+  padding: 8px;
+}
+
