@@ -38,12 +38,9 @@ export default function DashboardLayout({ children }) {
   
   const isMobile = !screens.md;
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
 
   const handleNotificationClick = async (notif) => {
-    await markAsRead(notif.id);
-    
     const id = notif.costRequestId || notif.sampleRequestId || notif.requestId;
     if (!id) {
       navigate("/dashboard");
@@ -76,7 +73,22 @@ export default function DashboardLayout({ children }) {
   menuItems.push({ label: "Dashboard", key: "/dashboard", icon: <DashboardOutlined /> });
 
   // 1b. Notifications Center (Always visible)
-  menuItems.push({ label: "Notifications", key: "/notifications", icon: <BellOutlined /> });
+  menuItems.push({
+    label: (
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%" }}>
+        <span>Notifications</span>
+        {activeNotifications.length > 0 && (
+          <Badge 
+            count={activeNotifications.length} 
+            size="small" 
+            style={{ backgroundColor: "#ef4444" }} 
+          />
+        )}
+      </div>
+    ),
+    key: "/notifications",
+    icon: <BellOutlined />
+  });
 
   // 2. Costing Section (visible if has costing access)
   if (hasCostingAccess) {
@@ -283,7 +295,7 @@ export default function DashboardLayout({ children }) {
 
       <Layout style={{ 
         marginLeft: isMobile ? 0 : (collapsed ? 80 : 260), 
-        marginRight: isMobile ? 0 : 320,
+        marginRight: 0,
         minHeight: "100vh", 
         display: "flex", 
         flexDirection: "column",
@@ -298,7 +310,7 @@ export default function DashboardLayout({ children }) {
             borderBottom: "1px solid #e2e8f0",
             position: "fixed",
             top: 0,
-            right: isMobile ? 0 : 320,
+            right: 0,
             left: isMobile ? 0 : (collapsed ? 80 : 260),
             zIndex: 90,
             display: "flex",
@@ -366,18 +378,6 @@ export default function DashboardLayout({ children }) {
                 Sample: {sampleRoles.map(r => getRoleLabel(r)).join(", ")}
               </Tag>
             )}
-
-            {/* Notifications Bell (Drawer Toggle - Mobile Only) */}
-            {isMobile && (
-              <Badge count={notifications.filter(n => !n.read && !(n.readBy && n.readBy.includes(currentUser?.uid))).length} overflowCount={9} style={{ backgroundColor: "#ef4444" }}>
-                <Button 
-                  shape="circle" 
-                  icon={<BellOutlined />} 
-                  onClick={() => setNotificationsOpen(true)}
-                  style={{ border: "1px solid #cbd5e1", background: "transparent", color: "#0f172a" }}
-                />
-              </Badge>
-            )}
           </Space>
         </Header>
 
@@ -405,183 +405,8 @@ export default function DashboardLayout({ children }) {
         </Content>
       </Layout>
 
-      {/* Permanent Right Notifications Panel (visible on desktop) */}
-      {!isMobile && (
-        <div style={{
-          width: 320,
-          background: "#ffffff",
-          borderLeft: "1px solid #e2e8f0",
-          height: "100vh",
-          position: "fixed",
-          top: 0,
-          right: 0,
-          bottom: 0,
-          zIndex: 100,
-          display: "flex",
-          flexDirection: "column"
-        }}>
-          <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-            <div style={{ padding: "16px 20px", borderBottom: "1px solid #f1f5f9", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#f8fafc" }}>
-              <span style={{ fontSize: "0.95rem", fontWeight: 800, color: "#0f172a" }}>
-                Notifications ({activeNotifications.length})
-              </span>
-              {activeNotifications.length > 0 && (
-                <Button type="link" size="small" onClick={markAllAsRead} style={{ padding: 0, fontSize: "0.75rem" }}>
-                  Mark all read
-                </Button>
-              )}
-            </div>
-            <div style={{ flexGrow: 1, overflowY: "auto" }}>
-              {activeNotifications.length === 0 ? (
-                <div style={{ padding: 40, textAlign: "center" }}>
-                  <BellOutlined style={{ fontSize: 32, color: "#cbd5e1", marginBottom: 12 }} />
-                  <div><Text type="secondary" style={{ fontSize: "0.85rem" }}>No new notifications.</Text></div>
-                </div>
-              ) : (
-                activeNotifications.map((notif) => {
-                  const isRead = notif.read || (notif.readBy && notif.readBy.includes(currentUser?.uid));
-                  return (
-                    <div
-                      key={notif.id}
-                      style={{
-                        padding: "12px 16px",
-                        borderBottom: "1px solid #f1f5f9",
-                        background: isRead ? "#f8fafc" : "#ffffff",
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "flex-start",
-                        gap: 8,
-                        transition: "all 0.2s"
-                      }}
-                    >
-                      <div 
-                        onClick={() => handleNotificationClick(notif)}
-                        style={{ cursor: "pointer", flexGrow: 1 }}
-                      >
-                        <div style={{ 
-                          fontWeight: isRead ? 500 : 700, 
-                          fontSize: "0.82rem", 
-                          color: isRead ? "#64748b" : "#0f172a", 
-                          lineHeight: 1.35,
-                          textDecoration: isRead ? "line-through" : "none" 
-                        }}>
-                          {notif.message}
-                        </div>
-                        <div style={{ fontSize: "0.7rem", color: "#94a3b8", marginTop: 4 }}>
-                          {new Date(notif.createdAt).toLocaleDateString()} {new Date(notif.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </div>
-                      </div>
-                      
-                      {!isRead && (
-                        <Tooltip title="Mark as Completed/Read">
-                          <Button
-                            type="text"
-                            shape="circle"
-                            size="small"
-                            icon={<CheckCircleOutlined style={{ color: "#10b981", fontSize: 16 }} />}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              markAsRead(notif.id);
-                            }}
-                            style={{ marginTop: -2 }}
-                          />
-                        </Tooltip>
-                      )}
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* Side Notifications Drawer Panel */}
-      <Drawer
-        title={
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontSize: "1.1rem", fontWeight: 800, color: "#0f172a" }}>
-              Notifications ({activeNotifications.length})
-            </span>
-            {activeNotifications.length > 0 && (
-              <Button type="link" size="small" onClick={markAllAsRead} style={{ padding: 0 }}>
-                Mark all read
-              </Button>
-            )}
-          </div>
-        }
-        placement="right"
-        onClose={() => setNotificationsOpen(false)}
-        open={notificationsOpen}
-        width={isMobile ? "100%" : 380}
-        styles={{ body: { padding: 0 } }}
-      >
-        {activeNotifications.length === 0 ? (
-          <div style={{ padding: 40, textAlign: "center" }}>
-            <BellOutlined style={{ fontSize: 48, color: "#cbd5e1", marginBottom: 16 }} />
-            <div><Text type="secondary" style={{ fontSize: "0.95rem" }}>No new notifications.</Text></div>
-          </div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-            <div style={{ flexGrow: 1, overflowY: "auto" }}>
-              {activeNotifications.map((notif) => {
-                const isRead = notif.read || (notif.readBy && notif.readBy.includes(currentUser?.uid));
-                return (
-                  <div
-                    key={notif.id}
-                    style={{
-                      padding: "16px 20px",
-                      borderBottom: "1px solid #f1f5f9",
-                      background: isRead ? "#f8fafc" : "#ffffff",
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "flex-start",
-                      gap: 12,
-                      transition: "all 0.2s"
-                    }}
-                  >
-                    <div 
-                      onClick={() => {
-                        handleNotificationClick(notif);
-                        setNotificationsOpen(false);
-                      }}
-                      style={{ cursor: "pointer", flexGrow: 1 }}
-                    >
-                      <div style={{ 
-                        fontWeight: isRead ? 500 : 700, 
-                        fontSize: "0.9rem", 
-                        color: isRead ? "#64748b" : "#0f172a", 
-                        lineHeight: 1.4,
-                        textDecoration: isRead ? "line-through" : "none" 
-                      }}>
-                        {notif.message}
-                      </div>
-                      <div style={{ fontSize: "0.75rem", color: "#94a3b8", marginTop: 6 }}>
-                        {new Date(notif.createdAt).toLocaleDateString()} {new Date(notif.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </div>
-                    </div>
-                    
-                    {!isRead && (
-                      <Tooltip title="Mark as Completed/Read">
-                        <Button
-                          type="text"
-                          shape="circle"
-                          icon={<CheckCircleOutlined style={{ color: "#10b981", fontSize: 18 }} />}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            markAsRead(notif.id);
-                          }}
-                          style={{ marginTop: -4 }}
-                        />
-                      </Tooltip>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-      </Drawer>
+
     </Layout>
   );
 }

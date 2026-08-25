@@ -84,11 +84,15 @@ export function subscribeNotifications(currentUser, onNotificationsChanged) {
     );
 
     return onSnapshot(q, (snapshot) => {
-      const allNotifications = snapshot.docs.map(docSnap => ({
-        id: docSnap.id,
-        ...docSnap.data(),
-        createdAt: docSnap.data().createdAt?.toDate().toISOString() || new Date().toISOString()
-      }));
+      const allNotifications = snapshot.docs.map(docSnap => {
+        const data = docSnap.data();
+        return {
+          id: docSnap.id,
+          ...data,
+          createdAt: data.createdAt?.toDate?.()?.toISOString() || data.createdAt || new Date().toISOString(),
+          completedAt: data.completedAt?.toDate?.()?.toISOString() || data.completedAt || null
+        };
+      });
 
       // Filter on client based on roles array
       const filtered = allNotifications.filter(n => {
@@ -123,6 +127,8 @@ export function subscribeNotifications(currentUser, onNotificationsChanged) {
  */
 export async function markNotificationAsRead(notificationId, currentUser) {
   const { uid } = currentUser;
+  const now = new Date();
+  const completedAtVal = now.toISOString();
 
   if (isMockMode) {
     const notifications = JSON.parse(localStorage.getItem("notifications") || "[]");
@@ -130,13 +136,19 @@ export async function markNotificationAsRead(notificationId, currentUser) {
     
     if (index !== -1) {
       const n = notifications[index];
-      if (n.userId === uid) {
-        n.read = true;
-      } else if (n.role) {
+      if (n.role) {
         if (!n.readBy) n.readBy = [];
         if (!n.readBy.includes(uid)) {
           n.readBy.push(uid);
         }
+        if (!n.completions) n.completions = {};
+        n.completions[uid] = completedAtVal;
+        n.completedAt = completedAtVal;
+        n.status = "completed";
+      } else {
+        n.read = true;
+        n.status = "completed";
+        n.completedAt = completedAtVal;
       }
       notifications[index] = n;
       localStorage.setItem("notifications", JSON.stringify(notifications));
@@ -152,11 +164,19 @@ export async function markNotificationAsRead(notificationId, currentUser) {
     const docSnap = notifications.docs.find(d => d.id === notificationId);
     if (docSnap) {
       const data = docSnap.data();
-      if (data.userId === uid) {
-        await updateDoc(docRef, { read: true });
-      } else if (data.role) {
+      const dbCompletedAt = Timestamp.fromDate(now);
+      if (data.role) {
         await updateDoc(docRef, {
-          readBy: arrayUnion(uid)
+          readBy: arrayUnion(uid),
+          [`completions.${uid}`]: dbCompletedAt,
+          completedAt: dbCompletedAt,
+          status: "completed"
+        });
+      } else {
+        await updateDoc(docRef, { 
+          read: true,
+          completedAt: dbCompletedAt,
+          status: "completed"
         });
       }
     }
@@ -168,6 +188,8 @@ export async function markNotificationAsRead(notificationId, currentUser) {
  */
 export async function markAllNotificationsAsRead(currentUser, activeNotifications) {
   const { uid } = currentUser;
+  const now = new Date();
+  const completedAtVal = now.toISOString();
 
   if (isMockMode) {
     const notifications = JSON.parse(localStorage.getItem("notifications") || "[]");
@@ -178,11 +200,17 @@ export async function markAllNotificationsAsRead(currentUser, activeNotification
         const n = notifications[index];
         if (n.userId === uid) {
           n.read = true;
+          n.completedAt = completedAtVal;
+          n.status = "completed";
         } else if (n.role) {
           if (!n.readBy) n.readBy = [];
           if (!n.readBy.includes(uid)) {
             n.readBy.push(uid);
           }
+          if (!n.completions) n.completions = {};
+          n.completions[uid] = completedAtVal;
+          n.completedAt = completedAtVal;
+          n.status = "completed";
         }
         notifications[index] = n;
       }
@@ -192,13 +220,21 @@ export async function markAllNotificationsAsRead(currentUser, activeNotification
     window.dispatchEvent(new Event("storage"));
   } else {
     const batch = writeBatch(db);
+    const dbCompletedAt = Timestamp.fromDate(now);
     activeNotifications.forEach(n => {
       const docRef = doc(db, "notifications", n.id);
       if (n.userId === uid) {
-        batch.update(docRef, { read: true });
+        batch.update(docRef, { 
+          read: true,
+          completedAt: dbCompletedAt,
+          status: "completed"
+        });
       } else if (n.role) {
         batch.update(docRef, {
-          readBy: arrayUnion(uid)
+          readBy: arrayUnion(uid),
+          [`completions.${uid}`]: dbCompletedAt,
+          completedAt: dbCompletedAt,
+          status: "completed"
         });
       }
     });
@@ -221,6 +257,7 @@ export async function createNotification(notificationData) {
     message: notificationData.message,
     read: false,
     readBy: [],
+    status: "pending",
     createdAt: isMockMode ? now.toISOString() : Timestamp.fromDate(now)
   };
 
