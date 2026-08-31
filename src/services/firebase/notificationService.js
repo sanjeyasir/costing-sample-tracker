@@ -368,6 +368,198 @@ export async function sendEmailNotification(notificationData) {
     }
   } catch (err) {
     console.error("sendEmailNotification experienced an error:", err);
+  } finally {
+    // Trigger WhatsApp notification automatically
+    sendWhatsAppNotification(notificationData);
+  }
+}
+
+/**
+ * Sends a WhatsApp notification to relevant users based on the notification data
+ */
+export async function sendWhatsAppNotification(notificationData) {
+  try {
+    const users = await getUsers();
+    const recipients = [];
+
+    // 1. Resolve recipients based on userId or role
+    if (notificationData.userId) {
+      const u = users.find(user => user.uid === notificationData.userId);
+      if (u) {
+        recipients.push(u);
+      }
+    }
+
+    if (notificationData.role) {
+      const targetRole = notificationData.role.toLowerCase();
+      users.forEach(u => {
+        const userRoles = Array.isArray(u.role) ? u.role : [u.role];
+        const costingRoles = Array.isArray(u.costingRoles) ? u.costingRoles : [u.costingRole];
+        const sampleRoles = Array.isArray(u.sampleRoles) ? u.sampleRoles : [u.sampleRole];
+        const allUserRoles = [...userRoles, ...costingRoles, ...sampleRoles, u.costingRole, u.sampleRole]
+          .filter(Boolean)
+          .map(r => r.toLowerCase());
+
+        let isMatched = false;
+        if (targetRole === "finance") {
+          isMatched = allUserRoles.includes("costing_finance") || 
+                      allUserRoles.includes("finance") || 
+                      allUserRoles.includes("costing-finance-team");
+        } else if (targetRole === "sample" || targetRole === "sample_sampling") {
+          isMatched = allUserRoles.includes("sample_sampling") || 
+                      allUserRoles.includes("sample") || 
+                      allUserRoles.includes("sample-samplingteam");
+        } else if (targetRole === "sample_marketing" || targetRole === "marketing") {
+          isMatched = allUserRoles.includes("sample_marketing") || 
+                      allUserRoles.includes("costing_marketing") || 
+                      allUserRoles.includes("marketing") || 
+                      allUserRoles.includes("costing-marketing-team") || 
+                      allUserRoles.includes("sample-marketing-team");
+        } else {
+          isMatched = allUserRoles.includes(targetRole) || 
+                      allUserRoles.some(r => r.replace(/[^a-z]/g, "") === targetRole.replace(/[^a-z]/g, ""));
+        }
+
+        if (isMatched && !recipients.some(r => r.uid === u.uid)) {
+          recipients.push(u);
+        }
+      });
+    }
+
+    // Add requester for new creations if applicable
+    const isNewRequestNotification = 
+      notificationData.message && 
+      (notificationData.message.toLowerCase().includes("new costing request") || 
+       notificationData.message.toLowerCase().includes("new sample request"));
+
+    if (isNewRequestNotification) {
+      const requester = users.find(u => u.email === auth?.currentUser?.email);
+      if (requester && !recipients.some(r => r.uid === requester.uid)) {
+        recipients.push(requester);
+      }
+    }
+
+    if (recipients.length === 0) {
+      console.log("No recipient users resolved for WhatsApp notification:", notificationData);
+      return;
+    }
+
+    // 2. Fetch whatsappConfig settings
+    let config = { 
+      provider: "openwa", 
+      openwaConfig: {
+        serverUrl: "http://localhost:2785",
+        sessionId: "default",
+        apiKey: ""
+      }, 
+      globalOverride: true, 
+      overrideNumber: "+94767063788" 
+    };
+    if (!isMockMode) {
+      try {
+        const { getDoc, doc } = await import("firebase/firestore");
+        const configDoc = await getDoc(doc(db, "systemSettings", "whatsappConfig"));
+        if (configDoc.exists()) {
+          config = { ...config, ...configDoc.data() };
+        }
+      } catch (err) {
+        console.error("Failed to read whatsappConfig, using defaults:", err);
+      }
+    } else {
+      const savedConfig = localStorage.getItem("settings_whatsappConfig");
+      if (savedConfig) {
+        config = { ...config, ...JSON.parse(savedConfig) };
+      }
+    }
+
+    // Force openwa provider for direct sending (no simulation)
+    const provider = config.provider === "disabled" ? "openwa" : (config.provider || "openwa");
+    config.provider = provider;
+
+    // 3. Determine target phone numbers (either override number or user phone numbers)
+    let targetNumbers = [];
+    if (config.globalOverride) {
+      const overrideNum = config.overrideNumber || "+94767063788";
+      targetNumbers.push({ name: "Global Override Test", phoneNumber: overrideNum });
+    } else {
+      recipients.forEach(r => {
+        if (r.whatsappEnabled && r.phoneNumber) {
+          targetNumbers.push({ name: r.displayName || r.email, phoneNumber: r.phoneNumber });
+        }
+      });
+    }
+
+    if (targetNumbers.length === 0) {
+      console.log("No targets with WhatsApp enabled found.");
+      return;
+    }
+
+    // 4. Construct WhatsApp Message Body
+    const isCost = !!notificationData.costRequestId;
+    const reqNo = notificationData.costRequestNo || notificationData.sampleRequestNo || "N/A";
+    const title = isCost ? "Costing Request Update" : "Sample Request Update";
+    const waMessage = `*${title}*\nRef No: ${reqNo}\n\n${notificationData.message}\n\n_Hayleys Fibre Costing & Sample Tracking System_`;
+
+    for (const target of targetNumbers) {
+      if (isMockMode) {
+        console.log(`[Mock Mode WhatsApp] Sending mock WhatsApp to ${target.name} (${target.phoneNumber}): ${waMessage}`);
+        await logWhatsAppRecord(target.phoneNumber, waMessage, config.provider, "simulated", "Simulation successful");
+        window.dispatchEvent(new CustomEvent("whatsapp_notification_sent", {
+          detail: { to: target.phoneNumber, name: target.name, message: waMessage, status: "simulated" }
+        }));
+      } else {
+        try {
+          const sendWhatsAppFunc = httpsCallable(functions, "sendWhatsAppViaAPI");
+          const result = await sendWhatsAppFunc({
+            to: target.phoneNumber,
+            message: waMessage
+          });
+          console.log(`[Firestore Mode WhatsApp] Securely sent to ${target.name} (${target.phoneNumber}) via Cloud Function`, result.data);
+          
+          window.dispatchEvent(new CustomEvent("whatsapp_notification_sent", {
+            detail: { to: target.phoneNumber, name: target.name, message: waMessage, status: result.data.status }
+          }));
+        } catch (fnErr) {
+          console.error(`[Firestore Mode WhatsApp] Failed to send via Cloud Function to ${target.phoneNumber}:`, fnErr);
+        }
+      }
+    }
+  } catch (err) {
+    console.error("sendWhatsAppNotification experienced an error:", err);
+  }
+}
+
+/**
+ * Helper to log sent WhatsApp records
+ */
+async function logWhatsAppRecord(recipient, message, provider, status, responseText) {
+  if (isMockMode) {
+    const mockWA = JSON.parse(localStorage.getItem("whatsappLogs") || "[]");
+    mockWA.push({
+      id: `wa-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      to: recipient,
+      message: message,
+      provider: provider,
+      createdAt: new Date().toISOString(),
+      status: status,
+      response: responseText
+    });
+    localStorage.setItem("whatsappLogs", JSON.stringify(mockWA));
+    window.dispatchEvent(new Event("storage"));
+  } else {
+    try {
+      const { collection, addDoc } = await import("firebase/firestore");
+      await addDoc(collection(db, "whatsappLogs"), {
+        to: recipient,
+        message: message,
+        provider: provider,
+        createdAt: new Date().toISOString(),
+        status: status,
+        response: responseText
+      });
+    } catch (err) {
+      console.error("Failed to write whatsappLog record to Firestore:", err);
+    }
   }
 }
 

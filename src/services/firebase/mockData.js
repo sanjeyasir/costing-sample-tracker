@@ -11,6 +11,8 @@ export const DEFAULT_USERS = [
     status: "active",
     requirePasswordChange: false,
     password: "marketing",
+    phoneNumber: "+94767063788",
+    whatsappEnabled: true,
     createdAt: new Date(2026, 7, 1).toISOString(),
   },
   {
@@ -23,6 +25,8 @@ export const DEFAULT_USERS = [
     status: "active",
     requirePasswordChange: false,
     password: "finance",
+    phoneNumber: "+94767063788",
+    whatsappEnabled: true,
     createdAt: new Date(2026, 7, 1).toISOString(),
   },
   {
@@ -35,6 +39,8 @@ export const DEFAULT_USERS = [
     status: "active",
     requirePasswordChange: false,
     password: "admin@123",
+    phoneNumber: "+94767063788",
+    whatsappEnabled: true,
     createdAt: new Date(2026, 7, 1).toISOString(),
   }
 ];
@@ -108,13 +114,13 @@ export const DEFAULT_ROLES = [
 export const DEFAULT_SAMPLE_REQUESTS = [];
 
 export function initializeLocalStorageState() {
-  if (!localStorage.getItem("mock_data_purged_v2")) {
+  if (!localStorage.getItem("mock_data_purged_v3")) {
     localStorage.removeItem("users");
     localStorage.removeItem("costRequests");
     localStorage.removeItem("sampleRequests");
     localStorage.removeItem("notifications");
     localStorage.removeItem("systemSettings_costRequestCounter");
-    localStorage.setItem("mock_data_purged_v2", "true");
+    localStorage.setItem("mock_data_purged_v3", "true");
   }
 
   if (!localStorage.getItem("users")) {

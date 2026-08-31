@@ -201,7 +201,7 @@ exports.adminCreateUser = functions.https.onCall(async (data, context) => {
     );
   }
 
-  const { email, password, displayName, role } = data;
+  const { email, password, displayName, role, phoneNumber, whatsappEnabled } = data;
   if (!email || !password || !displayName || !role) {
     throw new functions.https.HttpsError(
       "invalid-argument",
@@ -222,6 +222,8 @@ exports.adminCreateUser = functions.https.onCall(async (data, context) => {
       email,
       displayName,
       role,
+      phoneNumber: phoneNumber || "",
+      whatsappEnabled: !!whatsappEnabled,
       status: "active",
       requirePasswordChange: true,
       createdAt: Timestamp.now()
@@ -463,6 +465,125 @@ exports.sendEmailViaSMTP = functions.https.onCall(async (data, context) => {
     throw new functions.https.HttpsError(
       "internal",
       `Gmail SMTP email delivery failed: ${error.message}`
+    );
+  }
+});
+
+/**
+ * Cloud Function to securely send WhatsApp notifications using OpenWA REST API.
+ * Callable from client.
+ */
+exports.sendWhatsAppViaAPI = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError(
+      "unauthenticated",
+      "Authentication is required to send WhatsApp notifications."
+    );
+  }
+
+  const { to, message } = data;
+  if (!to || !message) {
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "Recipient (to) and message are required."
+    );
+  }
+
+  try {
+    // 1. Fetch systemSettings/whatsappConfig
+    const configSnap = await db.collection("systemSettings").doc("whatsappConfig").get();
+    let config = { 
+      provider: "openwa",
+      openwaConfig: {
+        serverUrl: "http://localhost:2785",
+        sessionId: "default",
+        apiKey: ""
+      },
+      globalOverride: true,
+      overrideNumber: "+94767063788"
+    };
+    if (configSnap.exists) {
+      config = { ...config, ...configSnap.data() };
+    }
+
+    // Force openwa provider for direct sending (no simulation)
+    const provider = config.provider === "disabled" ? "openwa" : (config.provider || "openwa");
+    
+    // Clean phone number: keep only digits (E.164 without "+")
+    const cleanedNumber = to.replace(/[^0-9]/g, "");
+    let status = "failed";
+    let responseData = "";
+
+    if (provider === "openwa") {
+      const openwa = config.openwaConfig || {};
+      const serverUrl = openwa.serverUrl || "http://localhost:2785";
+      const apiKey = openwa.apiKey || "";
+      const sessionId = openwa.sessionId || "default";
+
+      // Format URL: http://<ip>:<port>/api/sessions/<sessionId>/messages/send-text
+      const url = `${serverUrl}/api/sessions/${sessionId}/messages/send-text`;
+      
+      const headers = {
+        "Content-Type": "application/json"
+      };
+      if (apiKey) {
+        headers["X-API-Key"] = apiKey;
+      }
+
+      const body = JSON.stringify({
+        chatId: `${cleanedNumber}@c.us`,
+        text: message
+      });
+
+      console.log(`[OpenWA] Posting request to: ${url}`);
+      
+      const response = await fetch(url, {
+        method: "POST",
+        headers,
+        body
+      });
+
+      responseData = await response.text();
+
+      if (response.ok) {
+        status = "sent";
+      } else {
+        throw new Error(`OpenWA server returned status ${response.status}: ${responseData}`);
+      }
+    } else if (provider === "disabled") {
+      status = "simulated";
+      responseData = "Simulated delivery. WhatsApp integration is disabled.";
+    } else {
+      throw new Error(`Unsupported WhatsApp provider: ${provider}`);
+    }
+
+    // Save WhatsApp log to Firestore
+    await db.collection("whatsappLogs").add({
+      to,
+      message,
+      provider,
+      status,
+      createdAt: new Date().toISOString(),
+      response: responseData
+    });
+
+    return { success: status === "sent" || status === "simulated", status, response: responseData };
+  } catch (error) {
+    console.error("sendWhatsAppViaAPI failure: ", error);
+    
+    // Log failed transaction
+    await db.collection("whatsappLogs").add({
+      to,
+      message,
+      provider: "error",
+      status: "failed",
+      createdAt: new Date().toISOString(),
+      response: error.message
+    });
+
+    throw new functions.https.HttpsError(
+      "internal",
+      `WhatsApp API dispatch failed: ${error.message}`
     );
   }
 });

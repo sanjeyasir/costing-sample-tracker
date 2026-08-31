@@ -21,6 +21,13 @@ export default function Users() {
   const [resetRequests, setResetRequests] = useState([]);
   const [loadingResets, setLoadingResets] = useState(false);
 
+  // Edit User Dialog States
+  const [openEditDialog, setOpenEditDialog] = useState(false);
+  const [editingUser, setEditingUser] = useState(null);
+  const [editLoading, setEditLoading] = useState(false);
+  const [editError, setEditError] = useState("");
+  const [editForm] = Form.useForm();
+
   // Role management States
   const [openRoleDialog, setOpenRoleDialog] = useState(false);
   const [newRoleName, setNewRoleName] = useState("");
@@ -183,7 +190,7 @@ export default function Users() {
   };
 
   const handleCreateUserSubmit = async (values) => {
-    const { displayName, email, password, costingRoles, sampleRoles } = values;
+    const { displayName, email, password, costingRoles, sampleRoles, phoneNumber, whatsappEnabled } = values;
     try {
       setCreateError("");
       setCreateLoading(true);
@@ -193,7 +200,9 @@ export default function Users() {
         email,
         password,
         costingRoles,
-        sampleRoles
+        sampleRoles,
+        phoneNumber,
+        whatsappEnabled
       });
 
       if (result.success) {
@@ -207,6 +216,42 @@ export default function Users() {
       setCreateError(err.message?.replace(/^Error:\s*/, "") || "Failed to create user account.");
     } finally {
       setCreateLoading(false);
+    }
+  };
+
+  const handleEditUserClick = (record) => {
+    setEditingUser(record);
+    editForm.setFieldsValue({
+      displayName: record.displayName,
+      email: record.email,
+      phoneNumber: record.phoneNumber || "",
+      whatsappEnabled: !!record.whatsappEnabled
+    });
+    setOpenEditDialog(true);
+    setEditError("");
+  };
+
+  const handleEditUserSubmit = async (values) => {
+    const { displayName, email, phoneNumber, whatsappEnabled } = values;
+    try {
+      setEditError("");
+      setEditLoading(true);
+
+      await userService.updateUserProfile(editingUser.uid, {
+        displayName,
+        email,
+        phoneNumber: phoneNumber || "",
+        whatsappEnabled: !!whatsappEnabled
+      });
+
+      setSuccess(`User account ${email} updated successfully.`);
+      setOpenEditDialog(false);
+      loadUsers();
+    } catch (err) {
+      console.error("Error editing user:", err);
+      setEditError(err.message || "Failed to update user account.");
+    } finally {
+      setEditLoading(false);
     }
   };
 
@@ -282,6 +327,21 @@ export default function Users() {
       key: "email"
     },
     {
+      title: "Phone Number",
+      dataIndex: "phoneNumber",
+      key: "phoneNumber",
+      render: (text) => text || <span style={{ color: "#94a3b8", fontStyle: "italic" }}>Not set</span>
+    },
+    {
+      title: "WhatsApp Alerts",
+      key: "whatsappEnabled",
+      render: (_, record) => (
+        <Tag color={record.whatsappEnabled ? "green" : "gray"}>
+          {record.whatsappEnabled ? "Enabled" : "Disabled"}
+        </Tag>
+      )
+    },
+    {
       title: "Costing Module Roles",
       key: "costingRoles",
       render: (_, record) => {
@@ -292,7 +352,7 @@ export default function Users() {
             mode="multiple"
             value={val}
             onChange={(vals) => handleModuleRoleChange(record.uid, vals, record.sampleRoles || (record.sampleRole && record.sampleRole !== "none" ? [record.sampleRole] : []))}
-            style={{ width: "100%", minWidth: 180 }}
+            style={{ width: "100%", minWidth: 150 }}
             placeholder="Costing roles"
           >
             {costingRoles.map((role) => (
@@ -315,7 +375,7 @@ export default function Users() {
             mode="multiple"
             value={val}
             onChange={(vals) => handleModuleRoleChange(record.uid, record.costingRoles || (record.costingRole && record.costingRole !== "none" ? [record.costingRole] : []), vals)}
-            style={{ width: "100%", minWidth: 180 }}
+            style={{ width: "100%", minWidth: 150 }}
             placeholder="Sample roles"
           >
             {sampleRoles.map((role) => (
@@ -336,6 +396,18 @@ export default function Users() {
           onChange={() => handleStatusToggle(record.uid, record.status)}
           checkedChildren="Active"
           unCheckedChildren="Inactive"
+        />
+      )
+    },
+    {
+      title: "Actions",
+      key: "actions",
+      align: "center",
+      render: (_, record) => (
+        <Button
+          type="text"
+          icon={<EditOutlined style={{ color: "#6366f1" }} />}
+          onClick={() => handleEditUserClick(record)}
         />
       )
     }
@@ -627,6 +699,25 @@ export default function Users() {
           </Form.Item>
 
           <Form.Item
+            name="phoneNumber"
+            label={<span style={{ color: "#475569", fontWeight: 600 }}>Phone Number (E.164 format)</span>}
+            rules={[
+              { pattern: /^\+?[1-9]\d{1,14}$/, message: "Please enter a valid E.164 phone number (e.g. +94767063788)." }
+            ]}
+          >
+            <Input placeholder="+94767063788" size="large" style={{ borderRadius: 8 }} />
+          </Form.Item>
+
+          <Form.Item
+            name="whatsappEnabled"
+            label={<span style={{ color: "#475569", fontWeight: 600 }}>WhatsApp Alerts</span>}
+            valuePropName="checked"
+            initialValue={false}
+          >
+            <Switch checkedChildren="Enabled" unCheckedChildren="Disabled" />
+          </Form.Item>
+
+          <Form.Item
             name="costingRoles"
             label={<span style={{ color: "#475569", fontWeight: 600 }}>Costing Module Roles</span>}
             initialValue={["costing_marketing"]}
@@ -759,6 +850,83 @@ export default function Users() {
             </Select>
           </div>
         </div>
+      </Modal>
+
+      {/* Edit User Modal */}
+      <Modal
+        title="Edit User Profile"
+        open={openEditDialog}
+        onCancel={() => setOpenEditDialog(false)}
+        footer={null}
+        width={450}
+        centered
+        styles={{ content: { borderRadius: 16, background: "#ffffff" } }}
+      >
+        {editError && <Alert message={editError} type="error" showIcon style={{ marginBottom: 20 }} />}
+        
+        <Form
+          form={editForm}
+          layout="vertical"
+          onFinish={handleEditUserSubmit}
+          requiredMark={true}
+          style={{ marginTop: 16 }}
+        >
+          <Form.Item
+            name="displayName"
+            label={<span style={{ color: "#475569", fontWeight: 600 }}>Full Name</span>}
+            rules={[{ required: true, message: "Full Name is required." }]}
+          >
+            <Input placeholder="John Doe" size="large" style={{ borderRadius: 8 }} />
+          </Form.Item>
+
+          <Form.Item
+            name="email"
+            label={<span style={{ color: "#475569", fontWeight: 600 }}>Email Address</span>}
+            rules={[
+              { required: true, message: "Email address is required." },
+              { type: "email", message: "Please enter a valid email." }
+            ]}
+          >
+            <Input prefix={<MailOutlined />} placeholder="john@costing.com" size="large" style={{ borderRadius: 8 }} />
+          </Form.Item>
+
+          <Form.Item
+            name="phoneNumber"
+            label={<span style={{ color: "#475569", fontWeight: 600 }}>Phone Number (E.164 format)</span>}
+            rules={[
+              { pattern: /^\+?[1-9]\d{1,14}$/, message: "Please enter a valid E.164 phone number (e.g. +94767063788)." }
+            ]}
+          >
+            <Input placeholder="+94767063788" size="large" style={{ borderRadius: 8 }} />
+          </Form.Item>
+
+          <Form.Item
+            name="whatsappEnabled"
+            label={<span style={{ color: "#475569", fontWeight: 600 }}>WhatsApp Alerts</span>}
+            valuePropName="checked"
+          >
+            <Switch checkedChildren="Enabled" unCheckedChildren="Disabled" />
+          </Form.Item>
+
+          <Form.Item style={{ marginBottom: 0, textAlign: "right", marginTop: 24 }}>
+            <Space>
+              <Button onClick={() => setOpenEditDialog(false)} style={{ borderRadius: 8 }}>Cancel</Button>
+              <Button
+                type="primary"
+                htmlType="submit"
+                loading={editLoading}
+                style={{ 
+                  borderRadius: 8, 
+                  fontWeight: 700, 
+                  background: "linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)",
+                  border: "none"
+                }}
+              >
+                Save Changes
+              </Button>
+            </Space>
+          </Form.Item>
+        </Form>
       </Modal>
     </div>
   );

@@ -102,7 +102,7 @@ export async function updateUserStatus(uid, status) {
  * Creates a new user account (Admin only)
  */
 export async function createUser(userData) {
-  const { email, password, displayName, costingRoles, sampleRoles } = userData;
+  const { email, password, displayName, costingRoles, sampleRoles, phoneNumber, whatsappEnabled } = userData;
   const costingRolesArray = Array.isArray(costingRoles) ? costingRoles : (costingRoles ? [costingRoles] : []);
   const sampleRolesArray = Array.isArray(sampleRoles) ? sampleRoles : (sampleRoles ? [sampleRoles] : []);
   const roleArray = [...costingRolesArray, ...sampleRolesArray].filter(r => r && r !== "none");
@@ -120,6 +120,8 @@ export async function createUser(userData) {
       uid: newUid,
       email,
       displayName,
+      phoneNumber: phoneNumber || "",
+      whatsappEnabled: !!whatsappEnabled,
       costingRoles: costingRolesArray,
       sampleRoles: sampleRolesArray,
       costingRole: costingRolesArray[0] || "none",
@@ -142,6 +144,8 @@ export async function createUser(userData) {
       email, 
       password, 
       displayName, 
+      phoneNumber: phoneNumber || "",
+      whatsappEnabled: !!whatsappEnabled,
       costingRoles: costingRolesArray, 
       sampleRoles: sampleRolesArray, 
       costingRole: costingRolesArray[0] || "none", 
@@ -149,6 +153,24 @@ export async function createUser(userData) {
       role: roleArray 
     });
     return result.data;
+  }
+}
+
+/**
+ * Update user profile details (Admin only)
+ */
+export async function updateUserProfile(uid, profileData) {
+  if (isMockMode) {
+    const users = JSON.parse(localStorage.getItem("users") || "[]");
+    const index = users.findIndex(u => u.uid === uid);
+    if (index !== -1) {
+      users[index] = { ...users[index], ...profileData };
+      localStorage.setItem("users", JSON.stringify(users));
+      window.dispatchEvent(new Event("storage"));
+    }
+  } else {
+    const docRef = doc(db, "users", uid);
+    await updateDoc(docRef, profileData);
   }
 }
 
