@@ -450,6 +450,7 @@ export default function Users() {
               columns={userColumns}
               rowKey="uid"
               pagination={false}
+              scroll={{ x: "max-content" }}
               style={{ background: "transparent" }}
             />
           </Card>
@@ -477,6 +478,7 @@ export default function Users() {
               pagination={false}
               loading={loadingResets}
               locale={{ emptyText: "No pending password reset requests." }}
+              scroll={{ x: "max-content" }}
               style={{ background: "transparent" }}
             />
           </Card>
@@ -511,6 +513,7 @@ export default function Users() {
               columns={roleColumns}
               rowKey="id"
               pagination={false}
+              scroll={{ x: "max-content" }}
               style={{ background: "transparent" }}
             />
           </Card>

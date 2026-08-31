@@ -28,6 +28,18 @@ export default function ProtectedRoute({ children, allowedRoles, module, allowed
   const costingRoles = currentUser.costingRoles || [];
   const sampleRoles = currentUser.sampleRoles || [];
   const isAdmin = currentUser.roles?.includes("admin") || costingRoles.includes("admin") || sampleRoles.includes("admin");
+
+  // Specific restriction: admin@gmail.com can only access User Management and System Settings
+  const isSuperAdminUser = currentUser.email === "admin@gmail.com";
+  if (isSuperAdminUser) {
+    const path = location.pathname;
+    const isAllowedPath = path === "/admin/users" || path === "/admin/settings" || path === "/change-password";
+    if (!isAllowedPath) {
+      return <Navigate to="/admin/users" replace />;
+    }
+    return children;
+  }
+
   if (isAdmin) {
     return children;
   }

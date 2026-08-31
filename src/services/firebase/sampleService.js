@@ -12,6 +12,7 @@ import {
   Timestamp
 } from "firebase/firestore";
 import { db, isMockMode } from "./config";
+import { createNotification, sendEmailNotification } from "./notificationService";
 
 
 /**
@@ -221,19 +222,13 @@ export async function createSampleRequest(requestData, currentUser) {
     window.dispatchEvent(new Event("storage"));
     
     // Add in-app notification
-    const notifications = JSON.parse(localStorage.getItem("notifications") || "[]");
-    notifications.push({
-      id: `not-${Date.now()}`,
+    await createNotification({
       userId: null,
       role: "sample",
       sampleRequestId: newRequest.id,
       sampleRequestNo,
-      message: `New sample request #${sampleRequestNo} is awaiting development.`,
-      read: false,
-      readBy: [],
-      createdAt: nowISO
+      message: `New sample request #${sampleRequestNo} is awaiting development.`
     });
-    localStorage.setItem("notifications", JSON.stringify(notifications));
 
 
     
@@ -306,7 +301,14 @@ export async function createSampleRequest(requestData, currentUser) {
       return { id: newDocRef.id, ...newRequest };
     });
 
-
+    // Send email notification after successful transaction
+    sendEmailNotification({
+      userId: null,
+      role: "sample",
+      sampleRequestId: result.id,
+      sampleRequestNo: result.sampleRequestNo,
+      message: `New sample request #${result.sampleRequestNo} is awaiting development.`
+    });
 
     return result;
   }
@@ -346,19 +348,13 @@ export async function acceptSampleRequest(id, plannedDeliveryDate, remarks, proc
     window.dispatchEvent(new Event("storage"));
 
     // Add in-app notification
-    const notifications = JSON.parse(localStorage.getItem("notifications") || "[]");
-    notifications.push({
-      id: `not-${Date.now()}`,
+    await createNotification({
       userId: updated.createdByUid || null,
       role: updated.createdByUid ? null : "sample_marketing",
       sampleRequestId: updated.id,
       sampleRequestNo: updated.sampleRequestNo,
-      message: `Sample request #${updated.sampleRequestNo} has been accepted. Planned delivery: ${plannedDeliveryDate}`,
-      read: false,
-      readBy: [],
-      createdAt: nowISO
+      message: `Sample request #${updated.sampleRequestNo} has been accepted. Planned delivery: ${plannedDeliveryDate}`
     });
-    localStorage.setItem("notifications", JSON.stringify(notifications));
     
 
     
@@ -382,15 +378,12 @@ export async function acceptSampleRequest(id, plannedDeliveryDate, remarks, proc
     const updatedRequest = { id, ...currentData, ...updatePayload, history };
 
     // Add in-app notification
-    await addDoc(collection(db, "notifications"), {
+    await createNotification({
       userId: currentData.createdByUid || null,
       role: currentData.createdByUid ? null : "sample_marketing",
       sampleRequestId: id,
       sampleRequestNo: currentData.sampleRequestNo,
-      message: `Sample request #${currentData.sampleRequestNo} has been accepted. Planned delivery: ${plannedDeliveryDate}`,
-      read: false,
-      readBy: [],
-      createdAt: Timestamp.now()
+      message: `Sample request #${currentData.sampleRequestNo} has been accepted. Planned delivery: ${plannedDeliveryDate}`
     });
 
 
@@ -429,19 +422,13 @@ export async function requestMoreInfo(id, remarks, processedBy = "Sample Team") 
     window.dispatchEvent(new Event("storage"));
 
     // Add in-app notification
-    const notifications = JSON.parse(localStorage.getItem("notifications") || "[]");
-    notifications.push({
-      id: `not-${Date.now()}`,
+    await createNotification({
       userId: updated.createdByUid || null,
       role: updated.createdByUid ? null : "sample_marketing",
       sampleRequestId: updated.id,
       sampleRequestNo: updated.sampleRequestNo,
-      message: `More information requested for sample request #${updated.sampleRequestNo}: "${remarks}"`,
-      read: false,
-      readBy: [],
-      createdAt: nowISO
+      message: `More information requested for sample request #${updated.sampleRequestNo}: "${remarks}"`
     });
-    localStorage.setItem("notifications", JSON.stringify(notifications));
     
 
     
@@ -465,15 +452,12 @@ export async function requestMoreInfo(id, remarks, processedBy = "Sample Team") 
     const updatedRequest = { id, ...currentData, ...updatePayload, history };
 
     // Add in-app notification
-    await addDoc(collection(db, "notifications"), {
+    await createNotification({
       userId: currentData.createdByUid || null,
       role: currentData.createdByUid ? null : "sample_marketing",
       sampleRequestId: id,
       sampleRequestNo: currentData.sampleRequestNo,
-      message: `More information requested for sample request #${currentData.sampleRequestNo}: "${remarks}"`,
-      read: false,
-      readBy: [],
-      createdAt: Timestamp.now()
+      message: `More information requested for sample request #${currentData.sampleRequestNo}: "${remarks}"`
     });
 
 
@@ -512,19 +496,13 @@ export async function resubmitSampleRequest(id, updatedData, user) {
     window.dispatchEvent(new Event("storage"));
 
     // Add in-app notification targeting sample team
-    const notifications = JSON.parse(localStorage.getItem("notifications") || "[]");
-    notifications.push({
-      id: `not-${Date.now()}`,
+    await createNotification({
       userId: null,
       role: "sample",
       sampleRequestId: updated.id,
       sampleRequestNo: updated.sampleRequestNo,
-      message: `Sample request #${updated.sampleRequestNo} has been resubmitted with updates.`,
-      read: false,
-      readBy: [],
-      createdAt: nowISO
+      message: `Sample request #${updated.sampleRequestNo} has been resubmitted with updates.`
     });
-    localStorage.setItem("notifications", JSON.stringify(notifications));
 
     return updated;
   } else {
@@ -546,15 +524,12 @@ export async function resubmitSampleRequest(id, updatedData, user) {
     const updatedRequest = { id, ...currentData, ...updatePayload, history };
 
     // Add in-app notification targeting sample team
-    await addDoc(collection(db, "notifications"), {
+    await createNotification({
       userId: null,
       role: "sample",
       sampleRequestId: id,
       sampleRequestNo: currentData.sampleRequestNo,
-      message: `Sample request #${currentData.sampleRequestNo} has been resubmitted with updates.`,
-      read: false,
-      readBy: [],
-      createdAt: Timestamp.now()
+      message: `Sample request #${currentData.sampleRequestNo} has been resubmitted with updates.`
     });
 
     return updatedRequest;
@@ -601,19 +576,13 @@ export async function completeSampleRequest(id, completionData, completedBy) {
     window.dispatchEvent(new Event("storage"));
 
     // Add in-app notification targeting marketing creator
-    const notifications = JSON.parse(localStorage.getItem("notifications") || "[]");
-    notifications.push({
-      id: `not-${Date.now()}`,
+    await createNotification({
       userId: updated.createdByUid || null,
       role: updated.createdByUid ? null : "sample_marketing",
       sampleRequestId: updated.id,
       sampleRequestNo: updated.sampleRequestNo,
-      message: `Sample request #${updated.sampleRequestNo} has been completed successfully!`,
-      read: false,
-      readBy: [],
-      createdAt: nowISO
+      message: `Sample request #${updated.sampleRequestNo} has been completed successfully!`
     });
-    localStorage.setItem("notifications", JSON.stringify(notifications));
     
 
     
@@ -643,15 +612,12 @@ export async function completeSampleRequest(id, completionData, completedBy) {
     const updatedRequest = { id, ...currentData, ...updatePayload, attachments: mergedAttachments, history };
 
     // Add in-app notification targeting marketing creator
-    await addDoc(collection(db, "notifications"), {
+    await createNotification({
       userId: currentData.createdByUid || null,
       role: currentData.createdByUid ? null : "sample_marketing",
       sampleRequestId: id,
       sampleRequestNo: currentData.sampleRequestNo,
-      message: `Sample request #${currentData.sampleRequestNo} has been completed successfully!`,
-      read: false,
-      readBy: [],
-      createdAt: Timestamp.now()
+      message: `Sample request #${currentData.sampleRequestNo} has been completed successfully!`
     });
 
 

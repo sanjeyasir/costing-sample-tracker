@@ -153,7 +153,7 @@ export default function Dashboard() {
         {/* KPI Cards Grid */}
         <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
           {kpis.map((card, i) => (
-            <Col xs={12} sm={8} lg={3} key={i}>
+            <Col xs={12} sm={8} md={6} lg={3} key={i}>
               <Card
                 hoverable
                 onClick={() => card.query && navigate(`/requests?${card.query}`)}
@@ -177,6 +177,7 @@ export default function Dashboard() {
                   rowKey="id"
                   pagination={false}
                   size="small"
+                  scroll={{ x: "max-content" }}
                   columns={[
                     { title: "No.", dataIndex: "sampleRequestNo", key: "sampleRequestNo", render: (t) => <strong style={{ color: "#6366f1" }}>{t}</strong> },
                     { title: "Customer", dataIndex: "customerName", key: "customerName" },
@@ -202,6 +203,7 @@ export default function Dashboard() {
                   rowKey="id"
                   pagination={false}
                   size="small"
+                  scroll={{ x: "max-content" }}
                   columns={[
                     { title: "No.", dataIndex: "sampleRequestNo", key: "sampleRequestNo", render: (t) => <strong style={{ color: "#6366f1" }}>{t}</strong> },
                     { title: "Customer", dataIndex: "customerName", key: "customerName" },
@@ -287,7 +289,7 @@ export default function Dashboard() {
         {/* KPI Cards Grid */}
         <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
           {kpis.map((card, i) => (
-            <Col xs={12} sm={8} lg={4.8} key={i}>
+            <Col xs={12} sm={8} md={6} lg={4} key={i}>
               <Card
                 hoverable
                 onClick={() => navigate(`/costing-requests`)}
@@ -310,6 +312,7 @@ export default function Dashboard() {
                 rowKey="id"
                 pagination={false}
                 size="small"
+                scroll={{ x: "max-content" }}
                 columns={[
                   { title: "No.", dataIndex: "costRequestNo", key: "costRequestNo", render: (t) => <strong style={{ color: "#6366f1" }}>#{t}</strong> },
                   { title: "Customer", dataIndex: "customerName", key: "customerName" },
@@ -334,6 +337,7 @@ export default function Dashboard() {
                 rowKey="id"
                 pagination={false}
                 size="small"
+                scroll={{ x: "max-content" }}
                 columns={[
                   { title: "No.", dataIndex: "costRequestNo", key: "costRequestNo", render: (t) => <strong>#{t}</strong> },
                   { title: "Customer", dataIndex: "customerName", key: "customerName" },

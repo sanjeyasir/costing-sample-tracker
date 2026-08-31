@@ -14,6 +14,7 @@ import {
 } from "firebase/firestore";
 import { db, isMockMode } from "./config";
 import { initializeLocalStorageState } from "./mockData";
+import { createNotification, sendEmailNotification } from "./notificationService";
 
 if (isMockMode) {
   initializeLocalStorageState();
@@ -180,19 +181,13 @@ export async function createCostingRequest(requestData, currentUser) {
     localStorage.setItem("costRequests", JSON.stringify(requests));
 
     // Save notification
-    const notifications = JSON.parse(localStorage.getItem("notifications") || "[]");
-    notifications.push({
-      id: `not-${Date.now()}`,
+    await createNotification({
       userId: null,
       role: "finance",
       costRequestId: newRequest.id,
       costRequestNo: costRequestNo,
-      message: `New costing request #${costRequestNo} is awaiting Finance.`,
-      read: false,
-      readBy: [],
-      createdAt: nowStr
+      message: `New costing request #${costRequestNo} is awaiting Finance.`
     });
-    localStorage.setItem("notifications", JSON.stringify(notifications));
 
     return {
       success: true,
@@ -274,6 +269,15 @@ export async function createCostingRequest(requestData, currentUser) {
           id: requestRef.id,
           costRequestNo: costRequestNo
         };
+      });
+
+      // Dispatch email notification after successful transaction
+      sendEmailNotification({
+        userId: null,
+        role: "finance",
+        costRequestId: result.id,
+        costRequestNo: result.costRequestNo,
+        message: `New costing request #${result.costRequestNo} is awaiting Finance.`
       });
 
       return {
@@ -548,19 +552,13 @@ export async function completeCostingRequest(requestId, costingData) {
 
 
     // Create notification for Marketing Officer
-    const notifications = JSON.parse(localStorage.getItem("notifications") || "[]");
-    notifications.push({
-      id: `not-${Date.now()}`,
+    await createNotification({
       userId: req.marketingOfficer.uid,
       role: null,
       costRequestId: req.id,
       costRequestNo: req.costRequestNo,
-      message: `Costing request #${req.costRequestNo} has been completed.`,
-      read: false,
-      readBy: [],
-      createdAt: now.toISOString()
+      message: `Costing request #${req.costRequestNo} has been completed.`
     });
-    localStorage.setItem("notifications", JSON.stringify(notifications));
 
     return req;
   } else {
@@ -573,19 +571,13 @@ export async function completeCostingRequest(requestId, costingData) {
 
     const completedReq = await getCostingRequestById(requestId);
 
-
-
     // Create notification document in Firestore
-    const notificationRef = collection(db, "notifications");
-    await addDoc(notificationRef, {
+    await createNotification({
       userId: completedReq.marketingOfficer.uid,
       role: null,
       costRequestId: requestId,
       costRequestNo: completedReq.costRequestNo,
-      message: `Costing request #${completedReq.costRequestNo} has been completed.`,
-      read: false,
-      readBy: [],
-      createdAt: Timestamp.fromDate(now)
+      message: `Costing request #${completedReq.costRequestNo} has been completed.`
     });
 
     return completedReq;

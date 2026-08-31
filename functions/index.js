@@ -2,6 +2,7 @@ const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 const { getFirestore, Timestamp } = require("firebase-admin/firestore");
 const { getAuth } = require("firebase-admin/auth");
+const nodemailer = require("nodemailer");
 
 admin.initializeApp();
 const db = getFirestore();
@@ -321,6 +322,76 @@ exports.adminApprovePasswordReset = functions.https.onCall(async (data, context)
     throw new functions.https.HttpsError(
       "internal",
       `Failed to reset password: ${error.message}`
+    );
+  }
+});
+
+let transporter;
+const getTransporter = () => {
+  if (transporter) return transporter;
+  transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: "chasphayleys@gmail.com",
+      pass: "fjcd qmuy epfk pwhb"
+    }
+  });
+  return transporter;
+};
+
+/**
+ * Cloud Function to securely send email notifications using Gmail SMTP.
+ * Callable from client.
+ */
+exports.sendEmailViaSMTP = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError(
+      "unauthenticated",
+      "Authentication is required to send emails."
+    );
+  }
+
+  const { to, subject, html } = data;
+  if (!to || !subject || !html) {
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "Recipient (to), subject, and HTML body are required."
+    );
+  }
+
+  let targetEmail = to;
+  if (to.toLowerCase() === "admin@gmail.com") {
+    targetEmail = "Sanjey.Asirvatham@hayleysfibre.com";
+  }
+
+  try {
+    const mailTransporter = getTransporter();
+    const info = await mailTransporter.sendMail({
+      from: '"Hayfibre Operations" <chasphayleys@gmail.com>',
+      to: targetEmail,
+      subject,
+      html,
+    });
+
+    // Save sent email record in Firestore emails collection
+    await db.collection("emails").add({
+      to,
+      message: {
+        subject,
+        html
+      },
+      template: "system_notification",
+      createdAt: new Date().toISOString(),
+      status: "sent",
+      messageId: info.messageId || null
+    });
+
+    return { success: true, data: { id: info.messageId } };
+  } catch (error) {
+    console.error("Failed to send email via Gmail SMTP: ", error);
+    throw new functions.https.HttpsError(
+      "internal",
+      `Gmail SMTP email delivery failed: ${error.message}`
     );
   }
 });

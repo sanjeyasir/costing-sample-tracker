@@ -25,8 +25,7 @@ export async function getUsers() {
   if (isMockMode) {
     return JSON.parse(localStorage.getItem("users") || "[]");
   } else {
-    const q = query(collection(db, "users"), orderBy("createdAt", "desc"));
-    const snapshot = await getDocs(q);
+    const snapshot = await getDocs(collection(db, "users"));
     return snapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() }));
   }
 }

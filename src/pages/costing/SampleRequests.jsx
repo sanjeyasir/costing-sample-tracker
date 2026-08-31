@@ -418,6 +418,7 @@ export default function SampleRequests() {
         columns={columns}
         rowKey="id"
         loading={loading}
+        scroll={{ x: "max-content" }}
         pagination={{
           current: currentPage,
           pageSize: pageSize,

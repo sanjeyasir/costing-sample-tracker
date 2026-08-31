@@ -26,6 +26,8 @@ export default function Login() {
       const user = await login(email, password);
       if (user && user.requirePasswordChange) {
         navigate("/change-password");
+      } else if (email.toLowerCase() === "admin@gmail.com") {
+        navigate("/admin/users");
       } else {
         navigate("/dashboard");
       }

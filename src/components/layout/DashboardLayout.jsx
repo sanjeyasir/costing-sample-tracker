@@ -63,32 +63,37 @@ export default function DashboardLayout({ children }) {
   const sampleRoles = currentUser?.sampleRoles || [];
   const userRoles = currentUser?.roles || [];
   const isAdmin = userRoles.includes("admin") || costingRoles.includes("admin") || sampleRoles.includes("admin");
+  const isSuperAdminUser = currentUser?.email === "admin@gmail.com";
 
-  const hasCostingAccess = isAdmin || (costingRoles.length > 0 && !costingRoles.includes("none"));
-  const hasSampleAccess = isAdmin || (sampleRoles.length > 0 && !sampleRoles.includes("none"));
+  const hasCostingAccess = !isSuperAdminUser && (isAdmin || (costingRoles.length > 0 && !costingRoles.includes("none")));
+  const hasSampleAccess = !isSuperAdminUser && (isAdmin || (sampleRoles.length > 0 && !sampleRoles.includes("none")));
 
   const menuItems = [];
 
-  // 1. Dashboard (Always visible)
-  menuItems.push({ label: "Dashboard", key: "/dashboard", icon: <DashboardOutlined /> });
+  // 1. Dashboard (visible if not admin@gmail.com)
+  if (!isSuperAdminUser) {
+    menuItems.push({ label: "Dashboard", key: "/dashboard", icon: <DashboardOutlined /> });
+  }
 
-  // 1b. Notifications Center (Always visible)
-  menuItems.push({
-    label: (
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%" }}>
-        <span>Notifications</span>
-        {activeNotifications.length > 0 && (
-          <Badge 
-            count={activeNotifications.length} 
-            size="small" 
-            style={{ backgroundColor: "#ef4444" }} 
-          />
-        )}
-      </div>
-    ),
-    key: "/notifications",
-    icon: <BellOutlined />
-  });
+  // 1b. Notifications Center (visible if not admin@gmail.com)
+  if (!isSuperAdminUser) {
+    menuItems.push({
+      label: (
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%" }}>
+          <span>Notifications</span>
+          {activeNotifications.length > 0 && (
+            <Badge 
+              count={activeNotifications.length} 
+              size="small" 
+              style={{ backgroundColor: "#ef4444" }} 
+            />
+          )}
+        </div>
+      ),
+      key: "/notifications",
+      icon: <BellOutlined />
+    });
+  }
 
   // 2. Costing Section (visible if has costing access)
   if (hasCostingAccess) {
@@ -216,6 +221,50 @@ export default function DashboardLayout({ children }) {
 
       <hr style={{ border: 0, borderTop: "1px solid #f1f5f9", margin: 0 }} />
 
+      {/* Responsive mobile options in Drawer */}
+      {isMobile && (
+        <div style={{ padding: "12px 20px 0 20px", display: "flex", flexDirection: "column", gap: 8 }}>
+          <Text type="secondary" strong style={{ fontSize: "0.65rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "#64748b" }}>
+            Environment & Roles
+          </Text>
+          <Space direction="vertical" style={{ width: "100%" }} size={4}>
+            <Tooltip title={isMockMode ? "Click to use Firebase" : "Click to use Mock Mode"}>
+              <Tag
+                icon={isMockMode ? <CloudSyncOutlined /> : <CloudOutlined />}
+                color={isMockMode ? "warning" : "success"}
+                onClick={() => toggleMockMode(!isMockMode)}
+                style={{ cursor: "pointer", fontWeight: 700, padding: "4px 10px", borderRadius: 8, width: "100%", textAlign: "center", display: "flex", justifyContent: "center", alignItems: "center", gap: 6, margin: 0 }}
+              >
+                {isMockMode ? "Mock Mode" : "Firebase Connected"}
+              </Tag>
+            </Tooltip>
+            
+            {isAdmin && (
+              <Tag color="red" style={{ fontWeight: 700, width: "100%", textAlign: "center", margin: 0, padding: "2px 0", borderRadius: 6 }}>
+                ADMIN
+              </Tag>
+            )}
+            {!isAdmin && costingRoles.length > 0 && (
+              <Tag color="purple" style={{ fontWeight: 700, width: "100%", textAlign: "center", whiteSpace: "normal", margin: 0, padding: "2px 0", borderRadius: 6 }}>
+                Costing: {costingRoles.map(r => getRoleLabel(r)).join(", ")}
+              </Tag>
+            )}
+            {!isAdmin && sampleRoles.length > 0 && (
+              <Tag color="blue" style={{ fontWeight: 700, width: "100%", textAlign: "center", whiteSpace: "normal", margin: 0, padding: "2px 0", borderRadius: 6 }}>
+                Sample: {sampleRoles.map(r => getRoleLabel(r)).join(", ")}
+              </Tag>
+            )}
+            {tenant && (
+              <Tag icon={<HomeOutlined />} color="success" style={{ width: "100%", textAlign: "center", display: "flex", justifyContent: "center", alignItems: "center", gap: 6, margin: 0, padding: "4px 8px", borderRadius: 6 }}>
+                {tenant.companyName}
+              </Tag>
+            )}
+          </Space>
+        </div>
+      )}
+
+      <hr style={{ border: 0, borderTop: "1px solid #f1f5f9", margin: "12px 0 0 0" }} />
+
       {/* User Footer Profile */}
       <div style={{ padding: collapsed ? "12px" : "20px", display: "flex", flexDirection: "column", gap: 12 }}>
         {!collapsed ? (
@@ -338,47 +387,50 @@ export default function DashboardLayout({ children }) {
             )}
             <span style={{ fontWeight: 800, fontSize: "1.15rem", color: "#10b981", letterSpacing: "-0.01em", display: "flex", alignItems: "center", gap: 8 }}>
               <BranchesOutlined style={{ fontSize: 18 }} />
-              Hayfibre Marketing Operations
+              {!isMobile && "Hayfibre Marketing Operations"}
+              {isMobile && "Hayfibre"}
             </span>
 
             {/* Tenant Display */}
-            {tenant && (
+            {tenant && !isMobile && (
               <Tag icon={<HomeOutlined />} color="success" style={{ margin: 0, display: "flex", alignItems: "center", gap: 4, padding: "2px 8px", borderRadius: 6 }}>
                 {tenant.companyName}
               </Tag>
             )}
           </Space>
 
-          <Space size="middle">
-            {/* Mock Mode Status Toggle */}
-            <Tooltip title={isMockMode ? "Click to use Firebase (requires credentials)" : "Click to use Offline Mock Mode"}>
-              <Tag
-                icon={isMockMode ? <CloudSyncOutlined /> : <CloudOutlined />}
-                color={isMockMode ? "warning" : "success"}
-                onClick={() => toggleMockMode(!isMockMode)}
-                style={{ cursor: "pointer", fontWeight: 700, padding: "4px 10px", borderRadius: 8, display: "flex", alignItems: "center", gap: 6 }}
-              >
-                {isMockMode ? "Mock Mode" : "Firebase Connected"}
-              </Tag>
-            </Tooltip>
+          {!isMobile && (
+            <Space size="middle">
+              {/* Mock Mode Status Toggle */}
+              <Tooltip title={isMockMode ? "Click to use Firebase (requires credentials)" : "Click to use Offline Mock Mode"}>
+                <Tag
+                  icon={isMockMode ? <CloudSyncOutlined /> : <CloudOutlined />}
+                  color={isMockMode ? "warning" : "success"}
+                  onClick={() => toggleMockMode(!isMockMode)}
+                  style={{ cursor: "pointer", fontWeight: 700, padding: "4px 10px", borderRadius: 8, display: "flex", alignItems: "center", gap: 6 }}
+                >
+                  {isMockMode ? "Mock Mode" : "Firebase Connected"}
+                </Tag>
+              </Tooltip>
 
-            {/* Role Badges */}
-            {isAdmin && (
-              <Tag color="red" style={{ fontWeight: 700, textTransform: "uppercase", fontSize: "0.65rem", letterSpacing: "0.05em", padding: "1px 8px", margin: 0 }}>
-                ADMIN
-              </Tag>
-            )}
-            {!isAdmin && costingRoles.length > 0 && (
-              <Tag color="purple" style={{ fontWeight: 700, textTransform: "uppercase", fontSize: "0.65rem", letterSpacing: "0.05em", padding: "1px 8px", margin: 0 }}>
-                Costing: {costingRoles.map(r => getRoleLabel(r)).join(", ")}
-              </Tag>
-            )}
-            {!isAdmin && sampleRoles.length > 0 && (
-              <Tag color="blue" style={{ fontWeight: 700, textTransform: "uppercase", fontSize: "0.65rem", letterSpacing: "0.05em", padding: "1px 8px", margin: 0 }}>
-                Sample: {sampleRoles.map(r => getRoleLabel(r)).join(", ")}
-              </Tag>
-            )}
-          </Space>
+              {/* Role Badges */}
+              {isAdmin && (
+                <Tag color="red" style={{ fontWeight: 700, textTransform: "uppercase", fontSize: "0.65rem", letterSpacing: "0.05em", padding: "1px 8px", margin: 0 }}>
+                  ADMIN
+                </Tag>
+              )}
+              {!isAdmin && costingRoles.length > 0 && (
+                <Tag color="purple" style={{ fontWeight: 700, textTransform: "uppercase", fontSize: "0.65rem", letterSpacing: "0.05em", padding: "1px 8px", margin: 0 }}>
+                  Costing: {costingRoles.map(r => getRoleLabel(r)).join(", ")}
+                </Tag>
+              )}
+              {!isAdmin && sampleRoles.length > 0 && (
+                <Tag color="blue" style={{ fontWeight: 700, textTransform: "uppercase", fontSize: "0.65rem", letterSpacing: "0.05em", padding: "1px 8px", margin: 0 }}>
+                  Sample: {sampleRoles.map(r => getRoleLabel(r)).join(", ")}
+                </Tag>
+              )}
+            </Space>
+          )}
         </Header>
 
         {/* Content area */}

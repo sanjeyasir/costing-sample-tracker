@@ -294,6 +294,7 @@ export default function Categories() {
                 rowKey="key"
                 pagination={false}
                 size="small"
+                scroll={{ x: "max-content" }}
                 style={{ background: "transparent" }}
               />
             </Card>
@@ -432,6 +433,7 @@ export default function Categories() {
               rowKey="key"
               pagination={false}
               size="small"
+              scroll={{ x: "max-content" }}
               style={{
                 background: "#ffffff",
                 border: "1px solid #e2e8f0",
