@@ -265,6 +265,107 @@ exports.adminApprovePasswordReset = functions.https.onCall(async (data, context)
     );
   }
 
+  const { requestId, tempPassword } = data;
+  if (!requestId || !tempPassword) {
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "Request ID and Temporary Password are required."
+    );
+  }
+
+  try {
+    const docRef = db.collection("password_resets").doc(requestId);
+    const docSnap = await docRef.get();
+    if (!docSnap.exists) {
+      throw new functions.https.HttpsError(
+        "not-found",
+        "Reset request not found."
+      );
+    }
+    const resetData = docSnap.data();
+
+    // Find the user by email case-insensitively in Firestore
+    const targetEmailLower = (resetData.email || "").toLowerCase();
+    const usersSnap = await db.collection("users").get();
+    const userDoc = usersSnap.docs.find(d => {
+      const uEmail = d.data().email;
+      return uEmail && uEmail.toLowerCase() === targetEmailLower;
+    });
+
+    if (!userDoc) {
+      throw new functions.https.HttpsError(
+        "not-found",
+        "No registered user account found with this email."
+      );
+    }
+    const userUid = userDoc.id;
+    const userEmail = userDoc.data().email;
+
+    // Reset password in Firebase Auth to the temporary password
+    await getAuth().updateUser(userUid, {
+      password: tempPassword
+    });
+
+    // Send the email with the temporary password
+    const mailTransporter = getTransporter();
+    await mailTransporter.sendMail({
+      from: '"Hayfibre Operations" <chasphayleys@gmail.com>',
+      to: userEmail,
+      subject: "Password Reset Request Approved",
+      html: `
+        <p>Hello,</p>
+        <p>Your password reset request has been approved.</p>
+        <p>Your password has been reset to a temporary password: <strong>${tempPassword}</strong></p>
+        <p>Please log in using this temporary password. You will be prompted to reset it to a password of your choice on your first login.</p>
+        <br/>
+        <p style="font-size: 11px; color: #666666;">
+          This is an automated notification from the Costing & Sample Tracking System. Please do not reply directly to this email.
+        </p>
+      `
+    });
+
+    // Update requirePasswordChange flag in user document
+    await db.collection("users").doc(userUid).update({
+      requirePasswordChange: true
+    });
+
+    // Delete the reset request doc
+    await docRef.delete();
+
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to reset password: ", error);
+    throw new functions.https.HttpsError(
+      "internal",
+      `Failed to reset password: ${error.message}`
+    );
+  }
+});
+
+/**
+ * Cloud Function to securely delete a password reset request. (Admin only)
+ */
+exports.adminDeletePasswordReset = functions.https.onCall(async (data, context) => {
+  // 1. Ensure caller is authenticated and has Admin role
+  if (!context.auth) {
+    throw new functions.https.HttpsError(
+      "unauthenticated",
+      "Authentication is required."
+    );
+  }
+
+  const callerUid = context.auth.uid;
+  const callerDoc = await db.collection("users").doc(callerUid).get();
+  
+  const callerRole = callerDoc.data().role;
+  const isCallerAdmin = Array.isArray(callerRole) ? callerRole.includes("admin") : callerRole === "admin";
+  if (!callerDoc.exists || !isCallerAdmin) {
+    throw new functions.https.HttpsError(
+      "permission-denied",
+      "Only Administrators can delete password resets."
+    );
+  }
+
   const { requestId } = data;
   if (!requestId) {
     throw new functions.https.HttpsError(
@@ -282,46 +383,16 @@ exports.adminApprovePasswordReset = functions.https.onCall(async (data, context)
         "Reset request not found."
       );
     }
-    const resetData = docSnap.data();
 
-    // Find the user by email in firestore
-    const usersSnap = await db.collection("users")
-      .where("email", "==", resetData.email)
-      .limit(1)
-      .get();
-
-    if (usersSnap.empty) {
-      throw new functions.https.HttpsError(
-        "not-found",
-        "No registered user account found with this email."
-      );
-    }
-    const userDoc = usersSnap.docs[0];
-    const userUid = userDoc.id;
-
-    // Reset password in Firebase Auth to welcome123
-    const tempPassword = "welcome123";
-    await getAuth().updateUser(userUid, {
-      password: tempPassword
-    });
-
-    // Update requirePasswordChange flag in user document
-    await db.collection("users").doc(userUid).update({
-      requirePasswordChange: true
-    });
-
-    // Mark the reset request doc as APPROVED
-    await docRef.update({
-      status: "APPROVED",
-      approvedAt: Timestamp.now()
-    });
+    // Delete the reset request doc
+    await docRef.delete();
 
     return { success: true };
   } catch (error) {
-    console.error("Failed to reset password: ", error);
+    console.error("Failed to delete password reset request: ", error);
     throw new functions.https.HttpsError(
       "internal",
-      `Failed to reset password: ${error.message}`
+      `Failed to delete password reset request: ${error.message}`
     );
   }
 });

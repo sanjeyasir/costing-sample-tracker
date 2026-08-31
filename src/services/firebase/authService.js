@@ -405,7 +405,7 @@ export async function getPendingPasswordResets() {
 /**
  * Approve a password reset request and trigger the reset email
  */
-export async function approvePasswordReset(requestId) {
+export async function approvePasswordReset(requestId, tempPassword) {
   if (isMockMode) {
     const resets = JSON.parse(localStorage.getItem("password_resets") || "[]");
     const index = resets.findIndex(r => r.id === requestId);
@@ -418,20 +418,40 @@ export async function approvePasswordReset(requestId) {
     const users = JSON.parse(localStorage.getItem("users") || "[]");
     const userIndex = users.findIndex(u => u.email.toLowerCase() === resetData.email.toLowerCase());
     if (userIndex !== -1) {
-      users[userIndex].password = "welcome123";
+      users[userIndex].password = tempPassword || "welcome123";
       users[userIndex].requirePasswordChange = true;
       localStorage.setItem("users", JSON.stringify(users));
     }
 
-    resets[index].status = "APPROVED";
-    resets[index].approvedAt = new Date().toISOString();
+    // Delete the reset request from resets list
+    resets.splice(index, 1);
     localStorage.setItem("password_resets", JSON.stringify(resets));
     window.dispatchEvent(new Event("storage"));
     return true;
   } else {
     // Call the secure Firebase cloud function to update Auth credentials and database flags
     const adminApprovePasswordResetFunc = httpsCallable(functions, "adminApprovePasswordReset");
-    await adminApprovePasswordResetFunc({ requestId });
+    await adminApprovePasswordResetFunc({ requestId, tempPassword });
+    return true;
+  }
+}
+
+/**
+ * Delete a password reset request without resetting the password (Admin only)
+ */
+export async function deletePasswordReset(requestId) {
+  if (isMockMode) {
+    const resets = JSON.parse(localStorage.getItem("password_resets") || "[]");
+    const index = resets.findIndex(r => r.id === requestId);
+    if (index !== -1) {
+      resets.splice(index, 1);
+      localStorage.setItem("password_resets", JSON.stringify(resets));
+      window.dispatchEvent(new Event("storage"));
+    }
+    return true;
+  } else {
+    const adminDeletePasswordResetFunc = httpsCallable(functions, "adminDeletePasswordReset");
+    await adminDeletePasswordResetFunc({ requestId });
     return true;
   }
 }

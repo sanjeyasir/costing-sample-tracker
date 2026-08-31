@@ -326,27 +326,23 @@ export async function sendEmailNotification(notificationData) {
     // 3. Prepare email content
     const isCost = !!notificationData.costRequestId;
     const reqNo = notificationData.costRequestNo || notificationData.sampleRequestNo || "N/A";
-    const subject = `Request - ${reqNo}`;
+    const subject = "Request";
 
     const htmlBody = `
-      <div style="font-family: Arial, sans-serif; font-size: 14px; line-height: 1.5; color: #333333; max-width: 600px; margin: 0 auto; padding: 10px;">
-        <p>Hello,</p>
-        <p>A new system update has been logged in the Costing & Sample Tracking System:</p>
-        
-        <blockquote style="margin: 15px 0; padding: 10px 15px; border-left: 4px solid #10b981; background-color: #f8fafc; font-size: 14px;">
-          <strong>Request Type:</strong> ${isCost ? 'Costing Request' : 'Sample Request'}<br/>
-          <strong>Reference No:</strong> ${reqNo}<br/>
-          <strong>Details:</strong> ${notificationData.message}
-        </blockquote>
+      <p>Hello,</p>
+      <p>A new system update has been logged in the Costing & Sample Tracking System:</p>
+      
+      <p>
+        <strong>Request Type:</strong> ${isCost ? 'Costing Request' : 'Sample Request'}<br/>
+        <strong>Reference No:</strong> ${reqNo}<br/>
+        <strong>Details:</strong> ${notificationData.message}
+      </p>
 
-        <p>Please log in to the tracking portal to review the request details.</p>
-        
-        <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;"/>
-        <p style="font-size: 11px; color: #666666;">
-          This is an automated notification from the Hayleys Fibre Costing & Sample Tracking System.<br/>
-          Please do not reply directly to this email.
-        </p>
-      </div>
+      <p>Please log in to the tracking portal to review the request details.</p>
+      
+      <p style="font-size: 11px; color: #666666;">
+        This is an automated notification from the Hayleys Fibre Costing & Sample Tracking System. Please do not reply directly to this email.
+      </p>
     `;
 
     // 4. Send email to each recipient

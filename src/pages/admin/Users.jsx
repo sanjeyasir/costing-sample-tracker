@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import * as userService from "../../services/firebase/userService";
 import { Table, Select, Switch, Alert, Spin, Button, Modal, Form, Input, Card, Space, Typography, Row, Col, Tabs, Tag, Checkbox } from "antd";
 import { UserAddOutlined, LockOutlined, MailOutlined, SafetyOutlined, FolderAddOutlined, DeleteOutlined, EditOutlined } from "@ant-design/icons";
-import { getPendingPasswordResets, approvePasswordReset } from "../../services/firebase/authService";
+import { getPendingPasswordResets, approvePasswordReset, deletePasswordReset } from "../../services/firebase/authService";
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -78,16 +78,62 @@ export default function Users() {
   };
 
   const handleApproveReset = async (requestId, email) => {
-    try {
-      setError("");
-      setSuccess("");
-      await approvePasswordReset(requestId);
-      setSuccess(`Password reset email successfully sent to ${email}.`);
-      loadResetRequests();
-    } catch (err) {
-      console.error("Error approving reset:", err);
-      setError(err.message || "Failed to approve password reset request.");
-    }
+    let tempPassVal = "welcome123";
+    Modal.confirm({
+      title: "Approve Password Reset",
+      content: (
+        <div style={{ marginTop: 10 }}>
+          <p>Please enter the temporary password to set for <strong>{email}</strong>:</p>
+          <Input 
+            defaultValue="welcome123" 
+            placeholder="Temporary Password" 
+            onChange={(e) => { tempPassVal = e.target.value; }}
+            style={{ borderRadius: 6 }}
+          />
+        </div>
+      ),
+      okText: "Approve & Set Password",
+      cancelText: "Cancel",
+      onOk: async () => {
+        const passwordToSet = tempPassVal ? tempPassVal.trim() : "";
+        if (!passwordToSet) {
+          throw new Error("Password cannot be empty.");
+        }
+        try {
+          setError("");
+          setSuccess("");
+          await approvePasswordReset(requestId, passwordToSet);
+          setSuccess(`Password reset to "${passwordToSet}" and email successfully sent to ${email}.`);
+          loadResetRequests();
+        } catch (err) {
+          console.error("Error approving reset:", err);
+          setError(err.message || "Failed to approve password reset request.");
+          throw err;
+        }
+      }
+    });
+  };
+
+  const handleDeleteReset = async (requestId, email) => {
+    Modal.confirm({
+      title: "Delete Password Reset Request",
+      content: `Are you sure you want to delete the password reset request for ${email}?`,
+      okText: "Delete",
+      okType: "danger",
+      cancelText: "Cancel",
+      onOk: async () => {
+        try {
+          setError("");
+          setSuccess("");
+          await deletePasswordReset(requestId);
+          setSuccess(`Password reset request for ${email} has been deleted.`);
+          loadResetRequests();
+        } catch (err) {
+          console.error("Error deleting reset request:", err);
+          setError(err.message || "Failed to delete password reset request.");
+        }
+      }
+    });
   };
 
   const loadUsers = async () => {
@@ -318,14 +364,24 @@ export default function Users() {
       key: "action",
       align: "right",
       render: (_, record) => (
-        <Button
-          type="primary"
-          ghost
-          onClick={() => handleApproveReset(record.id, record.email)}
-          style={{ borderRadius: 6, borderColor: "#10b981", color: "#10b981" }}
-        >
-          Approve & Send Reset Link
-        </Button>
+        <Space size="middle">
+          <Button
+            type="primary"
+            ghost
+            onClick={() => handleApproveReset(record.id, record.email)}
+            style={{ borderRadius: 6, borderColor: "#10b981", color: "#10b981" }}
+          >
+            Approve & Set Password
+          </Button>
+          <Button
+            type="text"
+            danger
+            onClick={() => handleDeleteReset(record.id, record.email)}
+            style={{ borderRadius: 6 }}
+          >
+            Delete
+          </Button>
+        </Space>
       )
     }
   ];
