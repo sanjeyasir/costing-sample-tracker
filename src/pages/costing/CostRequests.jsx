@@ -3,14 +3,16 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import * as costingService from "../../services/firebase/costingService";
 import * as XLSX from "xlsx";
-import { Table, Input, Select, Button, Tag, Space, Tooltip, DatePicker, Row, Col, Card, Alert, Typography } from "antd";
+import { Table, Input, Select, Button, Tag, Space, Tooltip, DatePicker, Row, Col, Card, Alert, Typography, Tabs } from "antd";
 import {
   SearchOutlined,
   FilterOutlined,
   DownloadOutlined,
   EyeOutlined,
   PlayCircleOutlined,
-  CheckCircleOutlined
+  CheckCircleOutlined,
+  UnorderedListOutlined,
+  UserOutlined
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 
@@ -26,6 +28,9 @@ export default function CostRequests() {
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  // View state: "all" or "my"
+  const view = searchParams.get("view") === "my" ? "my" : "all";
 
   // Filter States
   const [search, setSearch] = useState("");
@@ -54,7 +59,7 @@ export default function CostRequests() {
         const cats = await costingService.getProductCategories();
         setCategories(cats);
 
-        // Fetch requests based on role and active filters
+        // Fetch requests based on active filters
         const filters = {
           search,
           status,
@@ -62,10 +67,6 @@ export default function CostRequests() {
           dateFrom: dateFrom ? dateFrom.format("YYYY-MM-DD") : "",
           dateTo: dateTo ? dateTo.format("YYYY-MM-DD") : ""
         };
-
-        if (currentUser.costingRoles?.includes("costing_marketing")) {
-          filters.marketingOfficerUid = currentUser.uid;
-        }
 
         const data = await costingService.getCostingRequests(filters);
         setRequests(data);
@@ -77,7 +78,7 @@ export default function CostRequests() {
       }
     }
     loadData();
-  }, [currentUser, search, status, productUnit, dateFrom, dateTo]);
+  }, [search, status, productUnit, dateFrom, dateTo]);
 
   const handleClearFilters = () => {
     setSearch("");
@@ -85,9 +86,63 @@ export default function CostRequests() {
     setProductUnit("");
     setDateFrom(null);
     setDateTo(null);
-    setSearchParams({});
+    const newParams = new URLSearchParams();
+    if (view === "my") newParams.set("view", "my");
+    setSearchParams(newParams);
     setCurrentPage(1);
   };
+
+  const handleTabChange = (key) => {
+    const newParams = new URLSearchParams(searchParams);
+    if (key === "my") {
+      newParams.set("view", "my");
+    } else {
+      newParams.delete("view");
+    }
+    setSearchParams(newParams);
+    setCurrentPage(1);
+  };
+
+  const isMyRequest = (r) => {
+    if (!currentUser) return false;
+    return (
+      r.marketingOfficer?.uid === currentUser.uid ||
+      r.createdByUid === currentUser.uid ||
+      r.marketingOfficer?.email === currentUser.email ||
+      r.createdByEmail === currentUser.email
+    );
+  };
+
+  const allCount = requests.length;
+  const myCount = requests.filter(isMyRequest).length;
+  const displayedRequests = view === "my" ? requests.filter(isMyRequest) : requests;
+
+  const tabItems = [
+    {
+      key: "all",
+      label: (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 600 }}>
+          <UnorderedListOutlined />
+          <span>All Requests</span>
+          <Tag color="default" style={{ borderRadius: 10, fontWeight: 700, marginInlineStart: 2 }}>
+            {allCount}
+          </Tag>
+        </span>
+      )
+    },
+    {
+      key: "my",
+      label: (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 600 }}>
+          <UserOutlined />
+          <span>My Created Requests</span>
+          <Tag color="blue" style={{ borderRadius: 10, fontWeight: 700, marginInlineStart: 2 }}>
+            {myCount}
+          </Tag>
+        </span>
+      )
+    }
+  ];
 
   const getStatusColor = (statusVal) => {
     switch (statusVal) {
@@ -103,19 +158,19 @@ export default function CostRequests() {
 
   // Bulk Excel Export Implementation
   const handleBulkExport = () => {
-    if (requests.length === 0) return;
+    if (displayedRequests.length === 0) return;
 
-    const excelRows = requests.map(r => {
-      let descriptionStr = r.specs.description || r.specs.productDescription || "";
+    const excelRows = displayedRequests.map(r => {
+      let descriptionStr = r.specs?.description || r.specs?.productDescription || "";
       
       let beddingSpecs = "";
       if (r.productUnit === "bedding") {
-        beddingSpecs = `Length: ${r.specs.length}cm, Width: ${r.specs.width}cm, Height: ${r.specs.height}cm, Organic: ${r.specs.organic}, NC/RC: ${r.specs.ncRcRatio}, Density: ${r.specs.density}`;
+        beddingSpecs = `Length: ${r.specs?.length}cm, Width: ${r.specs?.width}cm, Height: ${r.specs?.height}cm, Organic: ${r.specs?.organic}, NC/RC: ${r.specs?.ncRcRatio}, Density: ${r.specs?.density}`;
       }
 
       let hortiSpecs = "";
       if (r.productUnit === "horticulture") {
-        hortiSpecs = `GSM: ${r.specs.gsm}, Latex Ratio: ${r.specs.latexRatio}, Specs: ${r.specs.specifications || ""}`;
+        hortiSpecs = `GSM: ${r.specs?.gsm}, Latex Ratio: ${r.specs?.latexRatio}, Specs: ${r.specs?.specifications || ""}`;
       }
 
       let unitCostStr = r.costing?.unitCost ? `$${r.costing.unitCost.toFixed(2)}` : "N/A";
@@ -123,7 +178,7 @@ export default function CostRequests() {
       let loadabilityStr = "";
 
       if (r.productUnit === "bedding") {
-        packagingStr = r.costing?.qtyPerBundleFinance ? `Qty/Bundle: ${r.costing.qtyPerBundleFinance}` : `Qty/Bundle: ${r.specs.qtyPerBundle || "N/A"}`;
+        packagingStr = r.costing?.qtyPerBundleFinance ? `Qty/Bundle: ${r.costing.qtyPerBundleFinance}` : `Qty/Bundle: ${r.specs?.qtyPerBundle || "N/A"}`;
       } else if (r.productUnit === "horticulture") {
         packagingStr = r.costing?.packing ? `Packing: ${r.costing.packing}` : "N/A";
         loadabilityStr = `Carton: ${r.costing?.cartonSize || ""}, Pallet Size: ${r.costing?.palletSize || ""}, Cartons/Pallet: ${r.costing?.cartonsPerPallet || ""}, Roll Diam: ${r.costing?.rollDiameter || ""}`;
@@ -133,8 +188,8 @@ export default function CostRequests() {
         "Cost Request No": r.costRequestNo,
         "Customer Name": r.customerName,
         "Request Date": r.requestDate ? new Date(r.requestDate).toLocaleDateString() : "",
-        "Product Category": r.productUnit.charAt(0).toUpperCase() + r.productUnit.slice(1),
-        "Marketing Officer": r.marketingOfficer.name,
+        "Product Category": r.productUnit ? (r.productUnit.charAt(0).toUpperCase() + r.productUnit.slice(1)) : "",
+        "Marketing Officer": r.marketingOfficer?.name || "",
         "Finance Officer": r.financeOfficer?.name || "Unassigned",
         "Product Description": descriptionStr,
         "Bedding Specifications": beddingSpecs,
@@ -160,7 +215,8 @@ export default function CostRequests() {
     });
     worksheet["!cols"] = Object.keys(maxLens).map(key => ({ wch: maxLens[key] + 3 }));
 
-    XLSX.writeFile(workbook, `Cost_Requests_Export_${new Date().toISOString().split("T")[0]}.xlsx`);
+    const viewPrefix = view === "my" ? "My_Cost_Requests" : "All_Cost_Requests";
+    XLSX.writeFile(workbook, `${viewPrefix}_Export_${new Date().toISOString().split("T")[0]}.xlsx`);
   };
 
   const columns = [
@@ -168,18 +224,22 @@ export default function CostRequests() {
       title: "Request No",
       dataIndex: "costRequestNo",
       key: "costRequestNo",
-      render: (text) => <span style={{ fontWeight: 800, color: "#6366f1" }}>#{text}</span>
+      render: (text) => <span style={{ fontWeight: 800, color: "#6366f1" }}>#{text}</span>,
+      sorter: (a, b) => String(a.costRequestNo || "").localeCompare(String(b.costRequestNo || ""), undefined, { numeric: true, sensitivity: "base" })
     },
     {
       title: "Customer",
       dataIndex: "customerName",
       key: "customerName",
-      render: (text) => <span style={{ fontWeight: 600, color: "#0f172a" }}>{text}</span>
+      render: (text) => <span style={{ fontWeight: 600, color: "#0f172a" }}>{text}</span>,
+      sorter: (a, b) => (a.customerName || "").localeCompare(b.customerName || "")
     },
     {
       title: "Request Date",
       dataIndex: "requestDate",
       key: "requestDate",
+      defaultSortOrder: "descend",
+      sorter: (a, b) => new Date(a.requestDate || a.createdAt || 0) - new Date(b.requestDate || b.createdAt || 0),
       render: (date) => date ? new Date(date).toLocaleDateString() : ""
     },
     {
@@ -220,7 +280,7 @@ export default function CostRequests() {
             />
           </Tooltip>
           
-          {(currentUser.costingRoles?.includes("costing_finance") || currentUser.roles?.includes("admin") || currentUser.costingRoles?.includes("admin")) && record.status === "Submitted" && (
+          {(currentUser?.costingRoles?.includes("costing_finance") || currentUser?.roles?.includes("admin") || currentUser?.costingRoles?.includes("admin")) && record.status === "Submitted" && (
             <Tooltip title="Receive Request">
               <Button
                 shape="circle"
@@ -233,7 +293,7 @@ export default function CostRequests() {
             </Tooltip>
           )}
 
-          {(currentUser.costingRoles?.includes("costing_finance") || currentUser.roles?.includes("admin") || currentUser.costingRoles?.includes("admin")) && record.status === "Received by Finance" && (
+          {(currentUser?.costingRoles?.includes("costing_finance") || currentUser?.roles?.includes("admin") || currentUser?.costingRoles?.includes("admin")) && record.status === "Received by Finance" && (
             <Tooltip title="Start Costing">
               <Button
                 shape="circle"
@@ -245,7 +305,7 @@ export default function CostRequests() {
             </Tooltip>
           )}
 
-          {(currentUser.costingRoles?.includes("costing_finance") || currentUser.roles?.includes("admin") || currentUser.costingRoles?.includes("admin")) && (record.status === "Costing in Progress" || record.status === "Overdue") && (
+          {(currentUser?.costingRoles?.includes("costing_finance") || currentUser?.roles?.includes("admin") || currentUser?.costingRoles?.includes("admin")) && (record.status === "Costing in Progress" || record.status === "Overdue") && (
             <Tooltip title="Complete Costing">
               <Button
                 shape="circle"
@@ -264,7 +324,7 @@ export default function CostRequests() {
   return (
     <div style={{ paddingBottom: 24 }}>
       {/* Header */}
-      <Row justify="space-between" align="middle" style={{ marginBottom: 32 }}>
+      <Row justify="space-between" align="middle" style={{ marginBottom: 24 }}>
         <Col>
           <Title level={2} style={{ margin: 0, fontWeight: 800, letterSpacing: "-0.03em", color: "#0f172a" }}>
             Costing Requests
@@ -278,13 +338,13 @@ export default function CostRequests() {
             <Button
               icon={<DownloadOutlined />}
               onClick={handleBulkExport}
-              disabled={requests.length === 0}
+              disabled={displayedRequests.length === 0}
               size="large"
               style={{ borderRadius: 8 }}
             >
               Export to Excel
             </Button>
-            {(currentUser.costingRoles?.includes("costing_marketing") || currentUser.roles?.includes("admin") || currentUser.costingRoles?.includes("admin")) && (
+            {(currentUser?.costingRoles?.includes("costing_marketing") || currentUser?.roles?.includes("admin") || currentUser?.costingRoles?.includes("admin")) && (
               <Button
                 type="primary"
                 onClick={() => navigate("/costing-requests/create")}
@@ -302,6 +362,15 @@ export default function CostRequests() {
           </Space>
         </Col>
       </Row>
+
+      {/* View Switcher Tabs */}
+      <Tabs
+        activeKey={view}
+        onChange={handleTabChange}
+        items={tabItems}
+        size="large"
+        style={{ marginBottom: 16 }}
+      />
 
       {error && (
         <Alert message={error} type="error" showIcon style={{ marginBottom: 24, borderRadius: 8 }} />
@@ -354,7 +423,13 @@ export default function CostRequests() {
               value={status}
               onChange={(val) => {
                 setStatus(val);
-                setSearchParams(val ? { status: val } : {});
+                const newParams = new URLSearchParams(searchParams);
+                if (val) {
+                  newParams.set("status", val);
+                } else {
+                  newParams.delete("status");
+                }
+                setSearchParams(newParams);
                 setCurrentPage(1);
               }}
               size="large"
@@ -408,7 +483,7 @@ export default function CostRequests() {
 
       {/* Table */}
       <Table
-        dataSource={requests}
+        dataSource={displayedRequests}
         columns={columns}
         rowKey="id"
         loading={loading}

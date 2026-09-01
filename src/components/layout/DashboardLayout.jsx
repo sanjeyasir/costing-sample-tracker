@@ -98,7 +98,8 @@ export default function DashboardLayout({ children }) {
   // 2. Costing Section (visible if has costing access)
   if (hasCostingAccess) {
     const costingChildren = [
-      { label: "Costing Requests", key: "/costing-requests" }
+      { label: "All Requests", key: "/costing-requests" },
+      { label: "My Created Requests", key: "/costing-requests?view=my" }
     ];
     if (isAdmin || costingRoles.includes("costing_marketing")) {
       costingChildren.push({ label: "Create Costing", key: "/costing-requests/create" });
@@ -122,6 +123,7 @@ export default function DashboardLayout({ children }) {
       icon: <UnorderedListOutlined />,
       children: [
         { label: "All Requests", key: "/requests" },
+        { label: "My Created Requests", key: "/requests?view=my" },
         { label: "New Requests", key: "/requests?status=Submitted" },
         { label: "Awaiting Marketing", key: "/requests?status=Request%20for%20Resubmission" },
         { label: "In Progress", key: "/requests?status=In%20Progress" },
@@ -181,9 +183,19 @@ export default function DashboardLayout({ children }) {
   };
 
   const getSelectedKey = () => {
+    const fullPath = location.pathname + location.search;
     const path = location.pathname;
+    if (location.search.includes("view=my")) {
+      if (path.startsWith("/costing-requests")) return "/costing-requests?view=my";
+      if (path.startsWith("/requests")) return "/requests?view=my";
+    }
+    if (path.startsWith("/costing-requests/create")) return "/costing-requests/create";
+    if (path.startsWith("/costing-requests/")) return "/costing-requests";
     if (path.startsWith("/requests/create")) return "/requests/create";
     if (path.startsWith("/requests/")) return "/requests";
+    if (location.search) {
+      return fullPath;
+    }
     return path;
   };
 

@@ -166,6 +166,8 @@ export async function createCostingRequest(requestData, currentUser) {
         name: currentUser.displayName || currentUser.email.split("@")[0],
         email: currentUser.email
       },
+      createdByUid: currentUser.uid,
+      createdByEmail: currentUser.email,
       financeOfficer: null,
       requestDate: nowStr,
       status: "Submitted",
@@ -242,6 +244,8 @@ export async function createCostingRequest(requestData, currentUser) {
             name: currentUser.displayName || currentUser.email.split("@")[0],
             email: currentUser.email
           },
+          createdByUid: currentUser.uid,
+          createdByEmail: currentUser.email,
           financeOfficer: null,
           requestDate: now,
           status: "Submitted",
@@ -326,6 +330,7 @@ export async function getCostingRequests(filters = {}) {
     status, 
     productUnit, 
     marketingOfficerUid, 
+    createdByUid,
     financeOfficerUid,
     dateFrom, 
     dateTo 
@@ -376,10 +381,10 @@ export async function getCostingRequests(filters = {}) {
     if (search) {
       const q = search.toLowerCase();
       requests = requests.filter(r => 
-        r.customerName.toLowerCase().includes(q) ||
-        r.costRequestNo.toString().includes(q) ||
-        r.marketingOfficer.name.toLowerCase().includes(q) ||
-        (r.financeOfficer && r.financeOfficer.name.toLowerCase().includes(q))
+        r.customerName?.toLowerCase().includes(q) ||
+        r.costRequestNo?.toString().includes(q) ||
+        r.marketingOfficer?.name?.toLowerCase().includes(q) ||
+        (r.financeOfficer && r.financeOfficer?.name?.toLowerCase().includes(q))
       );
     }
     if (status) {
@@ -389,7 +394,10 @@ export async function getCostingRequests(filters = {}) {
       requests = requests.filter(r => r.productUnit === productUnit);
     }
     if (marketingOfficerUid) {
-      requests = requests.filter(r => r.marketingOfficer.uid === marketingOfficerUid);
+      requests = requests.filter(r => r.marketingOfficer?.uid === marketingOfficerUid || r.createdByUid === marketingOfficerUid);
+    }
+    if (createdByUid) {
+      requests = requests.filter(r => r.createdByUid === createdByUid || r.marketingOfficer?.uid === createdByUid);
     }
     if (financeOfficerUid) {
       requests = requests.filter(r => r.financeOfficer?.uid === financeOfficerUid);
@@ -405,8 +413,13 @@ export async function getCostingRequests(filters = {}) {
       requests = requests.filter(r => new Date(r.requestDate) <= to);
     }
 
-    // Sort by requestNo desc
-    requests.sort((a, b) => String(b.costRequestNo).localeCompare(String(a.costRequestNo), undefined, { numeric: true, sensitivity: 'base' }));
+    // Sort by requestDate descending (most recent date on top, oldest at bottom)
+    requests.sort((a, b) => {
+      const dateA = new Date(a.requestDate || a.createdAt || 0).getTime();
+      const dateB = new Date(b.requestDate || b.createdAt || 0).getTime();
+      if (dateB !== dateA) return dateB - dateA;
+      return String(b.costRequestNo || b.id || "").localeCompare(String(a.costRequestNo || a.id || ""), undefined, { numeric: true, sensitivity: 'base' });
+    });
 
     return requests;
   } else {
@@ -430,10 +443,10 @@ export async function getCostingRequests(filters = {}) {
     if (search) {
       const qLower = search.toLowerCase();
       requests = requests.filter(r => 
-        r.customerName.toLowerCase().includes(qLower) ||
-        r.costRequestNo.toString().includes(qLower) ||
-        r.marketingOfficer.name.toLowerCase().includes(qLower) ||
-        (r.financeOfficer && r.financeOfficer.name.toLowerCase().includes(qLower))
+        r.customerName?.toLowerCase().includes(qLower) ||
+        r.costRequestNo?.toString().includes(qLower) ||
+        r.marketingOfficer?.name?.toLowerCase().includes(qLower) ||
+        (r.financeOfficer && r.financeOfficer?.name?.toLowerCase().includes(qLower))
       );
     }
     if (status) {
@@ -443,7 +456,10 @@ export async function getCostingRequests(filters = {}) {
       requests = requests.filter(r => r.productUnit === productUnit);
     }
     if (marketingOfficerUid) {
-      requests = requests.filter(r => r.marketingOfficer.uid === marketingOfficerUid);
+      requests = requests.filter(r => r.marketingOfficer?.uid === marketingOfficerUid || r.createdByUid === marketingOfficerUid);
+    }
+    if (createdByUid) {
+      requests = requests.filter(r => r.createdByUid === createdByUid || r.marketingOfficer?.uid === createdByUid);
     }
     if (financeOfficerUid) {
       requests = requests.filter(r => r.financeOfficer?.uid === financeOfficerUid);
@@ -458,7 +474,13 @@ export async function getCostingRequests(filters = {}) {
       requests = requests.filter(r => new Date(r.requestDate) <= to);
     }
 
-    requests.sort((a, b) => String(b.costRequestNo).localeCompare(String(a.costRequestNo), undefined, { numeric: true, sensitivity: 'base' }));
+    // Sort by requestDate descending (most recent date on top, oldest at bottom)
+    requests.sort((a, b) => {
+      const dateA = new Date(a.requestDate || a.createdAt || 0).getTime();
+      const dateB = new Date(b.requestDate || b.createdAt || 0).getTime();
+      if (dateB !== dateA) return dateB - dateA;
+      return String(b.costRequestNo || b.id || "").localeCompare(String(a.costRequestNo || a.id || ""), undefined, { numeric: true, sensitivity: 'base' });
+    });
     return requests;
   }
 }

@@ -470,7 +470,7 @@ exports.sendEmailViaSMTP = functions.https.onCall(async (data, context) => {
 });
 
 /**
- * Cloud Function to securely send WhatsApp notifications using OpenWA REST API.
+ * Cloud Function to securely handle WhatsApp notifications.
  * Callable from client.
  */
 exports.sendWhatsAppViaAPI = functions.https.onCall(async (data, context) => {
@@ -493,12 +493,7 @@ exports.sendWhatsAppViaAPI = functions.https.onCall(async (data, context) => {
     // 1. Fetch systemSettings/whatsappConfig
     const configSnap = await db.collection("systemSettings").doc("whatsappConfig").get();
     let config = { 
-      provider: "openwa",
-      openwaConfig: {
-        serverUrl: "http://localhost:2785",
-        sessionId: "default",
-        apiKey: ""
-      },
+      provider: "disabled",
       globalOverride: true,
       overrideNumber: "+94767063788"
     };
@@ -506,56 +501,9 @@ exports.sendWhatsAppViaAPI = functions.https.onCall(async (data, context) => {
       config = { ...config, ...configSnap.data() };
     }
 
-    // Force openwa provider for direct sending (no simulation)
-    const provider = config.provider === "disabled" ? "openwa" : (config.provider || "openwa");
-    
-    // Clean phone number: keep only digits (E.164 without "+")
-    const cleanedNumber = to.replace(/[^0-9]/g, "");
-    let status = "failed";
-    let responseData = "";
-
-    if (provider === "openwa") {
-      const openwa = config.openwaConfig || {};
-      const serverUrl = openwa.serverUrl || "http://localhost:2785";
-      const apiKey = openwa.apiKey || "";
-      const sessionId = openwa.sessionId || "default";
-
-      // Format URL: http://<ip>:<port>/api/sessions/<sessionId>/messages/send-text
-      const url = `${serverUrl}/api/sessions/${sessionId}/messages/send-text`;
-      
-      const headers = {
-        "Content-Type": "application/json"
-      };
-      if (apiKey) {
-        headers["X-API-Key"] = apiKey;
-      }
-
-      const body = JSON.stringify({
-        chatId: `${cleanedNumber}@c.us`,
-        text: message
-      });
-
-      console.log(`[OpenWA] Posting request to: ${url}`);
-      
-      const response = await fetch(url, {
-        method: "POST",
-        headers,
-        body
-      });
-
-      responseData = await response.text();
-
-      if (response.ok) {
-        status = "sent";
-      } else {
-        throw new Error(`OpenWA server returned status ${response.status}: ${responseData}`);
-      }
-    } else if (provider === "disabled") {
-      status = "simulated";
-      responseData = "Simulated delivery. WhatsApp integration is disabled.";
-    } else {
-      throw new Error(`Unsupported WhatsApp provider: ${provider}`);
-    }
+    const provider = config.provider || "disabled";
+    let status = "simulated";
+    let responseData = "WhatsApp delivery simulation mode.";
 
     // Save WhatsApp log to Firestore
     await db.collection("whatsappLogs").add({
@@ -567,7 +515,7 @@ exports.sendWhatsAppViaAPI = functions.https.onCall(async (data, context) => {
       response: responseData
     });
 
-    return { success: status === "sent" || status === "simulated", status, response: responseData };
+    return { success: true, status, response: responseData };
   } catch (error) {
     console.error("sendWhatsAppViaAPI failure: ", error);
     
@@ -585,5 +533,71 @@ exports.sendWhatsAppViaAPI = functions.https.onCall(async (data, context) => {
       "internal",
       `WhatsApp API dispatch failed: ${error.message}`
     );
+  }
+});
+
+/**
+ * Cloud Function to seed / migrate default Product Categories & System Settings to Firestore.
+ */
+exports.seedProductCategories = functions.https.onRequest(async (req, res) => {
+  const DEFAULT_CATEGORIES = [
+    {
+      id: "bedding",
+      name: "Bedding",
+      createdAt: Timestamp.now(),
+      fields: [
+        { key: "description", label: "Description", type: "text", required: true, owner: "marketing" },
+        { key: "length", label: "Length (CM)", type: "number", required: true, owner: "marketing" },
+        { key: "width", label: "Width (CM)", type: "number", required: true, owner: "marketing" },
+        { key: "height", label: "Height (CM)", type: "number", required: true, owner: "marketing" },
+        { key: "organic", label: "Organic / Non-Organic", type: "select", options: ["Organic", "Non-Organic"], required: true, owner: "marketing" },
+        { key: "ncRcRatio", label: "NC/RC Ratio", type: "text", required: true, owner: "marketing" },
+        { key: "density", label: "Density", type: "text", required: true, owner: "marketing" },
+        { key: "qtyPerBundle", label: "Quantity per Bundle (Optional)", type: "number", required: false, owner: "marketing" },
+        { key: "unitCost", label: "Unit Cost", type: "number", required: true, owner: "finance" },
+        { key: "qtyPerBundleFinance", label: "Quantity per Bundle (Finance)", type: "number", required: true, owner: "finance" }
+      ]
+    },
+    {
+      id: "horticulture",
+      name: "Horticulture",
+      createdAt: Timestamp.now(),
+      fields: [
+        { key: "description", label: "Product Description", type: "text", required: true, owner: "marketing" },
+        { key: "specifications", label: "Product Specifications", type: "textarea", required: true, owner: "marketing" },
+        { key: "gsm", label: "GSM", type: "number", required: true, owner: "marketing" },
+        { key: "latexRatio", label: "Latex Ratio", type: "text", required: true, owner: "marketing" },
+        { key: "packing", label: "Packing - Pieces per Carton or Bundle", type: "text", required: true, owner: "finance" },
+        { key: "cartonSize", label: "Carton Size (CM)", type: "text", required: true, owner: "finance" },
+        { key: "palletSize", label: "Pallet Size (Optional)", type: "text", required: false, owner: "finance" },
+        { key: "cartonsPerPallet", label: "Cartons per Pallet (Optional)", type: "number", required: false, owner: "finance" },
+        { key: "rollDiameter", label: "Roll Diameter (If Applicable)", type: "text", required: false, owner: "finance" },
+        { key: "unitCost", label: "Unit Cost", type: "number", required: true, owner: "finance" }
+      ]
+    }
+  ];
+
+  try {
+    const results = [];
+    for (const cat of DEFAULT_CATEGORIES) {
+      const { id, ...data } = cat;
+      await db.collection("productCategories").doc(id).set(data, { merge: true });
+      results.push(cat.name);
+    }
+
+    // Seed default systemSettings if not exists
+    const counterDoc = await db.collection("systemSettings").doc("costRequestCounter").get();
+    if (!counterDoc.exists) {
+      await db.collection("systemSettings").doc("costRequestCounter").set({ current: 1000 });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Product categories and system settings successfully seeded/migrated.",
+      migratedCategories: results
+    });
+  } catch (err) {
+    console.error("Migration error:", err);
+    res.status(500).json({ success: false, error: err.message });
   }
 });

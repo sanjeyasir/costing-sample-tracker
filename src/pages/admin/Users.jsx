@@ -190,7 +190,7 @@ export default function Users() {
   };
 
   const handleCreateUserSubmit = async (values) => {
-    const { displayName, email, password, costingRoles, sampleRoles, phoneNumber, whatsappEnabled } = values;
+    const { displayName, email, password, costingRoles, sampleRoles, phoneNumber } = values;
     try {
       setCreateError("");
       setCreateLoading(true);
@@ -201,8 +201,7 @@ export default function Users() {
         password,
         costingRoles,
         sampleRoles,
-        phoneNumber,
-        whatsappEnabled
+        phoneNumber
       });
 
       if (result.success) {
@@ -224,15 +223,14 @@ export default function Users() {
     editForm.setFieldsValue({
       displayName: record.displayName,
       email: record.email,
-      phoneNumber: record.phoneNumber || "",
-      whatsappEnabled: !!record.whatsappEnabled
+      phoneNumber: record.phoneNumber || ""
     });
     setOpenEditDialog(true);
     setEditError("");
   };
 
   const handleEditUserSubmit = async (values) => {
-    const { displayName, email, phoneNumber, whatsappEnabled } = values;
+    const { displayName, email, phoneNumber } = values;
     try {
       setEditError("");
       setEditLoading(true);
@@ -240,8 +238,7 @@ export default function Users() {
       await userService.updateUserProfile(editingUser.uid, {
         displayName,
         email,
-        phoneNumber: phoneNumber || "",
-        whatsappEnabled: !!whatsappEnabled
+        phoneNumber: phoneNumber || ""
       });
 
       setSuccess(`User account ${email} updated successfully.`);
@@ -331,15 +328,6 @@ export default function Users() {
       dataIndex: "phoneNumber",
       key: "phoneNumber",
       render: (text) => text || <span style={{ color: "#94a3b8", fontStyle: "italic" }}>Not set</span>
-    },
-    {
-      title: "WhatsApp Alerts",
-      key: "whatsappEnabled",
-      render: (_, record) => (
-        <Tag color={record.whatsappEnabled ? "green" : "gray"}>
-          {record.whatsappEnabled ? "Enabled" : "Disabled"}
-        </Tag>
-      )
     },
     {
       title: "Costing Module Roles",
@@ -709,15 +697,6 @@ export default function Users() {
           </Form.Item>
 
           <Form.Item
-            name="whatsappEnabled"
-            label={<span style={{ color: "#475569", fontWeight: 600 }}>WhatsApp Alerts</span>}
-            valuePropName="checked"
-            initialValue={false}
-          >
-            <Switch checkedChildren="Enabled" unCheckedChildren="Disabled" />
-          </Form.Item>
-
-          <Form.Item
             name="costingRoles"
             label={<span style={{ color: "#475569", fontWeight: 600 }}>Costing Module Roles</span>}
             initialValue={["costing_marketing"]}
@@ -898,14 +877,6 @@ export default function Users() {
             ]}
           >
             <Input placeholder="+94767063788" size="large" style={{ borderRadius: 8 }} />
-          </Form.Item>
-
-          <Form.Item
-            name="whatsappEnabled"
-            label={<span style={{ color: "#475569", fontWeight: 600 }}>WhatsApp Alerts</span>}
-            valuePropName="checked"
-          >
-            <Switch checkedChildren="Enabled" unCheckedChildren="Disabled" />
           </Form.Item>
 
           <Form.Item style={{ marginBottom: 0, textAlign: "right", marginTop: 24 }}>

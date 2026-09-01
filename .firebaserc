@@ -1,5 +1,7 @@
 {
   "projects": {
-    "default": "costing-sample-tracking"
+    "default": "costing-sample-tracking",
+    "dev": "costing-sample-tracking",
+    "prod": "costing-sample-tracker-prod"
   }
 }

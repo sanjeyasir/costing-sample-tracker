@@ -4,7 +4,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import * as sampleService from "../../services/firebase/sampleService";
 import { downloadSamplePDF } from "../../utils/pdfGenerator";
 import * as XLSX from "xlsx";
-import { Table, Input, Select, Button, Tag, Space, Tooltip, DatePicker, Row, Col, Card, Alert, Typography } from "antd";
+import { Table, Input, Select, Button, Tag, Space, Tooltip, DatePicker, Row, Col, Card, Alert, Typography, Tabs } from "antd";
 import {
   SearchOutlined,
   FilterOutlined,
@@ -12,7 +12,9 @@ import {
   EyeOutlined,
   FilePdfOutlined,
   PlayCircleOutlined,
-  CheckCircleOutlined
+  CheckCircleOutlined,
+  UnorderedListOutlined,
+  UserOutlined
 } from "@ant-design/icons";
 
 const { Option } = Select;
@@ -26,6 +28,9 @@ export default function SampleRequests() {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  // View state: "all" or "my"
+  const view = searchParams.get("view") === "my" ? "my" : "all";
 
   // Filter States
   const [search, setSearch] = useState("");
@@ -84,9 +89,63 @@ export default function SampleRequests() {
     setProductUnit("");
     setRequestType("");
     setSampleType("");
-    setSearchParams({});
+    const newParams = new URLSearchParams();
+    if (view === "my") newParams.set("view", "my");
+    setSearchParams(newParams);
     setCurrentPage(1);
   };
+
+  const handleTabChange = (key) => {
+    const newParams = new URLSearchParams(searchParams);
+    if (key === "my") {
+      newParams.set("view", "my");
+    } else {
+      newParams.delete("view");
+    }
+    setSearchParams(newParams);
+    setCurrentPage(1);
+  };
+
+  const isMyRequest = (r) => {
+    if (!currentUser) return false;
+    return (
+      r.createdByUid === currentUser.uid ||
+      r.createdByEmail === currentUser.email ||
+      (currentUser.displayName && r.requestedBy === currentUser.displayName) ||
+      (currentUser.email && r.requestedBy === currentUser.email)
+    );
+  };
+
+  const allCount = requests.length;
+  const myCount = requests.filter(isMyRequest).length;
+  const displayedRequests = view === "my" ? requests.filter(isMyRequest) : requests;
+
+  const tabItems = [
+    {
+      key: "all",
+      label: (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 600 }}>
+          <UnorderedListOutlined />
+          <span>All Requisitions</span>
+          <Tag color="default" style={{ borderRadius: 10, fontWeight: 700, marginInlineStart: 2 }}>
+            {allCount}
+          </Tag>
+        </span>
+      )
+    },
+    {
+      key: "my",
+      label: (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 600 }}>
+          <UserOutlined />
+          <span>My Created Requests</span>
+          <Tag color="blue" style={{ borderRadius: 10, fontWeight: 700, marginInlineStart: 2 }}>
+            {myCount}
+          </Tag>
+        </span>
+      )
+    }
+  ];
 
   const getStatusColor = (statusVal) => {
     switch (statusVal) {
@@ -101,13 +160,13 @@ export default function SampleRequests() {
 
   // Excel Bulk Export
   const handleExcelExport = () => {
-    if (requests.length === 0) return;
-    const exportRows = requests.map(r => ({
+    if (displayedRequests.length === 0) return;
+    const exportRows = displayedRequests.map(r => ({
       "Request Number": r.sampleRequestNo,
       "Customer Name": r.customerName,
       "Product Unit": r.productUnit,
       "Requested By": r.requestedBy,
-      "Request Date": r.requestDate,
+      "Request Date": r.requestDate ? new Date(r.requestDate).toLocaleDateString() : "",
       "Required Date": r.requiredDate,
       "Planned Delivery Date": r.plannedDeliveryDate || "Not Set",
       "Actual Completion Date": r.actualCompletionDate || "Pending",
@@ -123,12 +182,13 @@ export default function SampleRequests() {
     const worksheet = XLSX.utils.json_to_sheet(exportRows);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Sample Requests");
-    XLSX.writeFile(workbook, `Sample_Requests_Export_${new Date().toISOString().split("T")[0]}.xlsx`);
+    const viewPrefix = view === "my" ? "My_Sample_Requests" : "All_Sample_Requests";
+    XLSX.writeFile(workbook, `${viewPrefix}_Export_${new Date().toISOString().split("T")[0]}.xlsx`);
   };
 
   // CSV Bulk Export
   const handleCSVExport = () => {
-    if (requests.length === 0) return;
+    if (displayedRequests.length === 0) return;
     const headers = [
       "Request Number", "Customer Name", "Product Unit", "Requested By", "Request Date",
       "Required Date", "Planned Delivery Date", "Actual Completion Date", "Request Type",
@@ -137,22 +197,22 @@ export default function SampleRequests() {
     
     let csvContent = headers.join(",") + "\n";
     
-    requests.forEach(r => {
+    displayedRequests.forEach(r => {
       const row = [
         r.sampleRequestNo,
-        `"${r.customerName.replace(/"/g, '""')}"`,
-        r.productUnit,
-        r.requestedBy,
-        r.requestDate,
-        r.requiredDate,
+        `"${(r.customerName || "").replace(/"/g, '""')}"`,
+        r.productUnit || "",
+        r.requestedBy || "",
+        r.requestDate || "",
+        r.requiredDate || "",
         r.plannedDeliveryDate || "",
         r.actualCompletionDate || "",
-        r.requestType,
-        `"${r.product.replace(/"/g, '""')}"`,
-        r.quantity,
-        r.sampleType,
-        r.status,
-        r.actionRequired
+        r.requestType || "",
+        `"${(r.product || "").replace(/"/g, '""')}"`,
+        r.quantity || 1,
+        r.sampleType || "",
+        r.status || "",
+        r.actionRequired || ""
       ];
       csvContent += row.join(",") + "\n";
     });
@@ -161,7 +221,8 @@ export default function SampleRequests() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
-    link.setAttribute("download", `Sample_Requests_Export_${new Date().toISOString().split("T")[0]}.csv`);
+    const viewPrefix = view === "my" ? "My_Sample_Requests" : "All_Sample_Requests";
+    link.setAttribute("download", `${viewPrefix}_Export_${new Date().toISOString().split("T")[0]}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -173,14 +234,14 @@ export default function SampleRequests() {
       dataIndex: "sampleRequestNo",
       key: "sampleRequestNo",
       render: (text) => <span style={{ fontWeight: 800, color: "#6366f1" }}>{text}</span>,
-      sorter: (a, b) => a.sampleRequestNo.localeCompare(b.sampleRequestNo)
+      sorter: (a, b) => (a.sampleRequestNo || "").localeCompare(b.sampleRequestNo || "", undefined, { numeric: true, sensitivity: "base" })
     },
     {
       title: "Customer",
       dataIndex: "customerName",
       key: "customerName",
       render: (text) => <span style={{ fontWeight: 600, color: "#0f172a" }}>{text}</span>,
-      sorter: (a, b) => a.customerName.localeCompare(b.customerName)
+      sorter: (a, b) => (a.customerName || "").localeCompare(b.customerName || "")
     },
     {
       title: "Category",
@@ -197,7 +258,9 @@ export default function SampleRequests() {
       title: "Request Date",
       dataIndex: "requestDate",
       key: "requestDate",
-      sorter: (a, b) => new Date(a.requestDate) - new Date(b.requestDate)
+      defaultSortOrder: "descend",
+      sorter: (a, b) => new Date(a.requestDate || a.createdAt || 0) - new Date(b.requestDate || b.createdAt || 0),
+      render: (date) => date ? new Date(date).toLocaleDateString() : ""
     },
     {
       title: "Required Date",
@@ -249,7 +312,7 @@ export default function SampleRequests() {
   return (
     <div style={{ paddingBottom: 24 }}>
       {/* Header */}
-      <Row justify="space-between" align="middle" style={{ marginBottom: 32 }}>
+      <Row justify="space-between" align="middle" style={{ marginBottom: 24 }}>
         <Col>
           <Title level={2} style={{ margin: 0, fontWeight: 800, letterSpacing: "-0.03em", color: "#0f172a" }}>
             Sample Requisitions
@@ -263,7 +326,7 @@ export default function SampleRequests() {
             <Button
               icon={<DownloadOutlined />}
               onClick={handleExcelExport}
-              disabled={requests.length === 0}
+              disabled={displayedRequests.length === 0}
               size="large"
               style={{ borderRadius: 8 }}
             >
@@ -272,13 +335,13 @@ export default function SampleRequests() {
             <Button
               icon={<DownloadOutlined />}
               onClick={handleCSVExport}
-              disabled={requests.length === 0}
+              disabled={displayedRequests.length === 0}
               size="large"
               style={{ borderRadius: 8 }}
             >
               Export CSV
             </Button>
-            {(currentUser.sampleRoles?.includes("sample_marketing") || currentUser.roles?.includes("admin") || currentUser.sampleRoles?.includes("admin")) && (
+            {(currentUser?.sampleRoles?.includes("sample_marketing") || currentUser?.roles?.includes("admin") || currentUser?.sampleRoles?.includes("admin")) && (
               <Button
                 type="primary"
                 onClick={() => navigate("/requests/create")}
@@ -296,6 +359,15 @@ export default function SampleRequests() {
           </Space>
         </Col>
       </Row>
+
+      {/* View Switcher Tabs */}
+      <Tabs
+        activeKey={view}
+        onChange={handleTabChange}
+        items={tabItems}
+        size="large"
+        style={{ marginBottom: 16 }}
+      />
 
       {error && (
         <Alert message={error} type="error" showIcon style={{ marginBottom: 24, borderRadius: 8 }} />
@@ -347,7 +419,13 @@ export default function SampleRequests() {
               value={status}
               onChange={(val) => {
                 setStatus(val);
-                setSearchParams(val ? { status: val } : {});
+                const newParams = new URLSearchParams(searchParams);
+                if (val) {
+                  newParams.set("status", val);
+                } else {
+                  newParams.delete("status");
+                }
+                setSearchParams(newParams);
                 setCurrentPage(1);
               }}
               size="large"
@@ -414,7 +492,7 @@ export default function SampleRequests() {
 
       {/* Table */}
       <Table
-        dataSource={requests}
+        dataSource={displayedRequests}
         columns={columns}
         rowKey="id"
         loading={loading}

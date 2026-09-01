@@ -446,12 +446,7 @@ export async function sendWhatsAppNotification(notificationData) {
 
     // 2. Fetch whatsappConfig settings
     let config = { 
-      provider: "openwa", 
-      openwaConfig: {
-        serverUrl: "http://localhost:2785",
-        sessionId: "default",
-        apiKey: ""
-      }, 
+      provider: "disabled", 
       globalOverride: true, 
       overrideNumber: "+94767063788" 
     };
@@ -471,10 +466,6 @@ export async function sendWhatsAppNotification(notificationData) {
         config = { ...config, ...JSON.parse(savedConfig) };
       }
     }
-
-    // Force openwa provider for direct sending (no simulation)
-    const provider = config.provider === "disabled" ? "openwa" : (config.provider || "openwa");
-    config.provider = provider;
 
     // 3. Determine target phone numbers (either override number or user phone numbers)
     let targetNumbers = [];

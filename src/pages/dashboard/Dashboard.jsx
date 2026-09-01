@@ -119,7 +119,10 @@ export default function Dashboard() {
     };
 
     const getMarketingActionQueue = () => {
-      return sampleRequests.filter(r => r.status === "Request for Resubmission").slice(0, 5);
+      return sampleRequests
+        .filter(r => r.status === "Request for Resubmission")
+        .sort((a, b) => new Date(b.requestDate || b.createdAt || 0) - new Date(a.requestDate || a.createdAt || 0))
+        .slice(0, 5);
     };
 
     const getUpcomingDeliveries = () => {
@@ -257,11 +260,17 @@ export default function Dashboard() {
     ];
 
     const getCostingQueue = () => {
-      return costingRequests.filter(r => ["Submitted", "Costing in Progress", "Overdue"].includes(r.status)).slice(0, 5);
+      return costingRequests
+        .filter(r => ["Submitted", "Costing in Progress", "Overdue"].includes(r.status))
+        .sort((a, b) => new Date(b.requestDate || b.createdAt || 0) - new Date(a.requestDate || a.createdAt || 0))
+        .slice(0, 5);
     };
 
     const getRecentCompletedCostings = () => {
-      return costingRequests.filter(r => r.status === "Costing Completed").slice(0, 5);
+      return costingRequests
+        .filter(r => r.status === "Costing Completed")
+        .sort((a, b) => new Date(b.completionDate || b.requestDate || 0) - new Date(a.completionDate || a.requestDate || 0))
+        .slice(0, 5);
     };
 
     return (

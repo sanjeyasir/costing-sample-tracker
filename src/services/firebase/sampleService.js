@@ -89,9 +89,23 @@ export async function getSampleRequests(filters = {}) {
     if (filters.requestedBy) {
       requests = requests.filter(r => r.requestedBy === filters.requestedBy);
     }
+    if (filters.createdByUid) {
+      requests = requests.filter(r => r.createdByUid === filters.createdByUid || r.requestedBy === filters.requestedBy);
+    }
+    if (filters.createdByEmail) {
+      requests = requests.filter(r => r.createdByEmail === filters.createdByEmail || r.requestedBy === filters.requestedBy);
+    }
     
-    // Sort by requestDate desc
-    requests.sort((a, b) => new Date(b.requestDate) - new Date(a.requestDate));
+    // Sort by requestDate descending (most recent date on top, oldest at bottom)
+    requests.sort((a, b) => {
+      const dateA = new Date(a.requestDate || a.createdAt || 0).getTime();
+      const dateB = new Date(b.requestDate || b.createdAt || 0).getTime();
+      if (dateB !== dateA) return dateB - dateA;
+      const createdA = new Date(a.createdAt || 0).getTime();
+      const createdB = new Date(b.createdAt || 0).getTime();
+      if (createdB !== createdA) return createdB - createdA;
+      return String(b.sampleRequestNo || b.id || "").localeCompare(String(a.sampleRequestNo || a.id || ""), undefined, { numeric: true, sensitivity: 'base' });
+    });
     return requests;
   } else {
     try {
@@ -127,7 +141,23 @@ export async function getSampleRequests(filters = {}) {
       if (filters.requestedBy) {
         requests = requests.filter(r => r.requestedBy === filters.requestedBy);
       }
+      if (filters.createdByUid) {
+        requests = requests.filter(r => r.createdByUid === filters.createdByUid || r.requestedBy === filters.requestedBy);
+      }
+      if (filters.createdByEmail) {
+        requests = requests.filter(r => r.createdByEmail === filters.createdByEmail || r.requestedBy === filters.requestedBy);
+      }
       
+      // Sort by requestDate descending (most recent date on top, oldest at bottom)
+      requests.sort((a, b) => {
+        const dateA = new Date(a.requestDate || a.createdAt || 0).getTime();
+        const dateB = new Date(b.requestDate || b.createdAt || 0).getTime();
+        if (dateB !== dateA) return dateB - dateA;
+        const createdA = new Date(a.createdAt || 0).getTime();
+        const createdB = new Date(b.createdAt || 0).getTime();
+        if (createdB !== createdA) return createdB - createdA;
+        return String(b.sampleRequestNo || b.id || "").localeCompare(String(a.sampleRequestNo || a.id || ""), undefined, { numeric: true, sensitivity: 'base' });
+      });
       return requests;
     } catch (err) {
       console.error("Error getting sample requests:", err);

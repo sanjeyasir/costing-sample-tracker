@@ -104,6 +104,7 @@ export default function Reports() {
       const end = dateRange[1].format("YYYY-MM-DD");
       samplesResult = samplesResult.filter(r => r.requestDate >= start && r.requestDate <= end);
     }
+    samplesResult.sort((a, b) => new Date(b.requestDate || b.createdAt || 0) - new Date(a.requestDate || a.createdAt || 0));
     setFilteredSamples(samplesResult);
 
     // 2. Filter Costing Requests
@@ -132,6 +133,7 @@ export default function Reports() {
       const end = dateRange[1].format("YYYY-MM-DD");
       costingsResult = costingsResult.filter(r => r.requestDate && r.requestDate.split("T")[0] >= start && r.requestDate.split("T")[0] <= end);
     }
+    costingsResult.sort((a, b) => new Date(b.requestDate || b.createdAt || 0) - new Date(a.requestDate || a.createdAt || 0));
     setFilteredCostings(costingsResult);
   };
 
