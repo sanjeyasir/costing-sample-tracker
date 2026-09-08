@@ -19,6 +19,9 @@ import Categories from "../pages/admin/Categories";
 import Settings from "../pages/admin/Settings";
 import ChangePassword from "../pages/auth/ChangePassword";
 import Notifications from "../pages/notifications/Notifications";
+import DispatchList from "../pages/dispatch/DispatchList";
+import DispatchEditor from "../pages/dispatch/DispatchEditor";
+import DispatchDetails from "../pages/dispatch/DispatchDetails";
 
 export default function AppRoutes() {
   return (
@@ -127,6 +130,53 @@ export default function AppRoutes() {
           </ProtectedRoute>
         }
       />
+
+      {/* Dispatch Tracker Routes */}
+      <Route
+        path="/dispatch-tracker"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout>
+              <DispatchList />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/dispatch-tracker/create"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout>
+              <DispatchEditor />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/dispatch-tracker/:id"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout>
+              <DispatchDetails />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/dispatch-tracker/:id/edit"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout>
+              <DispatchEditor />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
+
+
 
       <Route
         path="/notifications"

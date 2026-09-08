@@ -21,7 +21,9 @@ import {
   HomeOutlined,
   FileTextOutlined,
   BarChartOutlined,
-  BranchesOutlined
+  BranchesOutlined,
+  SendOutlined,
+  InboxOutlined
 } from "@ant-design/icons";
 
 const { Header, Sider, Content } = Layout;
@@ -135,7 +137,20 @@ export default function DashboardLayout({ children }) {
     menuItems.push({ label: "Sample Reports", key: "/reports", icon: <BarChartOutlined /> });
   }
 
-  // 4. Administration Section (visible to admin)
+  // 4. Dispatch Tracker Section (visible to users except superadmin)
+  if (!isSuperAdminUser) {
+    menuItems.push({
+      label: "Dispatch Tracker",
+      key: "dispatch-tracker-group",
+      icon: <SendOutlined />,
+      children: [
+        { label: "All Dispatches", key: "/dispatch-tracker" },
+        { label: "New Dispatch", key: "/dispatch-tracker/create" }
+      ]
+    });
+  }
+
+  // 5. Administration Section (visible to admin)
   if (isAdmin) {
     menuItems.push({
       type: "group",
@@ -193,6 +208,9 @@ export default function DashboardLayout({ children }) {
     if (path.startsWith("/costing-requests/")) return "/costing-requests";
     if (path.startsWith("/requests/create")) return "/requests/create";
     if (path.startsWith("/requests/")) return "/requests";
+    if (path.startsWith("/dispatch-tracker/create")) return "/dispatch-tracker/create";
+    if (path.startsWith("/dispatch-tracker/templates")) return "/dispatch-tracker/templates";
+    if (path.startsWith("/dispatch-tracker/")) return "/dispatch-tracker";
     if (location.search) {
       return fullPath;
     }
