@@ -15,7 +15,9 @@ import {
   EditOutlined,
   CloseCircleOutlined,
   InboxOutlined,
-  FileTextOutlined
+  FileTextOutlined,
+  PlusOutlined,
+  DeleteOutlined
 } from "@ant-design/icons";
 
 // Handsontable imports
@@ -38,10 +40,10 @@ export default function RequestDetails() {
   const [error, setError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
 
-  // Editing states (for Finance entry or Admin correction)
+  // Editing states (for Finance entry or Marketing/Admin correction)
   const [costingDraft, setCostingDraft] = useState({});
   const [specsDraft, setSpecsDraft] = useState({});
-  const [isAdminCorrecting, setIsAdminCorrecting] = useState(false);
+  const [isCorrectingDetails, setIsCorrectingDetails] = useState(false);
 
   // Table refs and data
   const hotTableRef = useRef(null);
@@ -95,7 +97,13 @@ export default function RequestDetails() {
   const isAdmin = currentUser.roles?.includes("admin") || currentUser.costingRoles?.includes("admin");
   const isCompleted = request?.status === "Costing Completed" || request?.status === "Sent to Marketing";
   const canReopen = (isAdmin || isMarketingOfficer) && isCompleted;
-  const isCostingActive = ((isFinanceOfficer && (request?.status === "Costing in Progress" || request?.status === "Overdue")) || isAdminCorrecting) && !request?.specs?.excelFile;
+  
+  // Marketing can correct request until Finance receives it (status is Submitted)
+  const canMarketingCorrect = isMarketingOfficer && request?.status === "Submitted";
+  const canFinanceOrAdminCorrect = (isFinanceOfficer || isAdmin) && !isCompleted;
+  const showCorrectDetails = (canMarketingCorrect || canFinanceOrAdminCorrect) && !isCorrectingDetails;
+
+  const isCostingActive = ((isFinanceOfficer && (request?.status === "Costing in Progress" || request?.status === "Overdue")) || isCorrectingDetails) && !request?.specs?.excelFile;
 
   // Initialize Handsontable Grid data when request loads
   useEffect(() => {
@@ -134,7 +142,7 @@ export default function RequestDetails() {
       });
       setTableData(initialRows);
     }
-  }, [request, categories, isAdminCorrecting]);
+  }, [request, categories, isCorrectingDetails]);
 
   const handleDetailsTableChange = (changes, source) => {
     if (source === "loadData" || !changes) return;
@@ -314,7 +322,7 @@ export default function RequestDetails() {
           setSaving(true);
           const updated = await costingService.reopenCostingRequest(id, currentUser);
           setRequest(updated);
-          setIsAdminCorrecting(false);
+          setIsCorrectingDetails(false);
           setSuccessMsg("Completed request has been reopened successfully.");
         } catch (err) {
           setError(err.message || "Failed to reopen request.");
@@ -325,16 +333,100 @@ export default function RequestDetails() {
     });
   };
 
-  const handleAdminCorrectionSubmit = async () => {
+  const handleAddSpecRow = () => {
+    const newRow = { itemNo: tableData.length + 1 };
+    marketingFields.forEach(f => {
+      newRow[`spec_${f.key}`] = "";
+    });
+    financeFields.forEach(f => {
+      newRow[`cost_${f.key}`] = "";
+    });
+    setTableData(prev => [...prev, newRow]);
+  };
+
+  const handleDeleteSpecRow = () => {
+    const hot = hotTableRef.current?.hotInstance;
+    if (!hot) return;
+    const selected = hot.getSelected();
+    if (!selected || selected.length === 0) {
+      Modal.warning({ title: "No Row Selected", content: "Please select a cell in the row you wish to delete." });
+      return;
+    }
+    const rowIndex = selected[0][0];
+    if (tableData.length <= 1) {
+      Modal.warning({ title: "Cannot Delete", content: "A costing request must have at least one specification row." });
+      return;
+    }
+    const updated = tableData.filter((_, idx) => idx !== rowIndex).map((row, idx) => ({ ...row, itemNo: idx + 1 }));
+    setTableData(updated);
+  };
+
+  const handleCorrectionSubmit = async () => {
     try {
       setError("");
       setSaving(true);
-      await costingService.updateRequestSpecs(id, specsDraft);
-      const updated = await costingService.saveCostingDataDraft(id, costingDraft);
+      
+      const hot = hotTableRef.current?.hotInstance;
+      let finalSpecsDraft = specsDraft;
+      let finalCostingDraft = costingDraft;
+      
+      if (hot) {
+        const gridData = hot.getSourceData();
+        if (request.specs?.items || gridData.length > 1) {
+          const updatedSpecsItems = [];
+          const updatedCostingItems = {};
+          
+          gridData.forEach((row, idx) => {
+            const specObj = {};
+            marketingFields.forEach(f => {
+              specObj[f.key] = row[`spec_${f.key}`] !== undefined ? row[`spec_${f.key}`] : "";
+            });
+            updatedSpecsItems.push(specObj);
+            
+            const costObj = {};
+            financeFields.forEach(f => {
+              let val = row[`cost_${f.key}`];
+              if (f.type === "number" && val !== "" && val !== undefined && val !== null) {
+                val = Number(val);
+              }
+              costObj[f.key] = val !== undefined ? val : "";
+            });
+            updatedCostingItems[idx] = costObj;
+          });
+          
+          finalSpecsDraft = { items: updatedSpecsItems };
+          finalCostingDraft = { ...costingDraft, items: updatedCostingItems };
+        } else {
+          const row = gridData[0] || {};
+          const specObj = {};
+          marketingFields.forEach(f => {
+            specObj[f.key] = row[`spec_${f.key}`] !== undefined ? row[`spec_${f.key}`] : "";
+          });
+          finalSpecsDraft = specObj;
+          
+          const costObj = {};
+          financeFields.forEach(f => {
+            let val = row[`cost_${f.key}`];
+            if (f.type === "number" && val !== "" && val !== undefined && val !== null) {
+              val = Number(val);
+            }
+            costObj[f.key] = val !== undefined ? val : "";
+          });
+          finalCostingDraft = { ...costingDraft, ...costObj };
+        }
+      }
+
+      await costingService.updateRequestSpecs(id, finalSpecsDraft);
+      if (isFinanceOfficer || isAdmin) {
+        await costingService.saveCostingDataDraft(id, finalCostingDraft);
+      }
+      
+      const updated = await costingService.getCostingRequestById(id);
       setRequest(updated);
-      setIsAdminCorrecting(false);
-      setSuccessMsg("Request corrections saved successfully.");
+      setIsCorrectingDetails(false);
+      setSuccessMsg("Request specifications and details updated successfully.");
     } catch (err) {
+      console.error(err);
       setError(err.message || "Failed to save corrections.");
     } finally {
       setSaving(false);
@@ -617,7 +709,7 @@ export default function RequestDetails() {
     const col = {
       data: `spec_${f.key}`,
       title: `${f.label} (Mkt)`,
-      readOnly: !isAdminCorrecting
+      readOnly: !isCorrectingDetails
     };
     if (f.type === "number") col.type = "numeric";
     else if (f.type === "select") {
@@ -632,7 +724,7 @@ export default function RequestDetails() {
     const col = {
       data: `cost_${f.key}`,
       title: `${f.label} (Fin)`,
-      readOnly: !isCostingActive
+      readOnly: !isCostingActive && !isCorrectingDetails
     };
     if (f.type === "number") col.type = "numeric";
     else if (f.type === "select") {
@@ -709,12 +801,12 @@ export default function RequestDetails() {
               </Button>
             )}
 
-            {isFinanceOfficer && !isCompleted && !isAdminCorrecting && (
+            {showCorrectDetails && (
               <Button
                 type="dashed"
                 icon={<EditOutlined />}
                 onClick={() => {
-                  setIsAdminCorrecting(true);
+                  setIsCorrectingDetails(true);
                   setSpecsDraft(request.specs || {});
                   setCostingDraft(request.costing || {});
                 }}
@@ -783,7 +875,7 @@ export default function RequestDetails() {
               </Col>
               <Col xs={24} md={12}>
                 <Card title="Finance Costing File" bordered={true} style={{ borderRadius: 12 }}>
-                  {((isFinanceOfficer && (request.status === "Costing in Progress" || request.status === "Overdue")) || isAdminCorrecting) ? (
+                  {((isFinanceOfficer && (request.status === "Costing in Progress" || request.status === "Overdue")) || isCorrectingDetails) ? (
                     <Space direction="vertical" size="middle" style={{ width: "100%" }}>
                       <Text type="secondary">
                         Finance costing is spreadsheet-based. Download the specifications sheet, perform calculations, and upload the completed costing sheet below.
@@ -868,12 +960,42 @@ export default function RequestDetails() {
               bordered={true}
               style={{ borderLeft: "4px solid #0ea5e9", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 12 }}
               extra={
-                isCostingActive && (
+                isCorrectingDetails ? (
+                  <Space wrap>
+                    <Tag color="orange" style={{ fontWeight: 800 }}>EDITING MODE</Tag>
+                    <Button 
+                      type="dashed" 
+                      onClick={handleAddSpecRow} 
+                      icon={<PlusOutlined />} 
+                      style={{ borderRadius: 6 }}
+                    >
+                      Add Row
+                    </Button>
+                    <Button 
+                      type="dashed" 
+                      danger 
+                      onClick={handleDeleteSpecRow} 
+                      icon={<DeleteOutlined />} 
+                      style={{ borderRadius: 6 }}
+                    >
+                      Delete Row
+                    </Button>
+                  </Space>
+                ) : isCostingActive ? (
                   <Tag color="processing" style={{ fontWeight: 800 }}>COSTING PHASE ACTIVE</Tag>
-                )
+                ) : null
               }
             >
-              {isCostingActive && (
+              {isCorrectingDetails && (
+                <Alert
+                  message="Specification Editing Active"
+                  description="You can edit specification values and add or remove rows in the grid below. Click 'Save Changes' below once finished."
+                  type="warning"
+                  showIcon
+                  style={{ marginBottom: 16 }}
+                />
+              )}
+              {isCostingActive && !isCorrectingDetails && (
                 <Alert
                   message="Spreadsheet Editing Enabled"
                   description="Double click on the green column header cells to input Unit Cost and other costing values directly in Excel style."
@@ -899,23 +1021,23 @@ export default function RequestDetails() {
               </div>
 
               {/* Action Buttons below table */}
-              {(isCostingActive || isAdminCorrecting) && (
+              {(isCostingActive || isCorrectingDetails) && (
                 <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 16 }}>
-                  {isAdminCorrecting ? (
+                  {isCorrectingDetails ? (
                     <>
                       <Button
                         type="primary"
                         icon={<CheckCircleOutlined />}
-                        onClick={handleAdminCorrectionSubmit}
+                        onClick={handleCorrectionSubmit}
                         disabled={saving}
                         style={{ background: "#10b981", borderColor: "#10b981", fontWeight: 700 }}
                       >
-                        Save Corrections
+                        Save Changes
                       </Button>
                       <Button
                         icon={<CloseCircleOutlined />}
                         onClick={() => {
-                          setIsAdminCorrecting(false);
+                          setIsCorrectingDetails(false);
                           setSpecsDraft(request.specs || {});
                           setCostingDraft(request.costing || {});
                         }}
