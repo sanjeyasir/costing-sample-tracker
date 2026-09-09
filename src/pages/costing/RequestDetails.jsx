@@ -2,10 +2,9 @@ import React, { useEffect, useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import * as costingService from "../../services/firebase/costingService";
-import * as XLSX from "xlsx";
 import ExcelJS from "exceljs";
 import * as notificationService from "../../services/firebase/notificationService";
-import { Row, Col, Card, Typography, Button, Tag, Space, Input, Select, Alert, Spin, Descriptions, Divider, Modal, Upload } from "antd";
+import { Row, Col, Card, Typography, Button, Tag, Space, Alert, Spin, Descriptions, Modal, Upload } from "antd";
 import {
   LeftOutlined,
   PlayCircleOutlined,
@@ -26,7 +25,6 @@ import { registerAllModules } from "handsontable/registry";
 registerAllModules();
 
 const { Title, Text } = Typography;
-const { Option } = Select;
 
 export default function RequestDetails() {
   const { id } = useParams();
@@ -83,17 +81,36 @@ export default function RequestDetails() {
     requestFields = request?.categoryFields || activeCategory?.fields || [];
   }
   const financeFields = requestFields.filter(f => f.owner === "finance");
-  const marketingFields = requestFields.filter(f => f.owner === "marketing");
+  let rawMarketingFields = requestFields.filter(f => f.owner === "marketing");
+  if (!rawMarketingFields.some(f => f.key === "marketingRemarks" || f.key === "remarks")) {
+    rawMarketingFields = [
+      ...rawMarketingFields,
+      { key: "marketingRemarks", label: "Marketing Remarks", type: "text", required: false, owner: "marketing" }
+    ];
+  }
+  const marketingFields = rawMarketingFields;
 
   const isFinanceOfficer = currentUser.costingRoles?.includes("costing_finance") || currentUser.costingRoles?.includes("admin") || currentUser.roles?.includes("admin");
+  const isMarketingOfficer = currentUser.costingRoles?.includes("costing_marketing") || currentUser.costingRoles?.includes("admin") || currentUser.roles?.includes("admin") || request?.marketingOfficer?.uid === currentUser.uid || request?.createdByUid === currentUser.uid;
   const isAdmin = currentUser.roles?.includes("admin") || currentUser.costingRoles?.includes("admin");
   const isCompleted = request?.status === "Costing Completed" || request?.status === "Sent to Marketing";
+  const canReopen = (isAdmin || isMarketingOfficer) && isCompleted;
   const isCostingActive = ((isFinanceOfficer && (request?.status === "Costing in Progress" || request?.status === "Overdue")) || isAdminCorrecting) && !request?.specs?.excelFile;
 
   // Initialize Handsontable Grid data when request loads
   useEffect(() => {
     if (request && categories.length > 0) {
-      const itemsList = request.specs?.items || [request.specs || {}];
+      let itemsList = [];
+      if (Array.isArray(request.specs?.items)) {
+        itemsList = request.specs.items;
+      } else if (request.specs?.items && typeof request.specs.items === "object") {
+        itemsList = Object.values(request.specs.items);
+      } else if (request.specs && typeof request.specs === "object") {
+        itemsList = [request.specs];
+      } else {
+        itemsList = [{}];
+      }
+
       const initialRows = itemsList.map((item, idx) => {
         const rowObj = {
           itemNo: idx + 1
@@ -101,16 +118,16 @@ export default function RequestDetails() {
         
         // Specs values
         marketingFields.forEach(f => {
-          rowObj[`spec_${f.key}`] = item[f.key] !== undefined ? item[f.key] : "";
+          rowObj[`spec_${f.key}`] = item && item[f.key] !== undefined ? item[f.key] : "";
         });
         
         // Costing values
         const itemCosting = request.specs?.items 
-          ? (costingDraft.items?.[idx] || request.costing?.items?.[idx] || {})
+          ? (costingDraft.items?.[idx] || costingDraft.items?.[String(idx)] || request.costing?.items?.[idx] || request.costing?.items?.[String(idx)] || {})
           : (costingDraft || request.costing || {});
         
         financeFields.forEach(f => {
-          rowObj[`cost_${f.key}`] = itemCosting[f.key] !== undefined ? itemCosting[f.key] : "";
+          rowObj[`cost_${f.key}`] = itemCosting && itemCosting[f.key] !== undefined ? itemCosting[f.key] : "";
         });
         
         return rowObj;
@@ -284,19 +301,28 @@ export default function RequestDetails() {
     }
   };
 
-  const handleReopen = async () => {
-    try {
-      setError("");
-      setSaving(true);
-      const updated = await costingService.reopenCostingRequest(id);
-      setRequest(updated);
-      setIsAdminCorrecting(false);
-      setSuccessMsg("Completed request has been reopened successfully.");
-    } catch (err) {
-      setError(err.message || "Failed to reopen request.");
-    } finally {
-      setSaving(false);
-    }
+  const handleReopen = () => {
+    Modal.confirm({
+      title: "Reopen Costing Request",
+      content: `Are you sure you want to reopen Request #${request?.costRequestNo}? It will return to "Costing in Progress" for Finance to revise.`,
+      okText: "Yes, Reopen",
+      okType: "danger",
+      cancelText: "Cancel",
+      async onOk() {
+        try {
+          setError("");
+          setSaving(true);
+          const updated = await costingService.reopenCostingRequest(id, currentUser);
+          setRequest(updated);
+          setIsAdminCorrecting(false);
+          setSuccessMsg("Completed request has been reopened successfully.");
+        } catch (err) {
+          setError(err.message || "Failed to reopen request.");
+        } finally {
+          setSaving(false);
+        }
+      }
+    });
   };
 
   const handleAdminCorrectionSubmit = async () => {
@@ -338,115 +364,213 @@ export default function RequestDetails() {
     }
   };
 
+  // Unified, well-formatted Excel Cost Sheet Downloader
   const handleDownloadCostSheet = async () => {
+    if (!request) return;
+
+    if (request.specs?.excelFile) {
+      handleDownloadExcel(request.specs.excelFile);
+      if (request.costing?.excelFile) {
+        handleDownloadExcel(request.costing.excelFile);
+      }
+      return;
+    }
+
     try {
       setError("");
       setSaving(true);
 
       const workbook = new ExcelJS.Workbook();
-      const worksheet = workbook.addWorksheet("Customer Cost Sheet");
+      const worksheet = workbook.addWorksheet("Cost Sheet");
+      worksheet.views = [{ showGridLines: true }];
 
-      // Set page details
-      worksheet.addRow([]);
-      worksheet.addRow(["Hayfibre Marketing Operations - Cost Sheet"]).font = { size: 16, bold: true, color: { argb: "FF0F172A" } };
-      worksheet.addRow([`Request No: ${request.costRequestNo}`]).font = { bold: true };
-      worksheet.addRow([`Customer Name: ${request.customerName}`]).font = { bold: true };
-      worksheet.addRow([`Product Category: ${request.productUnit}`]).font = { bold: true };
-      worksheet.addRow([`Date: ${new Date(request.requestDate).toLocaleDateString()}`]);
-      worksheet.addRow([]);
+      // 1. Header Banner
+      const titleRow = worksheet.addRow(["HAYFIBRE OPERATIONS - PRODUCT COSTING SHEET"]);
+      titleRow.font = { name: "Arial", size: 14, bold: true, color: { argb: "FFFFFFFF" } };
+      titleRow.height = 32;
+      titleRow.alignment = { vertical: "middle", horizontal: "center" };
+      titleRow.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FF0F172A" } // Dark Slate Navy
+      };
 
-      // Get line items
-      const itemsList = request.specs?.items && request.specs.items.length > 0 
-        ? request.specs.items 
-        : [request.specs || {}];
-      
-      const costingList = request.specs?.items
-        ? (request.costing?.items || [])
-        : [request.costing || {}];
+      worksheet.addRow([]); // Blank row
 
-      // Identify active columns (exclude empty ones)
+      // 2. Metadata Information Block
+      const reqDateStr = request.requestDate ? new Date(request.requestDate).toLocaleDateString() : "-";
+      const compDateStr = request.completionDate ? new Date(request.completionDate).toLocaleDateString() : "Pending";
+      const catName = activeCategory?.name || request.productUnit || "-";
+      const mktOfficer = request.marketingOfficer?.name || "-";
+      const finOfficer = request.financeOfficer?.name || "Unassigned";
+
+      const metaRowsData = [
+        ["Cost Request No:", request.costRequestNo, "Request Date:", reqDateStr],
+        ["Customer Name:", request.customerName, "Completion Date:", compDateStr],
+        ["Product Category:", catName, "Status:", request.status],
+        ["Marketing Officer:", mktOfficer, "Finance Officer:", finOfficer]
+      ];
+
+      metaRowsData.forEach((rowVals, idx) => {
+        const mRow = worksheet.addRow(rowVals);
+        mRow.height = 20;
+
+        // Style label cell 1 (col A)
+        const cA = mRow.getCell(1);
+        cA.font = { name: "Arial", size: 9.5, bold: true, color: { argb: "FF334155" } };
+        cA.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF1F5F9" } };
+        cA.border = { top: { style: "thin", color: { argb: "FFE2E8F0" } }, bottom: { style: "thin", color: { argb: "FFE2E8F0" } }, left: { style: "thin", color: { argb: "FFE2E8F0" } }, right: { style: "thin", color: { argb: "FFE2E8F0" } } };
+
+        // Style value cell 1 (col B)
+        const cB = mRow.getCell(2);
+        cB.font = { name: "Arial", size: 9.5, bold: idx === 0, color: { argb: idx === 0 ? "FF4F46E5" : "FF0F172A" } };
+        cB.border = { top: { style: "thin", color: { argb: "FFE2E8F0" } }, bottom: { style: "thin", color: { argb: "FFE2E8F0" } }, left: { style: "thin", color: { argb: "FFE2E8F0" } }, right: { style: "thin", color: { argb: "FFE2E8F0" } } };
+
+        // Style label cell 2 (col C)
+        const cC = mRow.getCell(3);
+        cC.font = { name: "Arial", size: 9.5, bold: true, color: { argb: "FF334155" } };
+        cC.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF1F5F9" } };
+        cC.border = { top: { style: "thin", color: { argb: "FFE2E8F0" } }, bottom: { style: "thin", color: { argb: "FFE2E8F0" } }, left: { style: "thin", color: { argb: "FFE2E8F0" } }, right: { style: "thin", color: { argb: "FFE2E8F0" } } };
+
+        // Style value cell 2 (col D)
+        const cD = mRow.getCell(4);
+        cD.font = { name: "Arial", size: 9.5, color: { argb: "FF0F172A" } };
+        cD.border = { top: { style: "thin", color: { argb: "FFE2E8F0" } }, bottom: { style: "thin", color: { argb: "FFE2E8F0" } }, left: { style: "thin", color: { argb: "FFE2E8F0" } }, right: { style: "thin", color: { argb: "FFE2E8F0" } } };
+      });
+
+      worksheet.addRow([]); // Blank spacer
+
+      // 3. Items & Specifications Table (Safely normalize arrays)
+      let itemsList = [];
+      if (Array.isArray(request.specs?.items)) {
+        itemsList = request.specs.items;
+      } else if (request.specs?.items && typeof request.specs.items === "object") {
+        itemsList = Object.values(request.specs.items);
+      } else if (request.specs && typeof request.specs === "object") {
+        itemsList = [request.specs];
+      } else {
+        itemsList = [{}];
+      }
+
+      const getItemCosting = (idx) => {
+        if (!request.costing) return {};
+        if (request.costing.items) {
+          if (Array.isArray(request.costing.items)) {
+            return request.costing.items[idx] || {};
+          } else if (typeof request.costing.items === "object") {
+            return request.costing.items[idx] || request.costing.items[String(idx)] || Object.values(request.costing.items)[idx] || {};
+          }
+        }
+        return request.costing || {};
+      };
+
+      const costingList = itemsList.map((_, idx) => getItemCosting(idx));
+
+      // Identify active columns (exclude empty columns)
       const activeMarketingFields = marketingFields.filter(f => {
-        return itemsList.some(item => item[f.key] !== undefined && item[f.key] !== null && item[f.key] !== "" && item[f.key] !== "-");
+        return itemsList.some(item => item && item[f.key] !== undefined && item[f.key] !== null && item[f.key] !== "" && item[f.key] !== "-");
       });
 
       const activeFinanceFields = financeFields.filter(f => {
-        return costingList.some((cItem, idx) => {
-          const itemCost = request.specs?.items ? costingList[idx] : request.costing;
-          const val = itemCost ? itemCost[f.key] : undefined;
+        return costingList.some(cItem => {
+          const val = cItem ? cItem[f.key] : undefined;
           return val !== undefined && val !== null && val !== "" && val !== "-";
         });
       });
 
-      // Construct table headers
       const headers = ["Item #"];
-      activeMarketingFields.forEach(f => headers.push(f.label));
-      activeFinanceFields.forEach(f => headers.push(f.label));
+      activeMarketingFields.forEach(f => headers.push(`${f.label} (Mkt)`));
+      activeFinanceFields.forEach(f => headers.push(`${f.label} (Fin)`));
 
-      const headerRowIndex = 8;
-      const headerRow = worksheet.getRow(headerRowIndex);
-      headers.forEach((h, colIdx) => {
-        headerRow.getCell(colIdx + 1).value = h;
+      // Merge title row across total columns
+      const totalCols = Math.max(headers.length, 4);
+      worksheet.mergeCells(1, 1, 1, totalCols);
+
+      const headerRow = worksheet.addRow(headers);
+      headerRow.height = 26;
+      headerRow.eachCell((cell) => {
+        cell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FF0284C7" } // Professional Sky/Ocean blue
+        };
+        cell.font = {
+          name: "Arial",
+          size: 10,
+          bold: true,
+          color: { argb: "FFFFFFFF" }
+        };
+        cell.alignment = { vertical: "middle", horizontal: "center" };
+        cell.border = {
+          top: { style: "thin", color: { argb: "FFE2E8F0" } },
+          bottom: { style: "medium", color: { argb: "FF0369A1" } },
+          left: { style: "thin", color: { argb: "FFE2E8F0" } },
+          right: { style: "thin", color: { argb: "FFE2E8F0" } }
+        };
       });
 
-      // Style header row
-      headerRow.font = { name: "Arial", size: 11, bold: true, color: { argb: "FFFFFFFF" } };
-      headerRow.fill = {
-        type: "pattern",
-        pattern: "solid",
-        fgColor: { argb: "FF0EA5E9" } // Sky blue
-      };
-      headerRow.alignment = { vertical: "middle", horizontal: "center" };
-      headerRow.height = 25;
-
-      // Add Data rows
+      // 4. Data Rows
       itemsList.forEach((item, idx) => {
-        const itemCosting = request.specs?.items ? costingList[idx] : request.costing;
+        const itemCosting = getItemCosting(idx);
         const rowData = [idx + 1];
 
         activeMarketingFields.forEach(f => {
-          rowData.push(item[f.key] !== undefined ? item[f.key] : "");
+          rowData.push(item && item[f.key] !== undefined && item[f.key] !== null ? item[f.key] : "");
         });
 
         activeFinanceFields.forEach(f => {
           let val = itemCosting ? itemCosting[f.key] : "";
-          if (f.key === "unitCost" && val !== undefined && val !== "") {
+          if (f.key === "unitCost" && val !== undefined && val !== "" && val !== null) {
             val = `$${Number(val).toFixed(2)}`;
           }
-          rowData.push(val);
+          rowData.push(val !== undefined && val !== null ? val : "");
         });
 
-        const dataRow = worksheet.getRow(headerRowIndex + 1 + idx);
-        rowData.forEach((val, colIdx) => {
-          dataRow.getCell(colIdx + 1).value = val;
-          dataRow.getCell(colIdx + 1).border = {
+        const dataRow = worksheet.addRow(rowData);
+        dataRow.height = 22;
+
+        const isZebra = idx % 2 === 1;
+        dataRow.eachCell((cell, colIdx) => {
+          cell.font = { name: "Arial", size: 9.5 };
+          cell.alignment = { 
+            vertical: "middle", 
+            horizontal: colIdx === 1 ? "center" : (typeof cell.value === "number" || (typeof cell.value === "string" && cell.value.startsWith("$")) ? "right" : "left") 
+          };
+          if (isZebra) {
+            cell.fill = {
+              type: "pattern",
+              pattern: "solid",
+              fgColor: { argb: "FFF8FAFC" }
+            };
+          }
+          cell.border = {
             top: { style: "thin", color: { argb: "FFE2E8F0" } },
             bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
             left: { style: "thin", color: { argb: "FFE2E8F0" } },
             right: { style: "thin", color: { argb: "FFE2E8F0" } }
           };
         });
-        dataRow.height = 22;
       });
 
-      // Format column widths
+      // 5. Auto Column Widths
       worksheet.columns.forEach((col, colIdx) => {
-        let maxLen = 15;
+        let maxLen = 14;
         worksheet.eachRow((row, rIdx) => {
-          if (rIdx >= headerRowIndex) {
+          if (rIdx >= 3) {
             const cellVal = row.getCell(colIdx + 1).value;
             if (cellVal) {
               maxLen = Math.max(maxLen, cellVal.toString().length + 4);
             }
           }
         });
-        col.width = Math.min(maxLen, 40);
+        col.width = Math.min(Math.max(maxLen, 14), 45);
       });
 
       const buffer = await workbook.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
       const link = document.createElement("a");
       link.href = URL.createObjectURL(blob);
-      link.download = `Cost_Sheet_CR_${request.costRequestNo}_${request.customerName.replace(/\s+/g, "_")}.xlsx`;
+      link.download = `Cost_Sheet_CR_${request.costRequestNo}_${(request.customerName || "Customer").replace(/\s+/g, "_")}.xlsx`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -458,57 +582,6 @@ export default function RequestDetails() {
     } finally {
       setSaving(false);
     }
-  };
-
-  // Excel Single Export / Download
-  const handleSingleExport = () => {
-    if (!request) return;
-
-    if (request.specs?.excelFile) {
-      handleDownloadExcel(request.specs.excelFile);
-      if (request.costing?.excelFile) {
-        handleDownloadExcel(request.costing.excelFile);
-      }
-      return;
-    }
-
-    const data = [];
-    data.push(["PRODUCT COSTING SHEET", "", ""]);
-    data.push(["Cost Request No:", request.costRequestNo, ""]);
-    data.push(["Customer:", request.customerName, ""]);
-    data.push(["Status:", request.status, ""]);
-    data.push(["Request Date:", request.requestDate ? new Date(request.requestDate).toLocaleDateString() : "", ""]);
-    data.push(["Completion Date:", request.completionDate ? new Date(request.completionDate).toLocaleDateString() : "Pending", ""]);
-    data.push(["Marketing Officer:", request.marketingOfficer.name, ""]);
-    data.push(["Finance Officer:", request.financeOfficer?.name || "Unassigned", ""]);
-    data.push(["", "", ""]);
-
-    const headers = ["Item No"];
-    marketingFields.forEach(f => headers.push(f.label));
-    financeFields.forEach(f => headers.push(f.label));
-    data.push(headers);
-
-    const itemsList = request.specs?.items || [request.specs || {}];
-    itemsList.forEach((item, index) => {
-      const itemCosting = request.specs?.items 
-        ? (request.costing?.items?.[index] || {})
-        : (request.costing || {});
-      const row = [index + 1];
-      marketingFields.forEach(f => row.push(item[f.key] || "N/A"));
-      financeFields.forEach(f => {
-        let val = itemCosting[f.key];
-        if (f.key === "unitCost" && val) {
-          val = `$${val.toFixed(2)}`;
-        }
-        row.push(val || "N/A");
-      });
-      data.push(row);
-    });
-
-    const worksheet = XLSX.utils.aoa_to_sheet(data);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, `CR_${request.costRequestNo}`);
-    XLSX.writeFile(workbook, `Cost_Request_${request.costRequestNo}.xlsx`);
   };
 
   const getStatusColor = (status) => {
@@ -606,30 +679,25 @@ export default function RequestDetails() {
               </Button>
             )}
 
-            {request.status === "Costing Completed" && (
+            {(isCompleted || isAdmin) && (
               <Button
                 type="primary"
                 icon={<DownloadOutlined />}
                 onClick={handleDownloadCostSheet}
                 loading={saving}
-                style={{ borderRadius: 8, background: "#10b981", borderColor: "#10b981" }}
-              >
-                Download Customer Cost Sheet
-              </Button>
-            )}
-
-            {(isCompleted || isAdmin) && (
-              <Button
-                icon={<DownloadOutlined />}
-                onClick={handleSingleExport}
                 size="large"
-                style={{ borderRadius: 8 }}
+                style={{ 
+                  borderRadius: 8, 
+                  background: "linear-gradient(135deg, #059669 0%, #10b981 100%)", 
+                  borderColor: "#059669",
+                  fontWeight: 700 
+                }}
               >
-                Download Cost Sheet Excel
+                Download Cost Sheet
               </Button>
             )}
 
-            {isAdmin && isCompleted && (
+            {canReopen && (
               <Button
                 icon={<RollbackOutlined />}
                 onClick={handleReopen}

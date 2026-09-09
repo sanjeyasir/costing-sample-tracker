@@ -155,7 +155,7 @@ export default function Reports() {
       }
     });
   });
-  const costingMarketingFields = allCategoryFields.filter(f => f.owner === "marketing");
+  const costingMarketingFields = allCategoryFields.filter(f => f.owner === "marketing" && f.key !== "marketingRemarks" && f.key !== "remarks");
   const costingFinanceFields = allCategoryFields.filter(f => f.owner === "finance");
 
   // Get multiplicated flat samples
@@ -211,6 +211,7 @@ export default function Reports() {
           marketingOfficer: req.marketingOfficer?.name || "-",
           financeOfficer: req.financeOfficer?.name || "Unassigned",
           status: req.status,
+          marketingRemarks: item.marketingRemarks || item.remarks || req.marketingRemarks || "-",
           itemNo: idx + 1
         };
 
@@ -585,12 +586,13 @@ export default function Reports() {
     { data: "marketingOfficer", type: "text", readOnly: true },
     { data: "financeOfficer", type: "text", readOnly: true },
     { data: "status", type: "text", readOnly: true },
+    { data: "marketingRemarks", type: "text", readOnly: true },
     { data: "itemNo", type: "numeric", readOnly: true }
   ];
   
   const costingHeaders = [
     "Request No", "Request Date", "Customer", "Category", 
-    "Marketing Officer", "Finance Officer", "Status", "Item #"
+    "Marketing Officer", "Finance Officer", "Status", "Marketing Remarks", "Item #"
   ];
 
   costingMarketingFields.forEach(f => {

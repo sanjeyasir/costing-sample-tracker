@@ -59,6 +59,7 @@ export const DEFAULT_CATEGORIES = [
       { key: "ncRcRatio", label: "NC/RC Ratio", type: "text", required: true, owner: "marketing" },
       { key: "density", label: "Density", type: "text", required: true, owner: "marketing" },
       { key: "qtyPerBundle", label: "Quantity per Bundle (Optional)", type: "number", required: false, owner: "marketing" },
+      { key: "marketingRemarks", label: "Marketing Remarks", type: "text", required: false, owner: "marketing" },
       // Finance fields
       { key: "unitCost", label: "Unit Cost", type: "number", required: true, owner: "finance" },
       { key: "qtyPerBundleFinance", label: "Quantity per Bundle (Finance)", type: "number", required: true, owner: "finance" }
@@ -73,6 +74,7 @@ export const DEFAULT_CATEGORIES = [
       { key: "specifications", label: "Product Specifications", type: "textarea", required: true, owner: "marketing" },
       { key: "gsm", label: "GSM", type: "number", required: true, owner: "marketing" },
       { key: "latexRatio", label: "Latex Ratio", type: "text", required: true, owner: "marketing" },
+      { key: "marketingRemarks", label: "Marketing Remarks", type: "text", required: false, owner: "marketing" },
       // Finance fields
       { key: "packing", label: "Packing - Pieces per Carton or Bundle", type: "text", required: true, owner: "finance" },
       { key: "cartonSize", label: "Carton Size (CM)", type: "text", required: true, owner: "finance" },

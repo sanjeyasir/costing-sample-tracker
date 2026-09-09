@@ -39,6 +39,17 @@ export default function CreateRequest() {
   const [successDialogOpen, setSuccessDialogOpen] = useState(false);
   const [createdRequestInfo, setCreatedRequestInfo] = useState(null);
 
+  const getMarketingFieldsForCat = (cat) => {
+    let raw = cat ? (cat.fields || []).filter(f => f.owner === "marketing") : [];
+    if (!raw.some(f => f.key === "marketingRemarks" || f.key === "remarks")) {
+      raw = [
+        ...raw,
+        { key: "marketingRemarks", label: "Marketing Remarks", type: "text", required: false, owner: "marketing" }
+      ];
+    }
+    return raw;
+  };
+
   useEffect(() => {
     async function loadCategories() {
       try {
@@ -52,7 +63,7 @@ export default function CreateRequest() {
           
           setTable1Data([{ customerName: "", categoryName: defaultCat.name }]);
           
-          const defaultFields = (defaultCat.fields || []).filter(f => f.owner === "marketing");
+          const defaultFields = getMarketingFieldsForCat(defaultCat);
           const emptyRows = Array.from({ length: 1 }, () => createDefaultRow(defaultFields));
           setTable2Data(emptyRows);
         }
@@ -75,7 +86,7 @@ export default function CreateRequest() {
   };
 
   const activeCategory = (categories || []).find(c => c.id === productUnit);
-  const marketingFields = activeCategory ? (activeCategory.fields || []).filter(f => f.owner === "marketing") : [];
+  const marketingFields = getMarketingFieldsForCat(activeCategory);
 
   const handleTable1Change = (changes) => {
     if (!changes) return;
@@ -95,7 +106,7 @@ export default function CreateRequest() {
     if (matchedCat && matchedCat.id !== productUnit) {
       setProductUnit(matchedCat.id);
       
-      const defaultFields = (matchedCat.fields || []).filter(f => f.owner === "marketing");
+      const defaultFields = getMarketingFieldsForCat(matchedCat);
       const emptyRows = Array.from({ length: 1 }, () => createDefaultRow(defaultFields));
       setTable2Data(emptyRows);
     }
@@ -365,17 +376,17 @@ export default function CreateRequest() {
             style={{ borderLeft: "4px solid #6366f1", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 12 }}
             styles={{ body: { padding: 24 } }}
           >
-            <div className="hot-container" style={{ maxWidth: 650 }}>
+            <div className="hot-container" style={{ maxWidth: 600 }}>
               <HotTable
                 ref={hotTable1Ref}
                 data={table1Data}
                 columns={table1Columns}
-                colHeaders={["Customer Name", "Product Category"]}
+                colHeaders={["Customer Name *", "Product Category *"]}
                 rowHeaders={false}
                 height="250"
                 licenseKey="non-commercial-and-evaluation"
                 afterChange={handleTable1Change}
-                colWidths={[300, 250]}
+                colWidths={[320, 260]}
               />
             </div>
             <Text type="secondary">Double-click on cells to type or select from the dropdown options.</Text>

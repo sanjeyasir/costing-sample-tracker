@@ -131,7 +131,7 @@ export async function updateProductCategory(categoryId, updatedData) {
  * Create a costing request
  */
 export async function createCostingRequest(requestData, currentUser) {
-  const { customerName, productUnit, specs } = requestData;
+  const { customerName, productUnit, specs, marketingRemarks } = requestData;
   const fyStr = getFinancialYearStr(new Date());
 
   if (isMockMode) {
@@ -160,6 +160,7 @@ export async function createCostingRequest(requestData, currentUser) {
       costRequestNo,
       customerName,
       productUnit,
+      marketingRemarks: marketingRemarks || "",
       categoryFieldsJson,
       marketingOfficer: {
         uid: currentUser.uid,
@@ -238,6 +239,7 @@ export async function createCostingRequest(requestData, currentUser) {
           costRequestNo,
           customerName,
           productUnit,
+          marketingRemarks: marketingRemarks || "",
           categoryFieldsJson,
           marketingOfficer: {
             uid: currentUser.uid,
@@ -628,13 +630,15 @@ export async function sendToMarketing(requestId) {
 }
 
 /**
- * Re-opens a completed request (Admin only)
+ * Re-opens a completed request (Marketing / Admin)
  */
-export async function reopenCostingRequest(requestId) {
+export async function reopenCostingRequest(requestId, user = null) {
   const updateData = {
     status: "Costing in Progress",
     completionDate: null
   };
+
+  const userName = user?.displayName || user?.email?.split("@")[0] || "Marketing";
 
   if (isMockMode) {
     const requests = JSON.parse(localStorage.getItem("costRequests") || "[]");
@@ -642,6 +646,19 @@ export async function reopenCostingRequest(requestId) {
     if (index === -1) throw new Error("Request not found");
     requests[index] = { ...requests[index], ...updateData };
     localStorage.setItem("costRequests", JSON.stringify(requests));
+
+    const req = requests[index];
+    const targetUserId = req.financeOfficer?.uid || null;
+    const targetRole = targetUserId ? null : "finance";
+
+    await createNotification({
+      userId: targetUserId,
+      role: targetRole,
+      costRequestId: req.id,
+      costRequestNo: req.costRequestNo,
+      message: `Costing request #${req.costRequestNo} has been reopened by ${userName}.`
+    });
+
     return requests[index];
   } else {
     const docRef = doc(db, "costRequests", requestId);
@@ -649,24 +666,42 @@ export async function reopenCostingRequest(requestId) {
       status: "Costing in Progress",
       completionDate: null
     });
-    return getCostingRequestById(requestId);
+    const updatedReq = await getCostingRequestById(requestId);
+
+    const targetUserId = updatedReq.financeOfficer?.uid || null;
+    const targetRole = targetUserId ? null : "finance";
+
+    await createNotification({
+      userId: targetUserId,
+      role: targetRole,
+      costRequestId: updatedReq.id,
+      costRequestNo: updatedReq.costRequestNo,
+      message: `Costing request #${updatedReq.costRequestNo} has been reopened by ${userName}.`
+    });
+
+    return updatedReq;
   }
 }
 
 /**
  * Updates Marketing-owned specifications (Marketing / Admin only)
  */
-export async function updateRequestSpecs(requestId, specsData) {
+export async function updateRequestSpecs(requestId, specsData, marketingRemarks = undefined) {
+  const payload = { specs: specsData };
+  if (marketingRemarks !== undefined) {
+    payload.marketingRemarks = marketingRemarks;
+  }
+
   if (isMockMode) {
     const requests = JSON.parse(localStorage.getItem("costRequests") || "[]");
     const index = requests.findIndex(r => r.id === requestId);
     if (index === -1) throw new Error("Request not found");
-    requests[index].specs = specsData;
+    requests[index] = { ...requests[index], ...payload };
     localStorage.setItem("costRequests", JSON.stringify(requests));
     return requests[index];
   } else {
     const docRef = doc(db, "costRequests", requestId);
-    await updateDoc(docRef, { specs: specsData });
+    await updateDoc(docRef, payload);
     return getCostingRequestById(requestId);
   }
 }
