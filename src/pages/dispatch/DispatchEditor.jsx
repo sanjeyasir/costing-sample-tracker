@@ -48,8 +48,10 @@ import {
   getDispatchEntryById,
   createDispatchEntry,
   updateDispatchEntry,
-  getTemplateConfig
+  getTemplateConfig,
+  buildDispatchFromSampleRequest
 } from "../../services/firebase/dispatchService";
+import { getSampleRequests } from "../../services/firebase/sampleService";
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -67,6 +69,9 @@ export default function DispatchEditor() {
   const [activeTab, setActiveTab] = useState("form");
   const [previewDocTab, setPreviewDocTab] = useState("invoice");
 
+  // Sample Requests for quick import
+  const [sampleRequests, setSampleRequests] = useState([]);
+
   // Main Form Data State
   const [formData, setFormData] = useState(JSON.parse(JSON.stringify(DEFAULT_DISPATCH_DATA)));
 
@@ -75,6 +80,12 @@ export default function DispatchEditor() {
     async function init() {
       try {
         setLoading(true);
+        const [requestsList, template] = await Promise.all([
+          getSampleRequests(),
+          getTemplateConfig()
+        ]);
+        setSampleRequests(requestsList || []);
+
         if (isEditMode) {
           const entry = await getDispatchEntryById(id);
           if (!entry) {
@@ -82,17 +93,36 @@ export default function DispatchEditor() {
             navigate("/dispatch-tracker");
             return;
           }
-          setFormData(entry);
+          const baseSender = template?.sender || {};
+          const savedSender = entry.sender || {};
+          const enrichedSender = {
+            ...baseSender,
+            ...savedSender,
+            address: savedSender.address || savedSender.companyAddress || baseSender.address || "",
+            companyAddress: savedSender.companyAddress || savedSender.address || baseSender.companyAddress || "",
+            signatureBase64: savedSender.signatureBase64 || savedSender.signatureUrl || (entry.createdByUid === currentUser?.uid ? currentUser?.salesOfficerProfile?.signatureBase64 : "") || "",
+            signatureUrl: savedSender.signatureUrl || savedSender.signatureBase64 || (entry.createdByUid === currentUser?.uid ? currentUser?.salesOfficerProfile?.signatureUrl : "") || ""
+          };
+          setFormData({
+            ...entry,
+            sender: enrichedSender
+          });
         } else {
-          const template = await getTemplateConfig();
-          if (template) {
-            setFormData(prev => ({
-              ...prev,
-              ...template,
-              shippingDate: new Date().toISOString().split("T")[0],
-              dispatchNo: "" // Auto-generated on save
-            }));
-          }
+          const activeSender = currentUser?.salesOfficerProfile || template?.sender;
+          setFormData(prev => ({
+            ...prev,
+            ...(template || {}),
+            sender: {
+              ...(template?.sender || {}),
+              ...(activeSender || {}),
+              address: activeSender?.address || activeSender?.companyAddress || template?.sender?.address || "",
+              companyAddress: activeSender?.companyAddress || activeSender?.address || template?.sender?.companyAddress || "",
+              signatureBase64: activeSender?.signatureBase64 || activeSender?.signatureUrl || "",
+              signatureUrl: activeSender?.signatureUrl || activeSender?.signatureBase64 || ""
+            },
+            shippingDate: new Date().toISOString().split("T")[0],
+            dispatchNo: "" // Auto-generated on save
+          }));
         }
       } catch (err) {
         console.error("Init failed:", err);
@@ -103,6 +133,21 @@ export default function DispatchEditor() {
     }
     init();
   }, [id, isEditMode, navigate]);
+
+  // Handle Import from Sample Request
+  const handleImportSampleRequest = (sampleReqId) => {
+    const chosen = sampleRequests.find(r => r.id === sampleReqId);
+    if (!chosen) return;
+
+    const imported = buildDispatchFromSampleRequest(chosen, formData.sender);
+    setFormData(prev => ({
+      ...prev,
+      ...imported,
+      sender: prev.sender // Retain active sender
+    }));
+    message.success(`Imported customer and items from Sample Request #${chosen.sampleRequestNo}!`);
+  };
+
 
   // Derived calculations
   const totals = calculateDispatchTotals(formData);
@@ -458,14 +503,77 @@ export default function DispatchEditor() {
             label: <span><EditOutlined /> Data Entry & Formulation</span>,
             children: (
               <div>
+                {/* ⚡ Quick Import from Sample Request Banner */}
+                {!isEditMode && sampleRequests.length > 0 && (
+                  <Card
+                    style={{
+                      background: "linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)",
+                      borderColor: "#86efac",
+                      borderRadius: 12,
+                      marginBottom: 20
+                    }}
+                    styles={{ body: { padding: "14px 20px" } }}
+                  >
+                    <Row gutter={[16, 12]} align="middle" justify="space-between">
+                      <Col xs={24} md={12}>
+                        <div style={{ fontWeight: 700, color: "#166534", fontSize: 14 }}>
+                          ⚡ Import from Sample Requisition
+                        </div>
+                        <div style={{ fontSize: 12, color: "#15803d" }}>
+                          Select an existing sample request to auto-fill customer, destination address, and export items without duplicate typing.
+                        </div>
+                      </Col>
+                      <Col xs={24} md={12}>
+                        <Select
+                          placeholder="Choose a Sample Request to Auto-Fill..."
+                          style={{ width: "100%" }}
+                          onChange={handleImportSampleRequest}
+                          allowClear
+                        >
+                          {sampleRequests.map(r => (
+                            <Option key={r.id} value={r.id}>
+                              📋 #{r.sampleRequestNo} - {r.customerName} ({r.items?.length || 1} items)
+                            </Option>
+                          ))}
+                        </Select>
+                      </Col>
+                    </Row>
+                  </Card>
+                )}
+
                 <Row gutter={[20, 20]}>
                   {/* Left Column: Sender Profile & Signature */}
                   <Col xs={24} lg={12}>
                     <Card 
-                      title={<span style={{ fontWeight: 600 }}>1. Sender / Exporter Profile</span>}
+                      title={
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%" }}>
+                          <span style={{ fontWeight: 600 }}>1. Sender / Exporter Profile</span>
+                          <Tag color="purple">Auto-loaded on Login</Tag>
+                        </div>
+                      }
                       bordered={false}
                       style={{ borderRadius: 12, marginBottom: 20, boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}
                     >
+                      {/* Sales Officer Auto-Populate Info Banner */}
+                      <div style={{ marginBottom: 14, padding: "8px 12px", background: "#f8fafc", borderRadius: 8, border: "1px solid #e2e8f0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <div>
+                          <Text style={{ fontSize: 12, color: "#475569" }}>
+                            👤 Officer Profile: <strong>{formData.sender?.name || currentUser?.salesOfficerProfile?.name || currentUser?.displayName || "Logged-in User"}</strong>
+                          </Text>
+                          <div style={{ fontSize: 11, color: "#64748b" }}>
+                            Auto-populated from saved profile / looked up from dispatch
+                          </div>
+                        </div>
+                        <Button 
+                          type="link" 
+                          size="small" 
+                          onClick={() => navigate("/sales-officer-profile")}
+                          style={{ fontSize: 11, padding: 0 }}
+                        >
+                          Edit Profile Defaults
+                        </Button>
+                      </div>
+
                       <Row gutter={[12, 12]}>
                         <Col span={12}>
                           <label style={{ fontSize: 12, fontWeight: 600, color: "#333" }}>Sender Name</label>
@@ -483,6 +591,7 @@ export default function DispatchEditor() {
                             onChange={(e) => handleNestedChange("sender", "designation", e.target.value)}
                           />
                         </Col>
+
                         <Col span={24}>
                           <label style={{ fontSize: 12, fontWeight: 600, color: "#333" }}>Company / Exporter Address</label>
                           <TextArea

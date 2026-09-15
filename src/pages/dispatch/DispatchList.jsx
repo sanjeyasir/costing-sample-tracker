@@ -16,9 +16,10 @@ import {
   Modal, 
   message, 
   Tooltip, 
-  Popconfirm,
-  Badge,
-  Empty
+  Popconfirm, 
+  Badge, 
+  Empty, 
+  Tabs 
 } from "antd";
 import {
   PlusOutlined,
@@ -36,17 +37,22 @@ import {
   ClockCircleOutlined,
   SyncOutlined,
   InboxOutlined,
-  GlobalOutlined
+  GlobalOutlined,
+  UnorderedListOutlined,
+  FilterOutlined
 } from "@ant-design/icons";
 import { useAuth } from "../../contexts/AuthContext";
-import { getDispatchEntries, deleteDispatchEntry } from "../../services/firebase/dispatchService";
-import { calculateDispatchTotals } from "../../utils/dispatchCalculations";
 import { 
-  generateSampleInvoicePDF, 
-  generatePhytoApplicationPDF, 
-  generatePackingListPDF, 
+  getDispatchEntries, 
+  deleteDispatchEntry 
+} from "../../services/firebase/dispatchService";
+import { calculateDispatchTotals } from "../../utils/dispatchCalculations";
+import {
+  generateSampleInvoicePDF,
+  generatePhytoApplicationPDF,
+  generatePackingListPDF,
   generateCompleteDispatchBundlePDF,
-  downloadPdfFile 
+  downloadPdfFile
 } from "../../utils/dispatchPdfGenerator";
 
 const { Title, Text } = Typography;
@@ -58,9 +64,10 @@ export default function DispatchList() {
 
   const [loading, setLoading] = useState(true);
   const [entries, setEntries] = useState([]);
-  const [filteredEntries, setFilteredEntries] = useState([]);
+  const [activeTab, setActiveTab] = useState("active");
   const [searchText, setSearchText] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [selectedCustomer, setSelectedCustomer] = useState("");
   const [downloadingId, setDownloadingId] = useState(null);
 
   useEffect(() => {
@@ -71,8 +78,7 @@ export default function DispatchList() {
     try {
       setLoading(true);
       const data = await getDispatchEntries();
-      setEntries(data);
-      setFilteredEntries(data);
+      setEntries(data || []);
     } catch (err) {
       console.error("Failed to load dispatches:", err);
       message.error("Failed to load dispatch entries.");
@@ -81,9 +87,38 @@ export default function DispatchList() {
     }
   };
 
-  // Filter effect
-  useEffect(() => {
-    let list = [...entries];
+  const isCompletedDispatch = (status) => status === "Delivered" || status === "Completed";
+
+  const activeEntries = entries.filter(e => !isCompletedDispatch(e.status));
+  const completedEntries = entries.filter(e => isCompletedDispatch(e.status));
+
+  // Extract unique customers of completed / delivered dispatches only
+  const uniqueCompletedCustomers = Array.from(
+    new Set(completedEntries.map(e => (e.receiver?.name || e.customerName)?.trim()).filter(Boolean))
+  ).sort((a, b) => a.localeCompare(b));
+
+  // Filter effect according to active tab
+  let filteredEntries = [];
+
+  if (activeTab === "completed") {
+    if (selectedCustomer) {
+      filteredEntries = completedEntries.filter(e => 
+        (e.receiver?.name?.trim() === selectedCustomer || e.customerName?.trim() === selectedCustomer)
+      );
+      if (searchText.trim()) {
+        const q = searchText.toLowerCase();
+        filteredEntries = filteredEntries.filter(d => 
+          (d.dispatchNo || "").toLowerCase().includes(q) ||
+          (d.receiver?.country || "").toLowerCase().includes(q) ||
+          (d.waybillNo || "").toLowerCase().includes(q)
+        );
+      }
+    } else {
+      filteredEntries = []; // Zero data loaded until a customer is chosen
+    }
+  } else {
+    // In active tab: show incomplete dispatches
+    let list = [...activeEntries];
 
     if (searchText.trim()) {
       const q = searchText.toLowerCase();
@@ -100,8 +135,8 @@ export default function DispatchList() {
       list = list.filter(d => d.status === statusFilter);
     }
 
-    setFilteredEntries(list);
-  }, [searchText, statusFilter, entries]);
+    filteredEntries = list;
+  }
 
   const handleDelete = async (id, dispatchNo) => {
     try {
@@ -173,7 +208,21 @@ export default function DispatchList() {
           <Text strong style={{ color: "#4f46e5", cursor: "pointer" }} onClick={() => navigate(`/dispatch-tracker/${record.id}`)}>
             {text || "Draft"}
           </Text>
-          <div style={{ fontSize: "11px", color: "#64748b" }}>
+          {record.sampleRequestNo && (
+            <div style={{ marginTop: 2 }}>
+              <Tag 
+                color="blue" 
+                style={{ cursor: "pointer", fontSize: 11 }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  navigate(`/requests/${record.sampleRequestId || record.id}`);
+                }}
+              >
+                📋 Req #{record.sampleRequestNo}
+              </Tag>
+            </div>
+          )}
+          <div style={{ fontSize: "11px", color: "#64748b", marginTop: 2 }}>
             Date: {record.shippingDate || "N/A"}
           </div>
         </div>
@@ -430,41 +479,130 @@ export default function DispatchList() {
         </Col>
       </Row>
 
+      {/* View Switcher Tabs */}
+      <Tabs
+        activeKey={activeTab}
+        onChange={(key) => {
+          setActiveTab(key);
+          setSearchText("");
+          setStatusFilter("all");
+          setSelectedCustomer("");
+        }}
+        size="large"
+        style={{ marginBottom: 16 }}
+        items={[
+          {
+            key: "active",
+            label: (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 600 }}>
+                <UnorderedListOutlined />
+                <span>Active Dispatches</span>
+                <Tag color="processing" style={{ borderRadius: 10, fontWeight: 700, marginInlineStart: 2 }}>
+                  {activeEntries.length}
+                </Tag>
+              </span>
+            )
+          },
+          {
+            key: "completed",
+            label: (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 600 }}>
+                <CheckCircleOutlined style={{ color: "#10b981" }} />
+                <span>Delivered & Completed Archive</span>
+                <Tag color="success" style={{ borderRadius: 10, fontWeight: 700, marginInlineStart: 2 }}>
+                  {completedEntries.length}
+                </Tag>
+              </span>
+            )
+          }
+        ]}
+      />
+
       {/* Search & Filter Bar */}
       <Card bordered={false} style={{ borderRadius: 12, marginBottom: 16, boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
-        <Row gutter={[16, 16]} justify="space-between" align="middle">
-          <Col xs={24} md={12} lg={8}>
-            <Input
-              placeholder="Search by Dispatch No, Consignee, Country, or AWB..."
-              prefix={<SearchOutlined style={{ color: "#94a3b8" }} />}
-              value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-              allowClear
-              size="middle"
-            />
-          </Col>
-
-          <Col xs={24} md={12} lg={8}>
-            <Space wrap style={{ width: "100%", justifyContent: "flex-end" }}>
+        {activeTab === "completed" ? (
+          <Row gutter={[16, 16]} align="bottom">
+            <Col xs={24} sm={12} md={10}>
+              <div style={{ marginBottom: 8, color: "#0f172a", fontWeight: 700 }}>
+                🏢 Select Customer / Receiver <span style={{ color: "#ef4444" }}>*</span>
+              </div>
               <Select
-                value={statusFilter}
-                onChange={setStatusFilter}
-                style={{ width: 180 }}
+                showSearch
+                placeholder="Choose Customer to View Delivered Dispatches..."
+                value={selectedCustomer || undefined}
+                onChange={(val) => setSelectedCustomer(val || "")}
+                size="large"
+                style={{ width: "100%", borderRadius: 8 }}
+                allowClear
+                options={uniqueCompletedCustomers.map(c => ({
+                  label: `🏢 ${c}`,
+                  value: c
+                }))}
+              />
+            </Col>
+
+            <Col xs={24} sm={12} md={10}>
+              <div style={{ marginBottom: 8, color: "#475569", fontWeight: 600 }}>Search within Customer</div>
+              <Input
+                placeholder="Search Dispatch No, Country, AWB..."
+                prefix={<SearchOutlined style={{ color: "#94a3b8" }} />}
+                value={searchText}
+                onChange={(e) => setSearchText(e.target.value)}
+                allowClear
+                size="large"
+                style={{ borderRadius: 8 }}
+                disabled={!selectedCustomer}
+              />
+            </Col>
+
+            <Col xs={24} md={4}>
+              <Button 
+                icon={<FilterOutlined />} 
+                onClick={() => {
+                  setSelectedCustomer("");
+                  setSearchText("");
+                }}
+                size="large"
+                style={{ width: "100%", borderRadius: 8 }}
               >
-                <Option value="all">All Statuses</Option>
-                <Option value="Draft">Draft</Option>
-                <Option value="Ready for Dispatch">Ready for Dispatch</Option>
-                <Option value="In Transit">In Transit</Option>
-                <Option value="Delivered">Delivered</Option>
-                <Option value="Cancelled">Cancelled</Option>
-              </Select>
-              
-              <Button icon={<SyncOutlined />} onClick={loadDispatches}>
-                Refresh
+                Clear
               </Button>
-            </Space>
-          </Col>
-        </Row>
+            </Col>
+          </Row>
+        ) : (
+          <Row gutter={[16, 16]} justify="space-between" align="middle">
+            <Col xs={24} md={12} lg={8}>
+              <Input
+                placeholder="Search by Dispatch No, Consignee, Country, or AWB..."
+                prefix={<SearchOutlined style={{ color: "#94a3b8" }} />}
+                value={searchText}
+                onChange={(e) => setSearchText(e.target.value)}
+                allowClear
+                size="middle"
+              />
+            </Col>
+
+            <Col xs={24} md={12} lg={8}>
+              <Space wrap style={{ width: "100%", justifyContent: "flex-end" }}>
+                <Select
+                  value={statusFilter}
+                  onChange={setStatusFilter}
+                  style={{ width: 180 }}
+                >
+                  <Option value="all">All Active Statuses</Option>
+                  <Option value="Draft">Draft</Option>
+                  <Option value="Ready for Dispatch">Ready for Dispatch</Option>
+                  <Option value="In Transit">In Transit</Option>
+                  <Option value="Cancelled">Cancelled</Option>
+                </Select>
+                
+                <Button icon={<SyncOutlined />} onClick={loadDispatches}>
+                  Refresh
+                </Button>
+              </Space>
+            </Col>
+          </Row>
+        )}
       </Card>
 
       {/* Main Table */}
@@ -480,14 +618,30 @@ export default function DispatchList() {
             showTotal: (total) => `Total ${total} entries`,
           }}
           locale={{
-            emptyText: (
+            emptyText: activeTab === "completed" && !selectedCustomer ? (
               <Empty
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description="No dispatch entries found. Click 'New Dispatch Entry' or upload a template to get started."
+                description={
+                  <div style={{ padding: "16px 0" }}>
+                    <div style={{ fontWeight: 700, color: "#0f172a", fontSize: 15 }}>
+                      Select a Customer to View Delivered Dispatches
+                    </div>
+                    <div style={{ color: "#64748b", fontSize: 13, marginTop: 4 }}>
+                      Choose a customer from the dropdown above to load and display their delivered export dispatches.
+                    </div>
+                  </div>
+                }
+              />
+            ) : (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description="No dispatch entries found matching current filters."
               >
-                <Button type="primary" onClick={() => navigate("/dispatch-tracker/create")}>
-                  Create First Dispatch
-                </Button>
+                {activeTab === "active" && (
+                  <Button type="primary" onClick={() => navigate("/dispatch-tracker/create")}>
+                    Create First Dispatch
+                  </Button>
+                )}
               </Empty>
             ),
           }}

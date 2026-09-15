@@ -22,8 +22,10 @@ import Notifications from "../pages/notifications/Notifications";
 import DispatchList from "../pages/dispatch/DispatchList";
 import DispatchEditor from "../pages/dispatch/DispatchEditor";
 import DispatchDetails from "../pages/dispatch/DispatchDetails";
+import SalesOfficerProfile from "../pages/admin/SalesOfficerProfile";
 
 export default function AppRoutes() {
+
   return (
     <Routes>
       {/* Public Routes */}
@@ -177,6 +179,17 @@ export default function AppRoutes() {
       />
 
 
+
+      <Route
+        path="/sales-officer-profile"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout>
+              <SalesOfficerProfile />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
 
       <Route
         path="/notifications"

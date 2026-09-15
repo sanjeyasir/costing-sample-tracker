@@ -630,36 +630,49 @@ export async function generatePackingListPDF(dispatchData, docInstance = null) {
   doc.text("3. DETAILS OF COMMODITIES", margin + 2, y + 3.6);
 
   y += 5;
+  const thH = 8.0;
   doc.setFillColor(245, 245, 245);
-  doc.rect(margin, y, contentWidth, 5.5, "FD");
+  doc.rect(margin, y, contentWidth, thH, "FD");
+  doc.setFont("helvetica", "bold");
   doc.setFontSize(7);
 
-  doc.text("S.No", margin + 2, y + 3.8);
-  doc.text("Item / Common Name", margin + 10, y + 3.8);
-  doc.text("Botanical Name", 85, y + 3.8);
-  doc.text("Box No", 125, y + 3.8);
-  doc.text("No. Boxes", 145, y + 3.8);
-  doc.text("Net Wt (Kg)", 165, y + 3.8, { align: "right" });
-  doc.text("Gross Wt", 185, y + 3.8, { align: "right" });
-  doc.text("Chk", rightEdge - 2, y + 3.8, { align: "right" });
+  // Single-line headers vertically centered in 8mm box
+  doc.text("S.No", margin + 2, y + 4.9);
+  doc.text("Item / Common Name", margin + 10, y + 4.9);
+  doc.text("Botanical Name", 78, y + 4.9);
+  doc.text("Box No", 114, y + 4.9);
 
-  y += 5.5;
+  // Wrapped 2-line headers with clear vertical spacing
+  doc.text("No.", 139, y + 3.2, { align: "center" });
+  doc.text("Boxes", 139, y + 6.4, { align: "center" });
+
+  doc.text("Net Wt", 165, y + 3.2, { align: "right" });
+  doc.text("(Kg)", 165, y + 6.4, { align: "right" });
+
+  doc.text("Gross Wt", 185, y + 3.2, { align: "right" });
+  doc.text("(Kg)", 185, y + 6.4, { align: "right" });
+
+  doc.text("Chk", 193.5, y + 4.9, { align: "center" });
+
+  y += thH;
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7);
 
   totals.computedItems.forEach((item, idx) => {
-    const descLines = doc.splitTextToSize(item.description || "", 70);
-    const rowH = Math.max(5.2, descLines.length * 3.2 + 2);
+    const descLines = doc.splitTextToSize(item.description || "", 54);
+    const botLines = doc.splitTextToSize(item.botanicalName || "Cocos nucifera", 33);
+    const maxLines = Math.max(descLines.length, botLines.length, 1);
+    const rowH = Math.max(5.5, maxLines * 3.2 + 2.2);
 
     doc.rect(margin, y, contentWidth, rowH);
-    doc.text(String(idx + 1), margin + 2, y + 3.6);
-    doc.text(descLines, margin + 10, y + 3.6);
-    doc.text(item.botanicalName || "Cocos nucifera", 85, y + 3.6);
-    doc.text(item.boxNo || `Box ${idx + 1}`, 125, y + 3.6);
-    doc.text(String(totals.noOfBoxes), 148, y + 3.6);
-    doc.text(Number(item.weightKg).toFixed(1), 165, y + 3.6, { align: "right" });
-    doc.text(idx === 0 ? String(totals.totalGrossWeight) : "-", 185, y + 3.6, { align: "right" });
-    doc.text("✓", rightEdge - 3, y + 3.6, { align: "right" });
+    doc.text(String(idx + 1), margin + 2, y + 3.8);
+    doc.text(descLines, margin + 10, y + 3.8);
+    doc.text(botLines, 78, y + 3.8);
+    doc.text(item.boxNo || `Box ${idx + 1}`, 114, y + 3.8);
+    doc.text(String(totals.noOfBoxes || 1), 139, y + 3.8, { align: "center" });
+    doc.text(Number(item.weightKg).toFixed(1), 165, y + 3.8, { align: "right" });
+    doc.text(idx === 0 ? String(totals.totalGrossWeight) : "-", 185, y + 3.8, { align: "right" });
+    doc.text("✓", 193.5, y + 3.8, { align: "center" });
 
     y += rowH;
   });
@@ -669,8 +682,8 @@ export async function generatePackingListPDF(dispatchData, docInstance = null) {
   doc.rect(margin, y, contentWidth, 5.5, "FD");
   doc.setFont("helvetica", "bold");
   doc.setFontSize(7.5);
-  doc.text("TOTALS:", margin + 3, y + 3.8);
-  doc.text(`Total Boxes: ${totals.noOfBoxes}`, 125, y + 3.8);
+  doc.text("TOTALS:", margin + 2, y + 3.8);
+  doc.text(`Total Boxes: ${totals.noOfBoxes}`, 114, y + 3.8);
   doc.text(`${totals.totalNetWeight} Kg`, 165, y + 3.8, { align: "right" });
   doc.text(`${totals.totalGrossWeight} Kg`, 185, y + 3.8, { align: "right" });
 

@@ -100,6 +100,35 @@ export const AuthProvider = ({ children }) => {
     userRoles.push("admin");
   }
 
+  const defaultSalesOfficerProfile = profile ? {
+    name: profile.displayName || profile.name || (profile.email?.split("@")?.[0] || "Marketing Officer"),
+    designation: profile.designation || "Manager Marketing",
+    companyName: "Toyo Cushion Lanka Pvt Ltd",
+    companyAddress: "No.25 Foster Lane, Colombo 10, Sri Lanka",
+    address: "Toyo Cushion Lanka Pvt Ltd. No.25 Foster Lane, Colombo 10, Sri Lanka",
+    contact: profile.phoneNumber || "+9474 216 8231",
+    email: profile.email || "Manura.Mohotti@hayleysfibre.com",
+    country: "Sri Lanka",
+    originCity: "COLOMBO, SRI LANKA",
+    signatureText: profile.displayName || profile.name || "Manura Mohotti",
+    signatureBase64: "",
+    signatureUrl: ""
+  } : null;
+
+  const salesOfficerProfile = profile?.salesOfficerProfile ? {
+    ...defaultSalesOfficerProfile,
+    ...profile.salesOfficerProfile
+  } : defaultSalesOfficerProfile;
+
+  const updateMySalesOfficerProfile = async (newProfileData) => {
+    if (!user?.uid) throw new Error("No active user session");
+    const updated = await userService.updateUserSalesOfficerProfile(user.uid, newProfileData);
+    // Update active store profile
+    const updatedProfile = { ...profile, salesOfficerProfile: updated };
+    setAuth(user, updatedProfile, tenant, role);
+    return updated;
+  };
+
   const currentUser = profile ? {
     uid: user?.uid,
     email: user?.email || profile?.email || "",
@@ -111,7 +140,8 @@ export const AuthProvider = ({ children }) => {
     role: costingRoles[0] !== "none" ? costingRoles[0] : (sampleRoles[0] || "none"),
     roles: userRoles,
     status: profile.status,
-    requirePasswordChange: profile.requirePasswordChange || profile.isFirstLogin || false
+    requirePasswordChange: profile.requirePasswordChange || profile.isFirstLogin || false,
+    salesOfficerProfile: salesOfficerProfile
   } : null;
 
   const value = {
@@ -120,6 +150,7 @@ export const AuthProvider = ({ children }) => {
     login,
     logout,
     resetPassword,
+    updateMySalesOfficerProfile,
     tenant,
     role,
     costingRole: costingRoles[0] || "none",
@@ -139,3 +170,4 @@ export const AuthProvider = ({ children }) => {
     </AuthContext.Provider>
   );
 };
+

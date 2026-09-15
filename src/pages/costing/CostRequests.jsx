@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import * as costingService from "../../services/firebase/costingService";
 import ExcelJS from "exceljs";
-import { Table, Input, Select, Button, Tag, Space, Tooltip, DatePicker, Row, Col, Card, Alert, Typography, Tabs } from "antd";
+import { Table, Input, Select, Button, Tag, Space, Tooltip, DatePicker, Row, Col, Card, Alert, Typography, Tabs, Empty } from "antd";
 import {
   SearchOutlined,
   FilterOutlined,
@@ -28,8 +28,8 @@ export default function CostRequests() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  // View state: "all" or "my"
-  const view = searchParams.get("view") === "my" ? "my" : "all";
+  // View state: "all", "my", or "completed"
+  const view = searchParams.get("view") || "all";
 
   // Filter States
   const [search, setSearch] = useState("");
@@ -37,6 +37,7 @@ export default function CostRequests() {
   const [productUnit, setProductUnit] = useState("");
   const [dateFrom, setDateFrom] = useState(null);
   const [dateTo, setDateTo] = useState(null);
+  const [selectedCustomer, setSelectedCustomer] = useState("");
 
   // Pagination States
   const [pageSize, setPageSize] = useState(10);
@@ -54,21 +55,12 @@ export default function CostRequests() {
     async function loadData() {
       try {
         setLoading(true);
-        // Fetch categories for filter dropdown
-        const cats = await costingService.getProductCategories();
-        setCategories(cats);
-
-        // Fetch requests based on active filters
-        const filters = {
-          search,
-          status,
-          productUnit,
-          dateFrom: dateFrom ? dateFrom.format("YYYY-MM-DD") : "",
-          dateTo: dateTo ? dateTo.format("YYYY-MM-DD") : ""
-        };
-
-        const data = await costingService.getCostingRequests(filters);
-        setRequests(data);
+        const [cats, data] = await Promise.all([
+          costingService.getProductCategories(),
+          costingService.getCostingRequests()
+        ]);
+        setCategories(cats || []);
+        setRequests(data || []);
       } catch (err) {
         console.error("Error loading costing requests:", err);
         setError("Failed to fetch costing requests.");
@@ -77,7 +69,7 @@ export default function CostRequests() {
       }
     }
     loadData();
-  }, [search, status, productUnit, dateFrom, dateTo]);
+  }, []);
 
   const handleClearFilters = () => {
     setSearch("");
@@ -85,18 +77,19 @@ export default function CostRequests() {
     setProductUnit("");
     setDateFrom(null);
     setDateTo(null);
+    setSelectedCustomer("");
     const newParams = new URLSearchParams();
-    if (view === "my") newParams.set("view", "my");
+    if (view !== "all") newParams.set("view", view);
     setSearchParams(newParams);
     setCurrentPage(1);
   };
 
   const handleTabChange = (key) => {
     const newParams = new URLSearchParams(searchParams);
-    if (key === "my") {
-      newParams.set("view", "my");
-    } else {
+    if (key === "all") {
       newParams.delete("view");
+    } else {
+      newParams.set("view", key);
     }
     setSearchParams(newParams);
     setCurrentPage(1);
@@ -112,9 +105,89 @@ export default function CostRequests() {
     );
   };
 
-  const allCount = requests.length;
-  const myCount = requests.filter(isMyRequest).length;
-  const displayedRequests = view === "my" ? requests.filter(isMyRequest) : requests;
+  const isCompletedStatus = (st) => ["Costing Completed", "Sent to Marketing", "Completed"].includes(st);
+
+  const incompleteRequests = requests.filter(r => !isCompletedStatus(r.status));
+  const completedRequests = requests.filter(r => isCompletedStatus(r.status));
+  const myIncompleteRequests = incompleteRequests.filter(isMyRequest);
+
+  // Extract unique customers of completed requests only
+  const uniqueCompletedCustomers = Array.from(
+    new Set(completedRequests.map(r => r.customerName?.trim()).filter(Boolean))
+  ).sort((a, b) => a.localeCompare(b));
+
+  const activeCount = incompleteRequests.length;
+  const myActiveCount = myIncompleteRequests.length;
+  const completedCount = completedRequests.length;
+
+  // Filter displayed requests according to view tab and filters
+  let displayedRequests = [];
+
+  if (view === "completed") {
+    // In completed view: only present requests for the selected customer
+    if (selectedCustomer) {
+      displayedRequests = completedRequests.filter(r => r.customerName?.trim() === selectedCustomer);
+
+      if (search.trim()) {
+        const q = search.toLowerCase();
+        displayedRequests = displayedRequests.filter(r => 
+          (r.costRequestNo || "").toLowerCase().includes(q) ||
+          (r.productDescription || "").toLowerCase().includes(q) ||
+          (r.marketingOfficer?.name || "").toLowerCase().includes(q)
+        );
+      }
+      if (productUnit) {
+        displayedRequests = displayedRequests.filter(r => r.productCategory === productUnit || r.productUnit === productUnit);
+      }
+      if (dateFrom) {
+        displayedRequests = displayedRequests.filter(r => {
+          const reqD = r.requestDate || r.createdAt;
+          return reqD && new Date(reqD) >= dateFrom.startOf("day").toDate();
+        });
+      }
+      if (dateTo) {
+        displayedRequests = displayedRequests.filter(r => {
+          const reqD = r.requestDate || r.createdAt;
+          return reqD && new Date(reqD) <= dateTo.endOf("day").toDate();
+        });
+      }
+    } else {
+      displayedRequests = []; // Zero data loaded until a customer is chosen
+    }
+  } else {
+    // In "all" or "my" view: present only incomplete/active requests
+    let baseList = view === "my" ? myIncompleteRequests : incompleteRequests;
+
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      baseList = baseList.filter(r => 
+        (r.costRequestNo || "").toLowerCase().includes(q) ||
+        (r.customerName || "").toLowerCase().includes(q) ||
+        (r.productDescription || "").toLowerCase().includes(q) ||
+        (r.marketingOfficer?.name || "").toLowerCase().includes(q)
+      );
+    }
+    if (status) {
+      baseList = baseList.filter(r => r.status === status);
+    }
+    if (productUnit) {
+      baseList = baseList.filter(r => r.productCategory === productUnit || r.productUnit === productUnit);
+    }
+    if (dateFrom) {
+      baseList = baseList.filter(r => {
+        const reqD = r.requestDate || r.createdAt;
+        return reqD && new Date(reqD) >= dateFrom.startOf("day").toDate();
+      });
+    }
+    if (dateTo) {
+      baseList = baseList.filter(r => {
+        const reqD = r.requestDate || r.createdAt;
+        return reqD && new Date(reqD) <= dateTo.endOf("day").toDate();
+      });
+    }
+
+    displayedRequests = baseList;
+  }
 
   const tabItems = [
     {
@@ -122,9 +195,9 @@ export default function CostRequests() {
       label: (
         <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 600 }}>
           <UnorderedListOutlined />
-          <span>All Requests</span>
-          <Tag color="default" style={{ borderRadius: 10, fontWeight: 700, marginInlineStart: 2 }}>
-            {allCount}
+          <span>Active Costings</span>
+          <Tag color="processing" style={{ borderRadius: 10, fontWeight: 700, marginInlineStart: 2 }}>
+            {activeCount}
           </Tag>
         </span>
       )
@@ -134,9 +207,21 @@ export default function CostRequests() {
       label: (
         <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 600 }}>
           <UserOutlined />
-          <span>My Created Requests</span>
+          <span>My Active Requests</span>
           <Tag color="blue" style={{ borderRadius: 10, fontWeight: 700, marginInlineStart: 2 }}>
-            {myCount}
+            {myActiveCount}
+          </Tag>
+        </span>
+      )
+    },
+    {
+      key: "completed",
+      label: (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 600 }}>
+          <CheckCircleOutlined style={{ color: "#10b981" }} />
+          <span>Completed Archive</span>
+          <Tag color="success" style={{ borderRadius: 10, fontWeight: 700, marginInlineStart: 2 }}>
+            {completedCount}
           </Tag>
         </span>
       )
@@ -506,103 +591,199 @@ export default function CostRequests() {
         style={{ marginBottom: 24, background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 12 }}
         styles={{ body: { padding: 24 } }}
       >
-        <Row gutter={[16, 16]} align="bottom">
-          <Col xs={24} sm={12} md={6}>
-            <div style={{ marginBottom: 8, color: "#475569", fontWeight: 600 }}>Search</div>
-            <Input
-              prefix={<SearchOutlined />}
-              placeholder="No., Customer, Officers..."
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                setCurrentPage(1);
-              }}
-              size="large"
-              style={{ borderRadius: 8 }}
-            />
-          </Col>
-          <Col xs={24} sm={12} md={4}>
-            <div style={{ marginBottom: 8, color: "#475569", fontWeight: 600 }}>Category</div>
-            <Select
-              placeholder="All Categories"
-              value={productUnit}
-              onChange={(val) => {
-                setProductUnit(val);
-                setCurrentPage(1);
-              }}
-              size="large"
-              style={{ width: "100%", borderRadius: 8 }}
-              allowClear
-            >
-              <Option value="">All Categories</Option>
-              {categories.map((c) => (
-                <Option key={c.id} value={c.id}>{c.name}</Option>
-              ))}
-            </Select>
-          </Col>
-          <Col xs={24} sm={12} md={5}>
-            <div style={{ marginBottom: 8, color: "#475569", fontWeight: 600 }}>Status</div>
-            <Select
-              placeholder="All Statuses"
-              value={status}
-              onChange={(val) => {
-                setStatus(val);
-                const newParams = new URLSearchParams(searchParams);
-                if (val) {
-                  newParams.set("status", val);
-                } else {
-                  newParams.delete("status");
-                }
-                setSearchParams(newParams);
-                setCurrentPage(1);
-              }}
-              size="large"
-              style={{ width: "100%", borderRadius: 8 }}
-              allowClear
-            >
-              <Option value="">All Statuses</Option>
-              <Option value="Submitted">Submitted (New)</Option>
-              <Option value="Received by Finance">Received by Finance</Option>
-              <Option value="Costing in Progress">Costing in Progress</Option>
-              <Option value="Costing Completed">Costing Completed</Option>
-              <Option value="Overdue">Overdue</Option>
-            </Select>
-          </Col>
-          <Col xs={12} sm={6} md={4}>
-            <div style={{ marginBottom: 8, color: "#475569", fontWeight: 600 }}>From Date</div>
-            <DatePicker
-              value={dateFrom}
-              onChange={(date) => {
-                setDateFrom(date);
-                setCurrentPage(1);
-              }}
-              size="large"
-              style={{ width: "100%", borderRadius: 8 }}
-            />
-          </Col>
-          <Col xs={12} sm={6} md={4}>
-            <div style={{ marginBottom: 8, color: "#475569", fontWeight: 600 }}>To Date</div>
-            <DatePicker
-              value={dateTo}
-              onChange={(date) => {
-                setDateTo(date);
-                setCurrentPage(1);
-              }}
-              size="large"
-              style={{ width: "100%", borderRadius: 8 }}
-            />
-          </Col>
-          <Col xs={24} md={1}>
-            <Tooltip title="Clear Filters">
-              <Button
-                icon={<FilterOutlined />}
-                onClick={handleClearFilters}
+        {view === "completed" ? (
+          <Row gutter={[16, 16]} align="bottom">
+            <Col xs={24} sm={12} md={8}>
+              <div style={{ marginBottom: 8, color: "#0f172a", fontWeight: 700 }}>
+                🏢 Select Customer <span style={{ color: "#ef4444" }}>*</span>
+              </div>
+              <Select
+                showSearch
+                placeholder="Choose Customer to View Completed Costings..."
+                value={selectedCustomer || undefined}
+                onChange={(val) => {
+                  setSelectedCustomer(val || "");
+                  setCurrentPage(1);
+                }}
                 size="large"
-                style={{ width: "100%", borderRadius: 8, border: "1px solid #cbd5e1", background: "transparent" }}
+                style={{ width: "100%", borderRadius: 8 }}
+                allowClear
+                options={uniqueCompletedCustomers.map(c => ({
+                  label: `🏢 ${c}`,
+                  value: c
+                }))}
               />
-            </Tooltip>
-          </Col>
-        </Row>
+            </Col>
+            <Col xs={24} sm={12} md={5}>
+              <div style={{ marginBottom: 8, color: "#475569", fontWeight: 600 }}>Search within Customer</div>
+              <Input
+                prefix={<SearchOutlined />}
+                placeholder="No., Description, Officer..."
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setCurrentPage(1);
+                }}
+                size="large"
+                style={{ borderRadius: 8 }}
+                disabled={!selectedCustomer}
+              />
+            </Col>
+            <Col xs={24} sm={12} md={4}>
+              <div style={{ marginBottom: 8, color: "#475569", fontWeight: 600 }}>Category</div>
+              <Select
+                placeholder="All Categories"
+                value={productUnit}
+                onChange={(val) => {
+                  setProductUnit(val);
+                  setCurrentPage(1);
+                }}
+                size="large"
+                style={{ width: "100%", borderRadius: 8 }}
+                allowClear
+                disabled={!selectedCustomer}
+              >
+                <Option value="">All Categories</Option>
+                {categories.map((c) => (
+                  <Option key={c.id} value={c.id}>{c.name}</Option>
+                ))}
+              </Select>
+            </Col>
+            <Col xs={12} sm={6} md={3}>
+              <div style={{ marginBottom: 8, color: "#475569", fontWeight: 600 }}>From Date</div>
+              <DatePicker
+                value={dateFrom}
+                onChange={(date) => {
+                  setDateFrom(date);
+                  setCurrentPage(1);
+                }}
+                size="large"
+                style={{ width: "100%", borderRadius: 8 }}
+                disabled={!selectedCustomer}
+              />
+            </Col>
+            <Col xs={12} sm={6} md={3}>
+              <div style={{ marginBottom: 8, color: "#475569", fontWeight: 600 }}>To Date</div>
+              <DatePicker
+                value={dateTo}
+                onChange={(date) => {
+                  setDateTo(date);
+                  setCurrentPage(1);
+                }}
+                size="large"
+                style={{ width: "100%", borderRadius: 8 }}
+                disabled={!selectedCustomer}
+              />
+            </Col>
+            <Col xs={24} md={1}>
+              <Tooltip title="Clear Filters">
+                <Button
+                  icon={<FilterOutlined />}
+                  onClick={handleClearFilters}
+                  size="large"
+                  style={{ width: "100%", borderRadius: 8, border: "1px solid #cbd5e1", background: "transparent" }}
+                />
+              </Tooltip>
+            </Col>
+          </Row>
+        ) : (
+          <Row gutter={[16, 16]} align="bottom">
+            <Col xs={24} sm={12} md={6}>
+              <div style={{ marginBottom: 8, color: "#475569", fontWeight: 600 }}>Search</div>
+              <Input
+                prefix={<SearchOutlined />}
+                placeholder="No., Customer, Officers..."
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setCurrentPage(1);
+                }}
+                size="large"
+                style={{ borderRadius: 8 }}
+              />
+            </Col>
+            <Col xs={24} sm={12} md={4}>
+              <div style={{ marginBottom: 8, color: "#475569", fontWeight: 600 }}>Category</div>
+              <Select
+                placeholder="All Categories"
+                value={productUnit}
+                onChange={(val) => {
+                  setProductUnit(val);
+                  setCurrentPage(1);
+                }}
+                size="large"
+                style={{ width: "100%", borderRadius: 8 }}
+                allowClear
+              >
+                <Option value="">All Categories</Option>
+                {categories.map((c) => (
+                  <Option key={c.id} value={c.id}>{c.name}</Option>
+                ))}
+              </Select>
+            </Col>
+            <Col xs={24} sm={12} md={5}>
+              <div style={{ marginBottom: 8, color: "#475569", fontWeight: 600 }}>Active Status</div>
+              <Select
+                placeholder="All Active Statuses"
+                value={status}
+                onChange={(val) => {
+                  setStatus(val);
+                  const newParams = new URLSearchParams(searchParams);
+                  if (val) {
+                    newParams.set("status", val);
+                  } else {
+                    newParams.delete("status");
+                  }
+                  setSearchParams(newParams);
+                  setCurrentPage(1);
+                }}
+                size="large"
+                style={{ width: "100%", borderRadius: 8 }}
+                allowClear
+              >
+                <Option value="">All Active Statuses</Option>
+                <Option value="Submitted">Submitted (New)</Option>
+                <Option value="Received by Finance">Received by Finance</Option>
+                <Option value="Costing in Progress">Costing in Progress</Option>
+                <Option value="Overdue">Overdue</Option>
+              </Select>
+            </Col>
+            <Col xs={12} sm={6} md={4}>
+              <div style={{ marginBottom: 8, color: "#475569", fontWeight: 600 }}>From Date</div>
+              <DatePicker
+                value={dateFrom}
+                onChange={(date) => {
+                  setDateFrom(date);
+                  setCurrentPage(1);
+                }}
+                size="large"
+                style={{ width: "100%", borderRadius: 8 }}
+              />
+            </Col>
+            <Col xs={12} sm={6} md={4}>
+              <div style={{ marginBottom: 8, color: "#475569", fontWeight: 600 }}>To Date</div>
+              <DatePicker
+                value={dateTo}
+                onChange={(date) => {
+                  setDateTo(date);
+                  setCurrentPage(1);
+                }}
+                size="large"
+                style={{ width: "100%", borderRadius: 8 }}
+              />
+            </Col>
+            <Col xs={24} md={1}>
+              <Tooltip title="Clear Filters">
+                <Button
+                  icon={<FilterOutlined />}
+                  onClick={handleClearFilters}
+                  size="large"
+                  style={{ width: "100%", borderRadius: 8, border: "1px solid #cbd5e1", background: "transparent" }}
+                />
+              </Tooltip>
+            </Col>
+          </Row>
+        )}
       </Card>
 
       {/* Table */}
@@ -622,6 +803,25 @@ export default function CostRequests() {
             setPageSize(size);
           },
           style: { marginTop: 16 }
+        }}
+        locale={{
+          emptyText: view === "completed" && !selectedCustomer ? (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description={
+                <div style={{ padding: "16px 0" }}>
+                  <div style={{ fontWeight: 700, color: "#0f172a", fontSize: 15 }}>
+                    Select a Customer to View Completed Costings
+                  </div>
+                  <div style={{ color: "#64748b", fontSize: 13, marginTop: 4 }}>
+                    Choose a customer from the dropdown above to load and display their completed costing records.
+                  </div>
+                </div>
+              }
+            />
+          ) : (
+            <Empty description="No costing requests found matching current criteria." />
+          )
         }}
         style={{
           background: "#ffffff",

@@ -244,6 +244,145 @@ export async function deleteDispatchEntry(id) {
 }
 
 /**
+ * Fetch a dispatch record linked to a specific sample request
+ */
+export async function getDispatchBySampleRequestId(sampleRequestId) {
+  if (!sampleRequestId) return null;
+
+  if (isMockMode) {
+    const list = JSON.parse(localStorage.getItem(COLLECTION_NAME) || "[]");
+    return list.find(d => d.sampleRequestId === sampleRequestId || d.id === sampleRequestId) || null;
+  }
+
+  try {
+    const q = query(collection(db, COLLECTION_NAME));
+    const snapshot = await getDocs(q);
+    const found = snapshot.docs.find(d => d.data()?.sampleRequestId === sampleRequestId || d.id === sampleRequestId);
+    if (found) {
+      return { id: found.id, ...found.data() };
+    }
+    return null;
+  } catch (err) {
+    console.error(`Error fetching dispatch for sample request ${sampleRequestId}:`, err);
+    return null;
+  }
+}
+
+/**
+ * Sync dispatch metadata back to sample request
+ */
+async function syncDispatchToSampleRequest(sampleRequestId, dispatchId, dispatchNo, dispatchStatus) {
+  if (!sampleRequestId) return;
+  try {
+    if (isMockMode) {
+      const requests = JSON.parse(localStorage.getItem("sampleRequests") || "[]");
+      const idx = requests.findIndex(r => r.id === sampleRequestId);
+      if (idx !== -1) {
+        requests[idx].dispatchId = dispatchId;
+        requests[idx].dispatchNo = dispatchNo;
+        requests[idx].dispatchStatus = dispatchStatus;
+        localStorage.setItem("sampleRequests", JSON.stringify(requests));
+        window.dispatchEvent(new Event("storage"));
+      }
+    } else {
+      const docRef = doc(db, "sampleRequests", sampleRequestId);
+      await updateDoc(docRef, {
+        dispatchId,
+        dispatchNo,
+        dispatchStatus
+      });
+    }
+  } catch (err) {
+    console.warn("Could not sync dispatch to sample request:", err);
+  }
+}
+
+/**
+ * Build default dispatch data populated directly from a Sample Request
+ */
+export function buildDispatchFromSampleRequest(sampleRequest, senderProfile = null, templateConfig = null) {
+  if (!sampleRequest) return DEFAULT_DISPATCH_DATA;
+
+  const baseTemplate = templateConfig || DEFAULT_DISPATCH_DATA;
+  const sender = senderProfile || baseTemplate.sender;
+
+  const sampleItems = sampleRequest.items && sampleRequest.items.length > 0 
+    ? sampleRequest.items 
+    : [{
+        product: sampleRequest.product || "",
+        quantity: sampleRequest.quantity || 1,
+        description: sampleRequest.description || "",
+        sampleType: sampleRequest.sampleType || "New Development",
+        specialNotes: sampleRequest.specialNotes || ""
+      }];
+
+  const dispatchItems = sampleItems.map((item, idx) => ({
+    id: `item-${Date.now()}-${idx + 1}`,
+    description: item.description 
+      ? (item.product ? `${item.product} - ${item.description}` : item.description)
+      : (item.product || `Sample Item ${idx + 1}`),
+    commonName: item.product || "Coir Product",
+    botanicalName: "Cocos nucifera",
+    qty: Number(item.quantity) || 1,
+    unit: "pcs",
+    weightKg: 1,
+    unitPrice: 0.1,
+    boxNo: `Box ${Math.floor(idx / 3) + 1}`
+  }));
+
+  return {
+    ...baseTemplate,
+    sampleRequestId: sampleRequest.id,
+    sampleRequestNo: sampleRequest.sampleRequestNo,
+    shippingDate: new Date().toISOString().split("T")[0],
+    reasonForExport: `Samples for customer evaluation as per Sample Request #${sampleRequest.sampleRequestNo || ""}. Free of charge.`,
+    sender: {
+      ...baseTemplate.sender,
+      ...sender,
+      address: sender?.address || sender?.companyAddress || baseTemplate.sender?.address || "",
+      companyAddress: sender?.companyAddress || sender?.address || baseTemplate.sender?.companyAddress || "",
+      signatureText: sender?.signatureText || sender?.name || baseTemplate.sender?.signatureText || "Authorized Signatory",
+      signatureBase64: sender?.signatureBase64 || sender?.signatureUrl || baseTemplate.sender?.signatureBase64 || "",
+      signatureUrl: sender?.signatureUrl || sender?.signatureBase64 || baseTemplate.sender?.signatureUrl || ""
+    },
+    receiver: {
+      name: sampleRequest.customerName || "",
+      address: sampleRequest.deliveryAddress || sampleRequest.customerAddress || "Address:\nAs per customer requisition",
+      contact: sampleRequest.customerContact || "",
+      email: sampleRequest.customerEmail || "",
+      country: sampleRequest.destinationCountry || sampleRequest.country || "International",
+      currency: "USD",
+      portOfEntry: ""
+    },
+    items: dispatchItems
+  };
+}
+
+/**
+ * Create or update dispatch record for a sample request
+ */
+export async function createOrUpdateDispatchForSampleRequest(sampleRequestId, dispatchData, currentUser = null) {
+  let existing = await getDispatchBySampleRequestId(sampleRequestId);
+  let savedRecord;
+
+  if (existing) {
+    savedRecord = await updateDispatchEntry(existing.id, {
+      ...dispatchData,
+      sampleRequestId,
+      sampleRequestNo: dispatchData.sampleRequestNo || existing.sampleRequestNo
+    }, currentUser);
+  } else {
+    savedRecord = await createDispatchEntry({
+      ...dispatchData,
+      sampleRequestId
+    }, currentUser);
+  }
+
+  await syncDispatchToSampleRequest(sampleRequestId, savedRecord.id, savedRecord.dispatchNo, savedRecord.status);
+  return savedRecord;
+}
+
+/**
  * Save custom standard dispatch template configuration
  */
 export async function saveTemplateConfig(templateData, currentUser = null) {
@@ -289,3 +428,4 @@ export async function getTemplateConfig() {
     return DEFAULT_DISPATCH_DATA;
   }
 }
+

@@ -309,3 +309,101 @@ export async function updateUserRoleDetails(roleId, updatedData) {
     });
   }
 }
+
+/**
+ * Update Sales Officer Profile for a user
+ */
+export async function updateUserSalesOfficerProfile(uid, profileData) {
+  if (!uid) throw new Error("Missing user ID");
+
+  if (isMockMode) {
+    const users = JSON.parse(localStorage.getItem("users") || "[]");
+    const index = users.findIndex(u => u.uid === uid);
+    if (index !== -1) {
+      users[index].salesOfficerProfile = {
+        ...(users[index].salesOfficerProfile || {}),
+        ...profileData,
+        updatedAt: new Date().toISOString()
+      };
+      localStorage.setItem("users", JSON.stringify(users));
+      window.dispatchEvent(new Event("storage"));
+      return users[index].salesOfficerProfile;
+    }
+    throw new Error("User not found in mock storage.");
+  } else {
+    const docRef = doc(db, "users", uid);
+    const payload = {
+      salesOfficerProfile: {
+        ...profileData,
+        updatedAt: Timestamp.now()
+      }
+    };
+    await updateDoc(docRef, payload);
+    return profileData;
+  }
+}
+
+/**
+ * Get list of available Sales Officers across users and defaults
+ */
+export async function getSalesOfficers() {
+  const users = await getUsers();
+  const officers = [];
+
+  // Default system marketing officer if no customized officers exist
+  const defaultOfficer = {
+    id: "default-manura",
+    userId: null,
+    name: "Manura Mohotti",
+    designation: "Manager Marketing",
+    companyName: "Toyo Cushion Lanka Pvt Ltd",
+    address: "Toyo Cushion Lanka Pvt Ltd. No.25 Foster Lane, Colombo 10, Sri Lanka",
+    contact: "+9474 216 8231",
+    email: "Manura.Mohotti@hayleysfibre.com",
+    country: "Sri Lanka",
+    originCity: "COLOMBO, SRI LANKA",
+    signatureText: "Manura Mohotti",
+    signatureBase64: "",
+    signatureUrl: ""
+  };
+
+  users.forEach(u => {
+    if (u.salesOfficerProfile && u.salesOfficerProfile.name) {
+      officers.push({
+        id: u.uid,
+        userId: u.uid,
+        ...u.salesOfficerProfile
+      });
+    } else if (
+      (u.costingRoles && u.costingRoles.includes("costing_marketing")) ||
+      (u.sampleRoles && u.sampleRoles.includes("sample_marketing")) ||
+      u.role === "marketing" ||
+      u.displayName
+    ) {
+      // Create a sensible officer record from user profile
+      officers.push({
+        id: u.uid,
+        userId: u.uid,
+        name: u.displayName || u.email?.split("@")?.[0] || "Marketing Officer",
+        designation: "Marketing Officer",
+        companyName: "Toyo Cushion Lanka Pvt Ltd",
+        address: "Toyo Cushion Lanka Pvt Ltd. No.25 Foster Lane, Colombo 10, Sri Lanka",
+        contact: u.phoneNumber || "+9474 216 8231",
+        email: u.email || "",
+        country: "Sri Lanka",
+        originCity: "COLOMBO, SRI LANKA",
+        signatureText: u.displayName || "Authorized Signatory",
+        signatureBase64: "",
+        signatureUrl: ""
+      });
+    }
+  });
+
+  // Ensure default officer is present if empty
+  if (officers.length === 0) {
+    officers.push(defaultOfficer);
+  }
+
+  return officers;
+}
+

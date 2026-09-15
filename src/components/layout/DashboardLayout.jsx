@@ -23,7 +23,9 @@ import {
   BarChartOutlined,
   BranchesOutlined,
   SendOutlined,
-  InboxOutlined
+  InboxOutlined,
+  AuditOutlined,
+  UserOutlined
 } from "@ant-design/icons";
 
 const { Header, Sider, Content } = Layout;
@@ -147,6 +149,15 @@ export default function DashboardLayout({ children }) {
         { label: "All Dispatches", key: "/dispatch-tracker" },
         { label: "New Dispatch", key: "/dispatch-tracker/create" }
       ]
+    });
+  }
+
+  // 4b. Sales Officer Profile
+  if (!isSuperAdminUser) {
+    menuItems.push({
+      label: "Sales Officer Profile",
+      key: "/sales-officer-profile",
+      icon: <AuditOutlined />
     });
   }
 
