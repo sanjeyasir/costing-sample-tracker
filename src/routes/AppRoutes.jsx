@@ -24,6 +24,9 @@ import DispatchList from "../pages/dispatch/DispatchList";
 import DispatchEditor from "../pages/dispatch/DispatchEditor";
 import DispatchDetails from "../pages/dispatch/DispatchDetails";
 import SalesOfficerProfile from "../pages/admin/SalesOfficerProfile";
+import ProductionForecast from "../pages/production/ProductionForecast";
+import ProductionDashboard from "../pages/production/ProductionDashboard";
+import ProspectPipeline from "../pages/production/ProspectPipeline";
 
 export default function AppRoutes() {
 
@@ -191,6 +194,40 @@ export default function AppRoutes() {
       />
 
 
+
+      {/* Production Forecast & Planning Routes */}
+      <Route
+        path="/production-forecast"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout>
+              <ProductionForecast />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/production-forecast/dashboard"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout>
+              <ProductionDashboard />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/production-forecast/prospects"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout>
+              <ProspectPipeline />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
 
       <Route
         path="/sales-officer-profile"

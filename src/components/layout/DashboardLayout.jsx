@@ -25,7 +25,9 @@ import {
   SendOutlined,
   InboxOutlined,
   AuditOutlined,
-  UserOutlined
+  UserOutlined,
+  FundProjectionScreenOutlined,
+  TableOutlined
 } from "@ant-design/icons";
 
 const { Header, Sider, Content } = Layout;
@@ -152,7 +154,21 @@ export default function DashboardLayout({ children }) {
     });
   }
 
-  // 4b. Sales Officer Profile
+  // 4b. Production Forecast & Planning (visible to all marketing & operations users)
+  if (!isSuperAdminUser) {
+    menuItems.push({
+      label: "Production Forecast",
+      key: "production-forecast-group",
+      icon: <FundProjectionScreenOutlined />,
+      children: [
+        { label: "Forecast & Actuals Grid", key: "/production-forecast" },
+        { label: "Performance Dashboard", key: "/production-forecast/dashboard" },
+        { label: "Prospect Pipeline", key: "/production-forecast/prospects" }
+      ]
+    });
+  }
+
+  // 4c. Sales Officer Profile
   if (!isSuperAdminUser) {
     menuItems.push({
       label: "Sales Officer Profile",
@@ -222,6 +238,9 @@ export default function DashboardLayout({ children }) {
     if (path.startsWith("/dispatch-tracker/create")) return "/dispatch-tracker/create";
     if (path.startsWith("/dispatch-tracker/templates")) return "/dispatch-tracker/templates";
     if (path.startsWith("/dispatch-tracker/")) return "/dispatch-tracker";
+    if (path.startsWith("/production-forecast/dashboard")) return "/production-forecast/dashboard";
+    if (path.startsWith("/production-forecast/prospects")) return "/production-forecast/prospects";
+    if (path.startsWith("/production-forecast")) return "/production-forecast";
     if (location.search) {
       return fullPath;
     }

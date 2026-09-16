@@ -108,3 +108,65 @@ body {
   color: white !important;
 }
 
+/* Production Forecast Spreadsheet Styling */
+.ht-header-budget {
+  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%) !important;
+  color: #1e40af !important;
+  font-weight: 700 !important;
+  border-bottom: 2px solid #93c5fd !important;
+}
+
+.ht-header-actual {
+  background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%) !important;
+  color: #5b21b6 !important;
+  font-weight: 700 !important;
+  border-bottom: 2px solid #c4b5fd !important;
+}
+
+.ht-header-variance {
+  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%) !important;
+  color: #92400e !important;
+  font-weight: 700 !important;
+  border-bottom: 2px solid #fde68a !important;
+}
+
+.ht-header-factory {
+  background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%) !important;
+  color: #065f46 !important;
+  font-weight: 700 !important;
+  border-bottom: 2px solid #a7f3d0 !important;
+}
+
+/* Forecast Status Cells */
+.ht-status-met {
+  background-color: #ecfdf5 !important;
+  color: #065f46 !important;
+  font-weight: 600 !important;
+}
+
+.ht-status-new {
+  background-color: #eff6ff !important;
+  color: #1d4ed8 !important;
+  font-weight: 600 !important;
+}
+
+.ht-status-variance {
+  background-color: #fef2f2 !important;
+  color: #b91c1c !important;
+  font-weight: 600 !important;
+}
+
+.ht-num-positive {
+  color: #059669 !important;
+  font-weight: 600 !important;
+}
+
+.ht-num-negative {
+  color: #dc2626 !important;
+  font-weight: 600 !important;
+}
+
+.ht-num-neutral {
+  color: #64748b !important;
+}
+
