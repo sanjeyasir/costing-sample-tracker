@@ -12,7 +12,8 @@ import {
   PlayCircleOutlined,
   CheckCircleOutlined,
   UnorderedListOutlined,
-  UserOutlined
+  UserOutlined,
+  FileDoneOutlined
 } from "@ant-design/icons";
 
 const { Option } = Select;
@@ -522,6 +523,18 @@ export default function CostRequests() {
                 icon={<CheckCircleOutlined />}
                 onClick={() => navigate(`/costing-requests/${record.id}`)}
                 style={{ background: "rgba(16, 185, 129, 0.1)", borderColor: "#10b981", color: "#10b981" }}
+              />
+            </Tooltip>
+          )}
+
+          {["Costing Completed", "Sent to Marketing"].includes(record.status) && (
+            <Tooltip title="Price Quotation Suite">
+              <Button
+                shape="circle"
+                type="primary"
+                icon={<FileDoneOutlined />}
+                onClick={() => navigate(`/costing-requests/${record.id}/quotation`)}
+                style={{ background: "rgba(2, 132, 199, 0.1)", borderColor: "#0284c7", color: "#0284c7" }}
               />
             </Tooltip>
           )}

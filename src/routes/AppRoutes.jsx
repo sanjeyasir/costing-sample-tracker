@@ -10,6 +10,7 @@ import Dashboard from "../pages/dashboard/Dashboard";
 import CostRequests from "../pages/costing/CostRequests";
 import CreateRequest from "../pages/costing/CreateRequest";
 import RequestDetails from "../pages/costing/RequestDetails";
+import QuotationEditor from "../pages/costing/QuotationEditor";
 import SampleRequests from "../pages/costing/SampleRequests";
 import CreateSampleRequest from "../pages/costing/CreateSampleRequest";
 import SampleRequestDetails from "../pages/costing/SampleRequestDetails";
@@ -83,6 +84,17 @@ export default function AppRoutes() {
           <ProtectedRoute module="costing" allowedModuleRoles={["costing_marketing", "costing_finance", "costing_viewer"]}>
             <DashboardLayout>
               <RequestDetails />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/costing-requests/:id/quotation"
+        element={
+          <ProtectedRoute module="costing" allowedModuleRoles={["costing_marketing", "costing_finance", "costing_viewer"]}>
+            <DashboardLayout>
+              <QuotationEditor />
             </DashboardLayout>
           </ProtectedRoute>
         }

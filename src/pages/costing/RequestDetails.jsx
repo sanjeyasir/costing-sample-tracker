@@ -17,7 +17,9 @@ import {
   InboxOutlined,
   FileTextOutlined,
   PlusOutlined,
-  DeleteOutlined
+  DeleteOutlined,
+  FileDoneOutlined,
+  CalculatorOutlined
 } from "@ant-design/icons";
 
 // Handsontable imports
@@ -771,6 +773,23 @@ export default function RequestDetails() {
               </Button>
             )}
 
+            {isCompleted && (
+              <Button
+                type="primary"
+                icon={<FileDoneOutlined />}
+                onClick={() => navigate(`/costing-requests/${id}/quotation`)}
+                size="large"
+                style={{ 
+                  borderRadius: 8, 
+                  background: "linear-gradient(135deg, #0284c7 0%, #0369a1 100%)", 
+                  borderColor: "#0284c7",
+                  fontWeight: 700 
+                }}
+              >
+                Price Quotation
+              </Button>
+            )}
+
             {(isCompleted || isAdmin) && (
               <Button
                 type="primary"
@@ -841,6 +860,54 @@ export default function RequestDetails() {
             </Descriptions>
           </Card>
         </Col>
+
+        {/* Quotation Ready Action Banner */}
+        {isCompleted && (
+          <Col span={24}>
+            <Card 
+              bordered={true}
+              style={{ 
+                borderRadius: 12, 
+                borderLeft: "4px solid #0284c7", 
+                background: "linear-gradient(135deg, rgba(2, 132, 199, 0.05) 0%, rgba(3, 105, 161, 0.02) 100%)",
+                borderColor: "#bae6fd" 
+              }}
+            >
+              <Row justify="space-between" align="middle" gutter={[16, 16]}>
+                <Col xs={24} md={18}>
+                  <Space align="start" size="middle">
+                    <FileDoneOutlined style={{ fontSize: 28, color: "#0284c7", marginTop: 4 }} />
+                    <div>
+                      <Title level={4} style={{ margin: 0, color: "#0369a1", fontWeight: 700 }}>
+                        Official Price Quotation Generator Ready
+                      </Title>
+                      <Text style={{ color: "#475569" }}>
+                        Costing has been completed. Marketing can now generate official Price Quotations in Bedding or Horticulture format with live 20ft/40ft container calculations, FOB/CIF/EXW pricing terms, and export to Excel (.xlsx) and PDF.
+                      </Text>
+                    </div>
+                  </Space>
+                </Col>
+                <Col xs={24} md={6} style={{ textAlign: "right" }}>
+                  <Button
+                    type="primary"
+                    icon={<FileDoneOutlined />}
+                    onClick={() => navigate(`/costing-requests/${id}/quotation`)}
+                    size="large"
+                    block
+                    style={{ 
+                      borderRadius: 8, 
+                      background: "linear-gradient(135deg, #0284c7 0%, #0369a1 100%)", 
+                      borderColor: "#0284c7",
+                      fontWeight: 700 
+                    }}
+                  >
+                    Open Price Quotation
+                  </Button>
+                </Col>
+              </Row>
+            </Card>
+          </Col>
+        )}
 
         {/* Excel upload interface if file-based costing */}
         {request.specs?.excelFile && (
