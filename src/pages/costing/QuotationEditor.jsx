@@ -300,6 +300,17 @@ export default function QuotationEditor() {
     message.success("Sales officer details & signature reset to your profile!");
   };
 
+  // Signature image upload handler
+  const handleSignatureUpload = (file) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      handleSignatoryFieldChange("signatureImage", e.target.result);
+      message.success("Digital signature uploaded successfully!");
+    };
+    reader.readAsDataURL(file);
+    return false; // Prevent automatic upload
+  };
+
   // Switch active sheet tab
   const handleTabChange = (newTab) => {
     setActiveTab(newTab);
