@@ -39,7 +39,9 @@ import {
   ArrowUpOutlined,
   ArrowDownOutlined,
   BranchesOutlined,
-  FundProjectionScreenOutlined
+  FundProjectionScreenOutlined,
+  SyncOutlined,
+  CloudUploadOutlined
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 
@@ -83,6 +85,11 @@ export default function ProductionForecast() {
   const [allData, setAllData] = useState([]);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [autoSaveStatus, setAutoSaveStatus] = useState("idle"); // "idle" | "saving" | "saved" | "error"
+  const [lastSavedTime, setLastSavedTime] = useState(null);
+
+  const autoSaveTimeoutRef = useRef(null);
+  const pendingSavesRef = useRef(new Map());
 
   // Filters
   const default4Months = useMemo(() => getDefaultRollingMonths(), []);
@@ -101,6 +108,11 @@ export default function ProductionForecast() {
 
   useEffect(() => {
     loadData();
+    return () => {
+      if (autoSaveTimeoutRef.current) {
+        clearTimeout(autoSaveTimeoutRef.current);
+      }
+    };
   }, []);
 
   const loadData = async () => {
@@ -109,12 +121,42 @@ export default function ProductionForecast() {
       const data = await getProductionForecasts();
       setAllData(data);
       setHasUnsavedChanges(false);
+      setAutoSaveStatus("idle");
     } catch (err) {
       console.error("Failed to load production forecasts:", err);
       message.error("Failed to load forecast data");
     } finally {
       setLoading(false);
     }
+  };
+
+  // Trigger Debounced Auto-Save to Firebase
+  const triggerAutoSave = (modifiedRows = []) => {
+    modifiedRows.forEach(row => {
+      pendingSavesRef.current.set(row.id, row);
+    });
+
+    setAutoSaveStatus("saving");
+
+    if (autoSaveTimeoutRef.current) {
+      clearTimeout(autoSaveTimeoutRef.current);
+    }
+
+    autoSaveTimeoutRef.current = setTimeout(async () => {
+      try {
+        const rowsToSave = Array.from(pendingSavesRef.current.values());
+        if (rowsToSave.length > 0) {
+          await batchSaveProductionForecasts(rowsToSave);
+          pendingSavesRef.current.clear();
+          setAutoSaveStatus("saved");
+          setLastSavedTime(dayjs().format("HH:mm:ss"));
+          setHasUnsavedChanges(false);
+        }
+      } catch (err) {
+        console.error("Auto-save to Firebase failed:", err);
+        setAutoSaveStatus("error");
+      }
+    }, 600);
   };
 
   // Filtered rows to display in Handsontable
@@ -215,7 +257,7 @@ export default function ProductionForecast() {
     }
   };
 
-  // Handsontable Change Handler: Live Recalculations
+  // Handsontable Change Handler: Live Recalculations & Instant Firebase Auto-Save
   const handleHandsontableChange = (changes, source) => {
     if (!changes || source === "loadData") return;
 
@@ -225,6 +267,7 @@ export default function ProductionForecast() {
     // Get table source data
     const sourceData = hot.getSourceData();
     let hasChanges = false;
+    const modifiedRows = [];
 
     changes.forEach(([rowIdx, prop, oldVal, newVal]) => {
       if (oldVal !== newVal) {
@@ -238,6 +281,7 @@ export default function ProductionForecast() {
           // Recalculate row
           const recalculated = calculateRowMetrics(targetRow);
           Object.assign(targetRow, recalculated);
+          modifiedRows.push(recalculated);
         }
       }
     });
@@ -247,6 +291,9 @@ export default function ProductionForecast() {
       // Synchronize in-memory allData state
       const updatedMap = new Map(sourceData.map(item => [item.id, item]));
       setAllData(prev => prev.map(item => updatedMap.has(item.id) ? updatedMap.get(item.id) : item));
+
+      // Trigger instant background auto-save to Firebase
+      triggerAutoSave(modifiedRows);
     }
   };
 
@@ -254,12 +301,17 @@ export default function ProductionForecast() {
   const handleSaveAll = async () => {
     try {
       setSaving(true);
+      if (autoSaveTimeoutRef.current) {
+        clearTimeout(autoSaveTimeoutRef.current);
+      }
       const hot = hotTableRef.current?.hotInstance;
       const currentGridData = hot ? hot.getSourceData() : filteredData;
 
       await batchSaveProductionForecasts(currentGridData);
       setHasUnsavedChanges(false);
-      message.success("All production forecast changes saved successfully!");
+      setAutoSaveStatus("saved");
+      setLastSavedTime(dayjs().format("HH:mm:ss"));
+      message.success("All production forecast changes saved successfully to Firebase!");
       await loadData();
     } catch (err) {
       console.error("Save error:", err);
@@ -622,9 +674,23 @@ export default function ProductionForecast() {
           </Space>
         </div>
 
-        <Space size="middle" wrap>
-          {hasUnsavedChanges && (
-            <Badge status="processing" text="Unsaved Changes Pending" style={{ color: "#d97706", fontWeight: 600 }} />
+        <Space size="middle" wrap align="center">
+          {autoSaveStatus === "saving" && (
+            <Tag icon={<SyncOutlined spin />} color="processing" style={{ borderRadius: 8, padding: "4px 10px", fontWeight: 600 }}>
+              Auto-saving to Firebase...
+            </Tag>
+          )}
+
+          {autoSaveStatus === "saved" && (
+            <Tag icon={<CheckCircleOutlined />} color="success" style={{ borderRadius: 8, padding: "4px 10px", fontWeight: 600 }}>
+              Auto-saved ({lastSavedTime})
+            </Tag>
+          )}
+
+          {autoSaveStatus === "error" && (
+            <Tag icon={<WarningOutlined />} color="error" style={{ borderRadius: 8, padding: "4px 10px", fontWeight: 600 }}>
+              Auto-save warning • Click Save All
+            </Tag>
           )}
 
           <Button

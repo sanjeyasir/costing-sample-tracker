@@ -201,25 +201,27 @@ export default function ProspectPipeline() {
       title: "#",
       dataIndex: "seqNo",
       key: "seqNo",
-      width: 60,
-      render: (val, _, idx) => <Text type="secondary">{val || idx + 1}</Text>
+      width: 50,
+      align: "center",
+      render: (val, _, idx) => <Text type="secondary" style={{ fontSize: 12 }}>{val || idx + 1}</Text>
     },
     {
       title: "Officer",
       dataIndex: "salesOfficer",
       key: "salesOfficer",
-      width: 80,
-      render: (val) => <Tag color="blue" style={{ fontWeight: 700 }}>{val}</Tag>
+      width: 75,
+      align: "center",
+      render: (val) => <Tag color="blue" style={{ fontWeight: 700, margin: 0 }}>{val}</Tag>
     },
     {
-      title: "Company / Buyer",
+      title: "Company & Country",
       dataIndex: "companyName",
       key: "companyName",
-      width: 220,
+      width: 200,
       render: (text, record) => (
-        <div>
-          <div style={{ fontWeight: 700, color: "#0f172a" }}>{text}</div>
-          <Text type="secondary" style={{ fontSize: 12 }}>{record.country}</Text>
+        <div style={{ whiteSpace: "normal", wordBreak: "break-word" }}>
+          <div style={{ fontWeight: 700, color: "#0f172a", fontSize: 13, lineHeight: 1.3 }}>{text}</div>
+          <div style={{ color: "#64748b", fontSize: 11, marginTop: 2 }}>{record.country}</div>
         </div>
       )
     },
@@ -228,65 +230,71 @@ export default function ProspectPipeline() {
       dataIndex: "estTeus",
       key: "estTeus",
       width: 90,
+      align: "right",
       render: (val) => <span style={{ fontWeight: 600 }}>{val} TEU</span>
     },
     {
       title: "Est Turnover",
       dataIndex: "estTurnover",
       key: "estTurnover",
-      width: 120,
+      width: 110,
+      align: "right",
       render: (val) => <span style={{ fontWeight: 700, color: "#1e40af" }}>{val}M LKR</span>
     },
     {
       title: "Conversion %",
       dataIndex: "conversionRate",
       key: "conversionRate",
-      width: 110,
+      width: 105,
+      align: "center",
       render: (val) => (
-        <Tag color={val >= 0.6 ? "success" : (val >= 0.4 ? "processing" : "default")} style={{ fontWeight: 700 }}>
+        <Tag color={val >= 0.6 ? "success" : (val >= 0.4 ? "processing" : "default")} style={{ fontWeight: 700, margin: 0 }}>
           {Math.round((val || 0) * 100)}%
         </Tag>
       )
     },
     {
-      title: "Timeline",
+      title: "Closing Timeline",
       dataIndex: "expectedClosingTimeline",
       key: "expectedClosingTimeline",
-      width: 120,
-      render: (text) => <Tag style={{ borderRadius: 6 }}>{text}</Tag>
+      width: 115,
+      align: "center",
+      render: (text) => <Tag style={{ borderRadius: 6, margin: 0, whiteSpace: "normal" }}>{text}</Tag>
     },
     {
       title: "Priority",
       dataIndex: "priority",
       key: "priority",
-      width: 100,
+      width: 95,
+      align: "center",
       render: (val) => {
-        if (val === "HIGH") return <Tag color="error" style={{ fontWeight: 700 }}>HIGH</Tag>;
-        if (val === "MEDIUM") return <Tag color="warning" style={{ fontWeight: 700 }}>MEDIUM</Tag>;
-        return <Tag color="default">LOW</Tag>;
+        if (val === "HIGH") return <Tag color="error" style={{ fontWeight: 700, margin: 0 }}>HIGH</Tag>;
+        if (val === "MEDIUM") return <Tag color="warning" style={{ fontWeight: 700, margin: 0 }}>MEDIUM</Tag>;
+        return <Tag color="default" style={{ margin: 0 }}>LOW</Tag>;
       }
     },
     {
-      title: "Price & Sample",
+      title: "Offer & Sample",
       key: "readiness",
       width: 140,
       render: (_, r) => (
-        <Space size="small">
-          <Tooltip title={r.priceOffered ? "Price Offered" : "Price Pending"}>
-            <Tag color={r.priceOffered ? "cyan" : "default"}>Price: {r.priceOffered ? "✓" : "✗"}</Tag>
-          </Tooltip>
-          <Tooltip title={r.sampleDelivered ? "Sample Delivered" : "Sample Pending"}>
-            <Tag color={r.sampleDelivered ? "purple" : "default"}>Sample: {r.sampleDelivered ? "✓" : "✗"}</Tag>
-          </Tooltip>
-        </Space>
+        <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+          <Tag color={r.priceOffered ? "cyan" : "default"} style={{ margin: 0, fontSize: 11, padding: "0 6px" }}>
+            Price: {r.priceOffered ? "✓ Offered" : "✗ Pending"}
+          </Tag>
+          <Tag color={r.sampleDelivered ? "purple" : "default"} style={{ margin: 0, fontSize: 11, padding: "0 6px" }}>
+            Sample: {r.sampleDelivered ? "✓ Delivered" : "✗ Pending"}
+          </Tag>
+        </div>
       )
     },
     {
-      title: "Status & Notes",
+      title: "Status & Progress Notes",
       dataIndex: "status",
       key: "status",
+      width: 320,
       render: (text) => (
-        <div style={{ maxWidth: 300, whiteSpace: "normal", fontSize: 12, color: "#475569" }}>
+        <div style={{ whiteSpace: "normal", wordBreak: "break-word", fontSize: 12, color: "#334155", lineHeight: 1.4 }}>
           {text}
         </div>
       )
@@ -296,6 +304,7 @@ export default function ProspectPipeline() {
       key: "actions",
       fixed: "right",
       width: 160,
+      align: "center",
       render: (_, record) => (
         <Space size="small">
           <Button 
@@ -303,14 +312,14 @@ export default function ProspectPipeline() {
             type="primary" 
             icon={<ArrowRightOutlined />} 
             onClick={() => handleOpenConvert(record)}
-            style={{ backgroundColor: "#10b981", fontSize: 12, fontWeight: 600 }}
+            style={{ backgroundColor: "#10b981", fontSize: 11, fontWeight: 600 }}
           >
             To Forecast
           </Button>
           <Button 
             size="small" 
             onClick={() => handleOpenModal(record)}
-            style={{ fontSize: 12 }}
+            style={{ fontSize: 11 }}
           >
             Edit
           </Button>
@@ -480,7 +489,7 @@ export default function ProspectPipeline() {
           rowKey="id"
           loading={loading}
           pagination={{ pageSize: 15, showTotal: (total) => `Total ${total} prospects` }}
-          scroll={{ x: 1200 }}
+          scroll={{ x: 1400 }}
           size="middle"
         />
       </Card>
