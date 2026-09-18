@@ -6,11 +6,33 @@ export const DEFAULT_USERS = [
     email: "marketing@costing.com",
     displayName: "Sanjey Marketing",
     role: "marketing",
+    costingRoles: ["costing_marketing"],
+    sampleRoles: ["sample_marketing"],
+    productionRoles: ["production_marketing"],
     costingRole: "costing_marketing",
     sampleRole: "sample_marketing",
+    productionRole: "production_marketing",
     status: "active",
     requirePasswordChange: false,
     password: "marketing",
+    phoneNumber: "+94767063788",
+    whatsappEnabled: true,
+    createdAt: new Date(2026, 7, 1).toISOString(),
+  },
+  {
+    uid: "mock-fac-1",
+    email: "factory@costing.com",
+    displayName: "Factory Operations Team",
+    role: "factory",
+    costingRoles: ["costing_viewer"],
+    sampleRoles: ["sample_viewer"],
+    productionRoles: ["production_factory"],
+    costingRole: "costing_viewer",
+    sampleRole: "sample_viewer",
+    productionRole: "production_factory",
+    status: "active",
+    requirePasswordChange: false,
+    password: "factory",
     phoneNumber: "+94767063788",
     whatsappEnabled: true,
     createdAt: new Date(2026, 7, 1).toISOString(),
@@ -20,8 +42,12 @@ export const DEFAULT_USERS = [
     email: "finance@costing.com",
     displayName: "Finance Officer",
     role: "finance",
+    costingRoles: ["costing_finance"],
+    sampleRoles: ["sample_sampling"],
+    productionRoles: ["production_viewer"],
     costingRole: "costing_finance",
     sampleRole: "sample_sampling",
+    productionRole: "production_viewer",
     status: "active",
     requirePasswordChange: false,
     password: "finance",
@@ -34,8 +60,12 @@ export const DEFAULT_USERS = [
     email: "admin@gmail.com",
     displayName: "Super Admin",
     role: "admin",
+    costingRoles: ["admin"],
+    sampleRoles: ["admin"],
+    productionRoles: ["production_all"],
     costingRole: "admin",
     sampleRole: "admin",
+    productionRole: "production_all",
     status: "active",
     requirePasswordChange: false,
     password: "admin@123",
@@ -99,17 +129,23 @@ export const DEFAULT_NOTIFICATIONS = [];
 
 export const DEFAULT_ROLES = [
   // Costing roles
-  { id: "costing_marketing", name: "Marketing Team", module: "costing", permissions: ["costing"], createdAt: new Date(2026, 7, 1).toISOString() },
-  { id: "costing_finance", name: "Finance Team", module: "costing", permissions: ["costing"], createdAt: new Date(2026, 7, 1).toISOString() },
-  { id: "costing_viewer", name: "Costing Viewer", module: "costing", permissions: ["costing"], createdAt: new Date(2026, 7, 1).toISOString() },
+  { id: "costing_marketing", name: "Marketing Team", module: "costing", roleType: "creator", permissions: ["costing"], createdAt: new Date(2026, 7, 1).toISOString() },
+  { id: "costing_finance", name: "Finance Team", module: "costing", roleType: "analyst", permissions: ["costing"], createdAt: new Date(2026, 7, 1).toISOString() },
+  { id: "costing_viewer", name: "Costing Viewer", module: "costing", roleType: "viewer", permissions: ["costing"], createdAt: new Date(2026, 7, 1).toISOString() },
 
   // Sample roles
-  { id: "sample_marketing", name: "Marketing Team", module: "sample", permissions: ["sample"], createdAt: new Date(2026, 7, 1).toISOString() },
-  { id: "sample_sampling", name: "Sampling Team", module: "sample", permissions: ["sample"], createdAt: new Date(2026, 7, 1).toISOString() },
-  { id: "sample_viewer", name: "Sample Viewer", module: "sample", permissions: ["sample"], createdAt: new Date(2026, 7, 1).toISOString() },
+  { id: "sample_marketing", name: "Marketing Team", module: "sample", roleType: "creator", permissions: ["sample"], createdAt: new Date(2026, 7, 1).toISOString() },
+  { id: "sample_sampling", name: "Sampling Team", module: "sample", roleType: "developer", permissions: ["sample"], createdAt: new Date(2026, 7, 1).toISOString() },
+  { id: "sample_viewer", name: "Sample Viewer", module: "sample", roleType: "viewer", permissions: ["sample"], createdAt: new Date(2026, 7, 1).toISOString() },
+
+  // Production Forecast roles (4 Distinct Views)
+  { id: "production_all", name: "👑 Full Management (All Fields Editable)", module: "production", roleType: "administrator", permissions: ["production"], createdAt: new Date(2026, 7, 1).toISOString() },
+  { id: "production_marketing", name: "📈 Marketing Team (Actuals Only)", module: "production", roleType: "creator", permissions: ["production"], createdAt: new Date(2026, 7, 1).toISOString() },
+  { id: "production_factory", name: "🏭 Factory Team (Factory Perf & Confirmed)", module: "production", roleType: "developer", permissions: ["production"], createdAt: new Date(2026, 7, 1).toISOString() },
+  { id: "production_viewer", name: "👁️ Read-Only View (Auditor / Executive)", module: "production", roleType: "viewer", permissions: ["production"], createdAt: new Date(2026, 7, 1).toISOString() },
 
   // Admin
-  { id: "admin", name: "System Administrator", module: "global", permissions: ["costing", "sample"], createdAt: new Date(2026, 7, 1).toISOString() }
+  { id: "admin", name: "System Administrator", module: "global", roleType: "administrator", permissions: ["costing", "sample", "production"], createdAt: new Date(2026, 7, 1).toISOString() }
 ];
 
 // Initialize localStorage if not set

@@ -67,9 +67,14 @@ export default function DashboardLayout({ children }) {
 
   const costingRoles = currentUser?.costingRoles || [];
   const sampleRoles = currentUser?.sampleRoles || [];
+  const productionRoles = currentUser?.productionRoles || [];
   const userRoles = currentUser?.roles || [];
-  const isAdmin = userRoles.includes("admin") || costingRoles.includes("admin") || sampleRoles.includes("admin");
   const isSuperAdminUser = currentUser?.email === "admin@gmail.com";
+  const isAdmin = userRoles.includes("admin") || costingRoles.includes("admin") || sampleRoles.includes("admin") || productionRoles.includes("admin") || productionRoles.includes("production_all");
+
+  const isProdAdmin = isAdmin || productionRoles.includes("production_all");
+  const isProdMarketing = !isProdAdmin && (productionRoles.includes("production_marketing") || userRoles.includes("costing_marketing") || userRoles.includes("sample_marketing"));
+  const isProdFactory = !isProdAdmin && productionRoles.includes("production_factory");
 
   const hasCostingAccess = !isSuperAdminUser && (isAdmin || (costingRoles.length > 0 && !costingRoles.includes("none")));
   const hasSampleAccess = !isSuperAdminUser && (isAdmin || (sampleRoles.length > 0 && !sampleRoles.includes("none")));
@@ -154,17 +159,42 @@ export default function DashboardLayout({ children }) {
     });
   }
 
-  // 4b. Production Forecast & Planning (visible to all marketing & operations users)
+  // 4b. Production Forecast & Planning (separate dedicated view pages per granted role)
   if (!isSuperAdminUser) {
+    const prodChildren = [];
+
+    if (isProdAdmin) {
+      prodChildren.push(
+        { label: "👑 Full Management View", key: "/production-forecast/full-management" },
+        { label: "📈 Marketing Team View", key: "/production-forecast/marketing" },
+        { label: "🏭 Factory Team View", key: "/production-forecast/factory" },
+        { label: "👁️ Read-Only View", key: "/production-forecast/read-only" },
+        { label: "📊 Performance Dashboard", key: "/production-forecast/dashboard" },
+        { label: "🎯 Prospect Pipeline", key: "/production-forecast/prospects" }
+      );
+    } else if (isProdMarketing) {
+      prodChildren.push(
+        { label: "📈 Marketing Forecast & Actuals", key: "/production-forecast/marketing" },
+        { label: "📊 Performance Dashboard", key: "/production-forecast/dashboard" },
+        { label: "🎯 Prospect Pipeline", key: "/production-forecast/prospects" }
+      );
+    } else if (isProdFactory) {
+      prodChildren.push(
+        { label: "🏭 Factory Performance & Confirmation", key: "/production-forecast/factory" },
+        { label: "📊 Performance Dashboard", key: "/production-forecast/dashboard" }
+      );
+    } else {
+      prodChildren.push(
+        { label: "👁️ Production Forecast (Read-Only)", key: "/production-forecast/read-only" },
+        { label: "📊 Performance Dashboard", key: "/production-forecast/dashboard" }
+      );
+    }
+
     menuItems.push({
       label: "Production Forecast",
       key: "production-forecast-group",
       icon: <FundProjectionScreenOutlined />,
-      children: [
-        { label: "Forecast & Actuals Grid", key: "/production-forecast" },
-        { label: "Performance Dashboard", key: "/production-forecast/dashboard" },
-        { label: "Prospect Pipeline", key: "/production-forecast/prospects" }
-      ]
+      children: prodChildren
     });
   }
 
@@ -200,6 +230,10 @@ export default function DashboardLayout({ children }) {
       case "sample_marketing": return "Marketing Team";
       case "sample_sampling": return "Sampling Team";
       case "sample_viewer": return "Sample Viewer";
+      case "production_all": return "👑 Production Full Access";
+      case "production_marketing": return "📈 Production Marketing (Actuals)";
+      case "production_factory": return "🏭 Factory Team (Perf & Confirmed)";
+      case "production_viewer": return "👁️ Production Read-Only";
       case "none": return "No Access";
       default: return role || "User";
     }
@@ -209,6 +243,7 @@ export default function DashboardLayout({ children }) {
     if (role === "admin") return "red";
     if (role?.startsWith("costing_")) return "purple";
     if (role?.startsWith("sample_")) return "blue";
+    if (role?.startsWith("production_")) return "cyan";
     return "default";
   };
 
@@ -312,6 +347,11 @@ export default function DashboardLayout({ children }) {
             {!isAdmin && sampleRoles.length > 0 && (
               <Tag color="blue" style={{ fontWeight: 700, width: "100%", textAlign: "center", whiteSpace: "normal", margin: 0, padding: "2px 0", borderRadius: 6 }}>
                 Sample: {sampleRoles.map(r => getRoleLabel(r)).join(", ")}
+              </Tag>
+            )}
+            {!isAdmin && productionRoles.length > 0 && (
+              <Tag color="cyan" style={{ fontWeight: 700, width: "100%", textAlign: "center", whiteSpace: "normal", margin: 0, padding: "2px 0", borderRadius: 6 }}>
+                Production: {productionRoles.map(r => getRoleLabel(r)).join(", ")}
               </Tag>
             )}
             {tenant && (
@@ -487,6 +527,11 @@ export default function DashboardLayout({ children }) {
               {!isAdmin && sampleRoles.length > 0 && (
                 <Tag color="blue" style={{ fontWeight: 700, textTransform: "uppercase", fontSize: "0.65rem", letterSpacing: "0.05em", padding: "1px 8px", margin: 0 }}>
                   Sample: {sampleRoles.map(r => getRoleLabel(r)).join(", ")}
+                </Tag>
+              )}
+              {!isAdmin && productionRoles.length > 0 && (
+                <Tag color="cyan" style={{ fontWeight: 700, textTransform: "uppercase", fontSize: "0.65rem", letterSpacing: "0.05em", padding: "1px 8px", margin: 0 }}>
+                  Production: {productionRoles.map(r => getRoleLabel(r)).join(", ")}
                 </Tag>
               )}
             </Space>

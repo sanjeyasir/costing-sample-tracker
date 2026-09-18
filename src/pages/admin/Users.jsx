@@ -153,11 +153,11 @@ export default function Users() {
     }
   };
 
-  const handleModuleRoleChange = async (uid, costingRoles, sampleRoles) => {
+  const handleModuleRoleChange = async (uid, costingRoles, sampleRoles, productionRoles) => {
     try {
       setError("");
       setSuccess("");
-      await userService.updateUserModuleRoles(uid, costingRoles, sampleRoles);
+      await userService.updateUserModuleRoles(uid, costingRoles, sampleRoles, productionRoles);
       setSuccess("User roles updated successfully.");
       
       // Update local state
@@ -165,9 +165,11 @@ export default function Users() {
         ...u, 
         costingRoles, 
         sampleRoles, 
+        productionRoles,
         costingRole: costingRoles[0] || "none",
         sampleRole: sampleRoles[0] || "none",
-        role: [...costingRoles, ...sampleRoles].filter(r => r && r !== "none") 
+        productionRole: productionRoles[0] || "none",
+        role: [...costingRoles, ...sampleRoles, ...productionRoles].filter(r => r && r !== "none") 
       } : u));
     } catch (err) {
       setError("Failed to update user roles.");
@@ -190,7 +192,7 @@ export default function Users() {
   };
 
   const handleCreateUserSubmit = async (values) => {
-    const { displayName, email, password, costingRoles, sampleRoles, phoneNumber } = values;
+    const { displayName, email, password, costingRoles, sampleRoles, productionRoles, phoneNumber } = values;
     try {
       setCreateError("");
       setCreateLoading(true);
@@ -201,6 +203,7 @@ export default function Users() {
         password,
         costingRoles,
         sampleRoles,
+        productionRoles,
         phoneNumber
       });
 
@@ -223,14 +226,17 @@ export default function Users() {
     editForm.setFieldsValue({
       displayName: record.displayName,
       email: record.email,
-      phoneNumber: record.phoneNumber || ""
+      phoneNumber: record.phoneNumber || "",
+      costingRoles: record.costingRoles || (record.costingRole && record.costingRole !== "none" ? [record.costingRole] : ["costing_marketing"]),
+      sampleRoles: record.sampleRoles || (record.sampleRole && record.sampleRole !== "none" ? [record.sampleRole] : ["sample_marketing"]),
+      productionRoles: record.productionRoles || (record.productionRole && record.productionRole !== "none" ? [record.productionRole] : ["production_all"])
     });
     setOpenEditDialog(true);
     setEditError("");
   };
 
   const handleEditUserSubmit = async (values) => {
-    const { displayName, email, phoneNumber } = values;
+    const { displayName, email, phoneNumber, costingRoles, sampleRoles, productionRoles } = values;
     try {
       setEditError("");
       setEditLoading(true);
@@ -240,6 +246,15 @@ export default function Users() {
         email,
         phoneNumber: phoneNumber || ""
       });
+
+      if (costingRoles || sampleRoles || productionRoles) {
+        await userService.updateUserModuleRoles(
+          editingUser.uid,
+          costingRoles || [],
+          sampleRoles || [],
+          productionRoles || []
+        );
+      }
 
       setSuccess(`User account ${email} updated successfully.`);
       setOpenEditDialog(false);
@@ -339,8 +354,13 @@ export default function Users() {
           <Select
             mode="multiple"
             value={val}
-            onChange={(vals) => handleModuleRoleChange(record.uid, vals, record.sampleRoles || (record.sampleRole && record.sampleRole !== "none" ? [record.sampleRole] : []))}
-            style={{ width: "100%", minWidth: 150 }}
+            onChange={(vals) => handleModuleRoleChange(
+              record.uid, 
+              vals, 
+              record.sampleRoles || (record.sampleRole && record.sampleRole !== "none" ? [record.sampleRole] : []),
+              record.productionRoles || (record.productionRole && record.productionRole !== "none" ? [record.productionRole] : [])
+            )}
+            style={{ width: "100%", minWidth: 140 }}
             placeholder="Costing roles"
           >
             {costingRoles.map((role) => (
@@ -362,11 +382,44 @@ export default function Users() {
           <Select
             mode="multiple"
             value={val}
-            onChange={(vals) => handleModuleRoleChange(record.uid, record.costingRoles || (record.costingRole && record.costingRole !== "none" ? [record.costingRole] : []), vals)}
-            style={{ width: "100%", minWidth: 150 }}
+            onChange={(vals) => handleModuleRoleChange(
+              record.uid, 
+              record.costingRoles || (record.costingRole && record.costingRole !== "none" ? [record.costingRole] : []), 
+              vals,
+              record.productionRoles || (record.productionRole && record.productionRole !== "none" ? [record.productionRole] : [])
+            )}
+            style={{ width: "100%", minWidth: 140 }}
             placeholder="Sample roles"
           >
             {sampleRoles.map((role) => (
+              <Option key={role.id} value={role.id}>
+                {role.name}
+              </Option>
+            ))}
+          </Select>
+        );
+      }
+    },
+    {
+      title: "Production Module Roles (4 Views)",
+      key: "productionRoles",
+      render: (_, record) => {
+        const prodRoles = availableRoles.filter(r => r.module === "production" || r.id === "admin");
+        const val = record.productionRoles || (record.productionRole && record.productionRole !== "none" ? [record.productionRole] : ["production_all"]);
+        return (
+          <Select
+            mode="multiple"
+            value={val}
+            onChange={(vals) => handleModuleRoleChange(
+              record.uid, 
+              record.costingRoles || (record.costingRole && record.costingRole !== "none" ? [record.costingRole] : []),
+              record.sampleRoles || (record.sampleRole && record.sampleRole !== "none" ? [record.sampleRole] : []),
+              vals
+            )}
+            style={{ width: "100%", minWidth: 190 }}
+            placeholder="Assign Production View"
+          >
+            {prodRoles.map((role) => (
               <Option key={role.id} value={role.id}>
                 {role.name}
               </Option>
@@ -463,11 +516,12 @@ export default function Users() {
       title: "Module Association",
       key: "module",
       render: (_, record) => {
-        const isCore = ["admin", "costing_marketing", "costing_finance", "costing_viewer", "sample_marketing", "sample_sampling", "sample_viewer"].includes(record.id);
+        const isCore = ["admin", "costing_marketing", "costing_finance", "costing_viewer", "sample_marketing", "sample_sampling", "sample_viewer", "production_all", "production_marketing", "production_factory", "production_viewer"].includes(record.id);
         if (record.id === "admin") return <Tag color="green">Global Module</Tag>;
-        const mod = record.module || (isCore ? (record.id.startsWith("costing") ? "costing" : "sample") : "global");
+        const mod = record.module || (isCore ? (record.id.startsWith("costing") ? "costing" : (record.id.startsWith("production") ? "production" : "sample")) : "global");
         if (mod === "costing") return <Tag color="cyan">Costing Module</Tag>;
         if (mod === "sample") return <Tag color="blue">Sample Module</Tag>;
+        if (mod === "production") return <Tag color="purple">Production Forecast</Tag>;
         return <Tag color="orange">Global / Admin</Tag>;
       }
     },
@@ -475,22 +529,25 @@ export default function Users() {
       title: "View/Access Type",
       key: "roleType",
       render: (_, record) => {
-        const isCore = ["costing_marketing", "costing_finance", "costing_viewer", "sample_marketing", "sample_sampling", "sample_viewer"].includes(record.id);
+        const isCore = ["costing_marketing", "costing_finance", "costing_viewer", "sample_marketing", "sample_sampling", "sample_viewer", "production_all", "production_marketing", "production_factory", "production_viewer"].includes(record.id);
         let type = record.roleType;
         if (isCore) {
-          if (record.id.endsWith("marketing")) type = "creator";
+          if (record.id === "production_all") type = "administrator";
+          else if (record.id === "production_marketing" || record.id.endsWith("marketing")) type = "creator";
+          else if (record.id === "production_factory") type = "factory";
           else if (record.id.endsWith("finance")) type = "analyst";
           else if (record.id.endsWith("sampling")) type = "developer";
-          else if (record.id.endsWith("viewer")) type = "viewer";
+          else if (record.id.endsWith("viewer") || record.id === "production_viewer") type = "viewer";
         }
         if (record.id === "admin") type = "administrator";
         
         switch (type) {
-          case "creator": return <Tag color="orange">Marketing / Creator</Tag>;
+          case "creator": return <Tag color="orange">Marketing / Actuals</Tag>;
           case "analyst": return <Tag color="purple">Finance / Analyst</Tag>;
           case "developer": return <Tag color="green">Sampling / Developer</Tag>;
-          case "viewer": return <Tag color="gray">Auditor / Viewer</Tag>;
-          case "administrator": return <Tag color="red">Full Access</Tag>;
+          case "factory": return <Tag color="cyan">Factory / Production</Tag>;
+          case "viewer": return <Tag color="gray">Auditor / Read-Only</Tag>;
+          case "administrator": return <Tag color="red">👑 Full Access (All Fields)</Tag>;
           default: return <Tag>{type || "N/A"}</Tag>;
         }
       }
@@ -499,7 +556,7 @@ export default function Users() {
       title: "Role Type",
       key: "type",
       render: (_, record) => {
-        const isCore = ["admin", "costing_marketing", "costing_finance", "costing_viewer", "sample_marketing", "sample_sampling", "sample_viewer"].includes(record.id);
+        const isCore = ["admin", "costing_marketing", "costing_finance", "costing_viewer", "sample_marketing", "sample_sampling", "sample_viewer", "production_all", "production_marketing", "production_factory", "production_viewer"].includes(record.id);
         return <Tag color={isCore ? "blue" : "purple"}>{isCore ? "System Core" : "Custom Role"}</Tag>;
       }
     },
@@ -508,7 +565,7 @@ export default function Users() {
       key: "action",
       align: "right",
       render: (_, record) => {
-        if (record.id === "admin") return <Text type="secondary" style={{ fontSize: "0.85rem" }}>System Protected</Text>;
+        if (record.id === "admin" || record.id.startsWith("production_")) return <Text type="secondary" style={{ fontSize: "0.85rem" }}>System Protected</Text>;
         return (
           <Button
             type="text"
@@ -726,6 +783,21 @@ export default function Users() {
             </Select>
           </Form.Item>
 
+          <Form.Item
+            name="productionRoles"
+            label={<span style={{ color: "#475569", fontWeight: 600 }}>Production Forecast Roles</span>}
+            initialValue={["production_all"]}
+            rules={[{ required: true, message: "Please select at least one production role." }]}
+          >
+            <Select mode="multiple" placeholder="Select Production roles" size="large" style={{ width: "100%", borderRadius: 8 }}>
+              {availableRoles.filter(r => r.module === "production" || r.id === "admin").map((role) => (
+                <Option key={role.id} value={role.id}>
+                  {role.name}
+                </Option>
+              ))}
+            </Select>
+          </Form.Item>
+
           <Form.Item style={{ marginBottom: 0, textAlign: "right", marginTop: 24 }}>
             <Space>
               <Button onClick={() => setOpenDialog(false)} style={{ borderRadius: 8 }}>Cancel</Button>
@@ -802,6 +874,7 @@ export default function Users() {
             >
               <Option value="costing">Costing Management Module</Option>
               <Option value="sample">Sample Requisitions Module</Option>
+              <Option value="production">Production Forecast Module</Option>
             </Select>
           </div>
 
@@ -819,11 +892,18 @@ export default function Users() {
                   <Option value="analyst">Finance View (Perform Costing & View)</Option>
                   <Option value="viewer">Auditor View (Read-Only View)</Option>
                 </>
-              ) : (
+              ) : roleModule === "sample" ? (
                 <>
                   <Option value="creator">Marketing View (Create, Edit & View Requests)</Option>
                   <Option value="developer">Sampling Team View (Develop, Complete & View)</Option>
                   <Option value="viewer">Auditor View (Read-Only View)</Option>
+                </>
+              ) : (
+                <>
+                  <Option value="administrator">👑 Full Management View (All Fields Editable)</Option>
+                  <Option value="creator">📈 Marketing Team View (Actuals Only)</Option>
+                  <Option value="factory">🏭 Factory Team View (Factory Perf & Confirmed)</Option>
+                  <Option value="viewer">👁️ Read-Only View (Auditor / Executive)</Option>
                 </>
               )}
             </Select>
@@ -833,11 +913,11 @@ export default function Users() {
 
       {/* Edit User Modal */}
       <Modal
-        title="Edit User Profile"
+        title="Edit User Profile & Module Access"
         open={openEditDialog}
         onCancel={() => setOpenEditDialog(false)}
         footer={null}
-        width={450}
+        width={480}
         centered
         styles={{ content: { borderRadius: 16, background: "#ffffff" } }}
       >
@@ -877,6 +957,45 @@ export default function Users() {
             ]}
           >
             <Input placeholder="+94767063788" size="large" style={{ borderRadius: 8 }} />
+          </Form.Item>
+
+          <Form.Item
+            name="costingRoles"
+            label={<span style={{ color: "#475569", fontWeight: 600 }}>Costing Module Roles</span>}
+          >
+            <Select mode="multiple" placeholder="Select Costing roles" size="large" style={{ width: "100%", borderRadius: 8 }}>
+              {availableRoles.filter(r => r.module === "costing" || r.id === "admin").map((role) => (
+                <Option key={role.id} value={role.id}>
+                  {role.name}
+                </Option>
+              ))}
+            </Select>
+          </Form.Item>
+
+          <Form.Item
+            name="sampleRoles"
+            label={<span style={{ color: "#475569", fontWeight: 600 }}>Sample Module Roles</span>}
+          >
+            <Select mode="multiple" placeholder="Select Sample roles" size="large" style={{ width: "100%", borderRadius: 8 }}>
+              {availableRoles.filter(r => r.module === "sample" || r.id === "admin").map((role) => (
+                <Option key={role.id} value={role.id}>
+                  {role.name}
+                </Option>
+              ))}
+            </Select>
+          </Form.Item>
+
+          <Form.Item
+            name="productionRoles"
+            label={<span style={{ color: "#475569", fontWeight: 600 }}>Production Forecast Roles (4 Views)</span>}
+          >
+            <Select mode="multiple" placeholder="Select Production view roles" size="large" style={{ width: "100%", borderRadius: 8 }}>
+              {availableRoles.filter(r => r.module === "production" || r.id === "admin").map((role) => (
+                <Option key={role.id} value={role.id}>
+                  {role.name}
+                </Option>
+              ))}
+            </Select>
           </Form.Item>
 
           <Form.Item style={{ marginBottom: 0, textAlign: "right", marginTop: 24 }}>

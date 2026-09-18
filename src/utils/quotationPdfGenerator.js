@@ -47,7 +47,8 @@ export async function downloadQuotationPDF(quotationData) {
     validity = "30 Days from date of quotation",
     packing = category === "bedding" ? "Coir Sheet/Poly bag/Bundle pack/Pallet" : "Carton Boxes/Floor load/Pallet",
     items = [],
-    financialParams = {}
+    financialParams = {},
+    selectedColumns = null
   } = quotationData;
 
   // Initialize Landscape A4 (297mm width x 210mm height)
@@ -156,52 +157,66 @@ export async function downloadQuotationPDF(quotationData) {
 
   y += 20;
 
-  // 3. Exact Table Column Layouts (Calibrated to exactly 273mm total)
-  let cols = [];
+  // 3. Master Table Column Layouts
+  let masterCols = [];
   if (isBedding) {
-    // Bedding Columns (Total = 273mm)
-    cols = [
-      { key: "idx", title: "#", subTitle: "#", width: 7, align: "center" },
-      { key: "image", title: "Image", subTitle: "Images", width: 14, align: "center" },
-      { key: "spec", title: "Product spec", subTitle: "As per cost req", width: 48, align: "left" },
-      { key: "length", title: "L(CM)", subTitle: "As req", width: 10, align: "center" },
-      { key: "width", title: "W(CM)", subTitle: "As req", width: 10, align: "center" },
-      { key: "height", title: "H(CM)", subTitle: "As req", width: 10, align: "center" },
-      { key: "organic", title: "Org/Non", subTitle: "Type", width: 14, align: "center" },
-      { key: "ncrc", title: "NC/RC", subTitle: "Ratio", width: 11, align: "center" },
-      { key: "density", title: "Density", subTitle: "kg/m3", width: 12, align: "center" },
-      { key: "qtyBdl", title: "Qty/Bdl", subTitle: "Bundle", width: 12, align: "center" },
-      { key: "pltSize", title: "Pallet", subTitle: "Size", width: 13, align: "center" },
-      { key: "bdlPlt", title: "Bdl/Plt", subTitle: "As req", width: 12, align: "center" },
-      { key: "plts40", title: "Plt40", subTitle: "40ft", width: 11, align: "center" },
-      { key: "plts20", title: "Plt20", subTitle: "20ft", width: 11, align: "center" },
-      { key: "price", title: `Price (${priceTerm})`, subTitle: "Auto cal", width: 20, align: "center" },
-      { key: "bdl20", title: "Bdl20ft", subTitle: "Auto cal", width: 12, align: "center" },
-      { key: "bdl40", title: "Bdl40ft", subTitle: "Auto cal", width: 12, align: "center" },
-      { key: "qty40", title: "Qty 40ft", subTitle: "Auto pick", width: 17, align: "center" },
-      { key: "qty20", title: "Qty 20ft", subTitle: "Auto pick", width: 17, align: "center" }
+    // Bedding Master Columns
+    masterCols = [
+      { key: "idx", dataKey: "idx", title: "#", subTitle: "#", baseWidth: 7, align: "center" },
+      { key: "image", dataKey: "imageUrl", title: "Image", subTitle: "Images", baseWidth: 14, align: "center" },
+      { key: "spec", dataKey: "description", title: "Product spec", subTitle: "As per cost req", baseWidth: 44, align: "left" },
+      { key: "length", dataKey: "length", title: "L(CM)", subTitle: "As req", baseWidth: 10, align: "center" },
+      { key: "width", dataKey: "width", title: "W(CM)", subTitle: "As req", baseWidth: 10, align: "center" },
+      { key: "height", dataKey: "height", title: "H(CM)", subTitle: "As req", baseWidth: 10, align: "center" },
+      { key: "organic", dataKey: "organic", title: "Org/Non", subTitle: "Type", baseWidth: 13, align: "center" },
+      { key: "ncrc", dataKey: "ncRcRatio", title: "NC/RC", subTitle: "Ratio", baseWidth: 11, align: "center" },
+      { key: "density", dataKey: "density", title: "Density", subTitle: "kg/m3", baseWidth: 11, align: "center" },
+      { key: "qtyBdl", dataKey: "qtyPerBundle", title: "Qty/Bdl", subTitle: "Bundle", baseWidth: 11, align: "center" },
+      { key: "pltSize", dataKey: "palletSize", title: "Pallet", subTitle: "Size", baseWidth: 12, align: "center" },
+      { key: "bdlPlt", dataKey: "bundlesPerPallet", title: "Bdl/Plt", subTitle: "As req", baseWidth: 12, align: "center" },
+      { key: "plts20", dataKey: "palletsPer20ft", title: "Plt20", subTitle: "20ft", baseWidth: 11, align: "center" },
+      { key: "plts40", dataKey: "palletsPer40ft", title: "Plt40", subTitle: "40ft", baseWidth: 11, align: "center" },
+      { key: "price", dataKey: "quotedPrice", title: `Price (${priceTerm})`, subTitle: "Auto cal", baseWidth: 18, align: "center" },
+      { key: "bdl20", dataKey: "bundlesPer20ft", title: "Bdl20ft", subTitle: "Auto cal", baseWidth: 12, align: "center" },
+      { key: "qty20", dataKey: "qtyPer20ft", title: "Qty 20ft", subTitle: "Auto pick", baseWidth: 15, align: "center" },
+      { key: "bdl40", dataKey: "bundlesPer40ft", title: "Bdl40ft", subTitle: "Auto cal", baseWidth: 12, align: "center" },
+      { key: "qty40", dataKey: "qtyPer40ft", title: "Qty 40ft", subTitle: "Auto pick", baseWidth: 15, align: "center" }
     ];
   } else {
-    // Horticulture Columns (Total = 273mm)
-    cols = [
-      { key: "idx", title: "#", subTitle: "#", width: 7, align: "center" },
-      { key: "image", title: "Image", subTitle: "Images", width: 15, align: "center" },
-      { key: "spec", title: "Product spec", subTitle: "As per cost req data", width: 58, align: "left" },
-      { key: "packing", title: "Pack/Pcs", subTitle: "As req", width: 14, align: "center" },
-      { key: "pltSize", title: "Pallet", subTitle: "Size", width: 14, align: "center" },
-      { key: "ctnPlt", title: "Ctns/Plt", subTitle: "As req", width: 13, align: "center" },
-      { key: "plts40", title: "Plt40ft", subTitle: "Marketing", width: 12, align: "center" },
-      { key: "plts20", title: "Plt20ft", subTitle: "Marketing", width: 12, align: "center" },
-      { key: "ctnSize", title: "Carton Size", subTitle: "CM", width: 18, align: "center" },
-      { key: "price", title: `Price (${priceTerm})`, subTitle: "Auto cal", width: 22, align: "center" },
-      { key: "bdl20", title: "Bdl 20ft", subTitle: "Entry", width: 12, align: "center" },
-      { key: "bdl40", title: "Bdl 40ft", subTitle: "Entry", width: 12, align: "center" },
-      { key: "ctn40", title: "Ctn 40ft", subTitle: "Auto pick", width: 14, align: "center" },
-      { key: "qty40", title: "Qty 40ft", subTitle: "Auto pick", width: 18, align: "center" },
-      { key: "ctn20", title: "Ctn 20ft", subTitle: "Auto pick", width: 14, align: "center" },
-      { key: "qty20", title: "Qty 20ft", subTitle: "Auto pick", width: 18, align: "center" }
+    // Horticulture Master Columns
+    masterCols = [
+      { key: "idx", dataKey: "idx", title: "#", subTitle: "#", baseWidth: 7, align: "center" },
+      { key: "image", dataKey: "imageUrl", title: "Image", subTitle: "Images", baseWidth: 15, align: "center" },
+      { key: "spec", dataKey: "description", title: "Product spec", subTitle: "As per cost req data", baseWidth: 60, align: "left" },
+      { key: "packing", dataKey: "packing", title: "Pack (Ctn/Bdl)", subTitle: "As req", baseWidth: 16, align: "center" },
+      { key: "ctnSize", dataKey: "cartonSize", title: "Ctn/Bdl Size", subTitle: "CM", baseWidth: 18, align: "center" },
+      { key: "pltSize", dataKey: "palletSize", title: "Pallet", subTitle: "Size", baseWidth: 13, align: "center" },
+      { key: "ctnPlt", dataKey: "cartonsPerPallet", title: "Ctns/Bdls/Plt", subTitle: "As req", baseWidth: 14, align: "center" },
+      { key: "plts20", dataKey: "palletsPer20ft", title: "Plt 20ft", subTitle: "Marketing", baseWidth: 12, align: "center" },
+      { key: "plts40", dataKey: "palletsPer40ft", title: "Plt 40ft", subTitle: "Marketing", baseWidth: 12, align: "center" },
+      { key: "rollDiameter", dataKey: "rollDiameter", title: "Roll Dia", subTitle: "CM", baseWidth: 12, align: "center" },
+      { key: "price", dataKey: "quotedPrice", title: `Price (${priceTerm})`, subTitle: "Auto cal", baseWidth: 20, align: "center" },
+      { key: "ctn20", dataKey: "cartonsPer20ft", title: "Ctn/Bdl 20ft", subTitle: "Auto pick", baseWidth: 16, align: "center" },
+      { key: "qty20", dataKey: "qtyPer20ft", title: "Qty 20ft", subTitle: "Auto pick", baseWidth: 18, align: "center" },
+      { key: "ctn40", dataKey: "cartonsPer40ft", title: "Ctn/Bdl 40ft", subTitle: "Auto pick", baseWidth: 16, align: "center" },
+      { key: "qty40", dataKey: "qtyPer40ft", title: "Qty 40ft", subTitle: "Auto pick", baseWidth: 18, align: "center" }
     ];
   }
+
+  // Filter columns based strictly on unchecked / selected columns
+  let cols = masterCols;
+  if (Array.isArray(selectedColumns) && selectedColumns.length > 0) {
+    cols = masterCols.filter(col => selectedColumns.includes(col.dataKey) || selectedColumns.includes(col.key));
+  }
+  if (cols.length === 0) cols = masterCols;
+
+  // Dynamically scale column widths so table always spans exactly tableWidth (273mm)
+  const totalBaseWidth = cols.reduce((sum, c) => sum + (c.baseWidth || 10), 0);
+  const scaleRatio = tableWidth / totalBaseWidth;
+  cols = cols.map(c => ({
+    ...c,
+    width: (c.baseWidth || 10) * scaleRatio
+  }));
 
   // Draw 2-Tier Table Header Rows (matching Excel Row 9 & Row 10)
   const headerHeight1 = 5;
@@ -326,6 +341,8 @@ export async function downloadQuotationPDF(quotationData) {
         doc.text(String(item.palletsPer40ft || "-"), curX + (col.width / 2), y + 8, { align: "center" });
       } else if (col.key === "plts20") {
         doc.text(String(item.palletsPer20ft || "-"), curX + (col.width / 2), y + 8, { align: "center" });
+      } else if (col.key === "rollDiameter") {
+        doc.text(String(item.rollDiameter || "-"), curX + (col.width / 2), y + 8, { align: "center" });
       } else if (col.key === "price") {
         doc.setFont("helvetica", "bold");
         doc.setFontSize(7);

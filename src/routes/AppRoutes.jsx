@@ -25,6 +25,11 @@ import DispatchEditor from "../pages/dispatch/DispatchEditor";
 import DispatchDetails from "../pages/dispatch/DispatchDetails";
 import SalesOfficerProfile from "../pages/admin/SalesOfficerProfile";
 import ProductionForecast from "../pages/production/ProductionForecast";
+import ProductionFullManagement from "../pages/production/ProductionFullManagement";
+import ProductionMarketingView from "../pages/production/ProductionMarketingView";
+import ProductionFactoryView from "../pages/production/ProductionFactoryView";
+import ProductionReadOnlyView from "../pages/production/ProductionReadOnlyView";
+import ProductionForecastRouter from "../pages/production/ProductionForecastRouter";
 import ProductionDashboard from "../pages/production/ProductionDashboard";
 import ProspectPipeline from "../pages/production/ProspectPipeline";
 
@@ -195,13 +200,55 @@ export default function AppRoutes() {
 
 
 
-      {/* Production Forecast & Planning Routes */}
+      {/* Production Forecast & Planning Routes - Separate Dedicated Pages */}
       <Route
         path="/production-forecast"
         element={
           <ProtectedRoute>
+            <ProductionForecastRouter />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/production-forecast/full-management"
+        element={
+          <ProtectedRoute module="production" allowedModuleRoles={["production_all", "admin"]}>
             <DashboardLayout>
-              <ProductionForecast />
+              <ProductionFullManagement />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/production-forecast/marketing"
+        element={
+          <ProtectedRoute module="production" allowedModuleRoles={["production_marketing", "production_all", "admin"]}>
+            <DashboardLayout>
+              <ProductionMarketingView />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/production-forecast/factory"
+        element={
+          <ProtectedRoute module="production" allowedModuleRoles={["production_factory", "production_all", "admin"]}>
+            <DashboardLayout>
+              <ProductionFactoryView />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/production-forecast/read-only"
+        element={
+          <ProtectedRoute module="production" allowedModuleRoles={["production_viewer", "production_marketing", "production_factory", "production_all", "admin"]}>
+            <DashboardLayout>
+              <ProductionReadOnlyView />
             </DashboardLayout>
           </ProtectedRoute>
         }
@@ -210,7 +257,7 @@ export default function AppRoutes() {
       <Route
         path="/production-forecast/dashboard"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute module="production" allowedModuleRoles={["production_all", "production_marketing", "production_factory", "production_viewer", "admin"]}>
             <DashboardLayout>
               <ProductionDashboard />
             </DashboardLayout>
@@ -221,7 +268,7 @@ export default function AppRoutes() {
       <Route
         path="/production-forecast/prospects"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute module="production" allowedModuleRoles={["production_all", "production_marketing", "admin"]}>
             <DashboardLayout>
               <ProspectPipeline />
             </DashboardLayout>

@@ -34,57 +34,177 @@ export function getDepartmentForOfficer(officerCode) {
 }
 
 /**
+ * Gets the current month key matching the financial calendar (e.g. "2026-09")
+ */
+export function getCurrentMonthKey(referenceDate = new Date()) {
+  const d = new Date(referenceDate);
+  const yr = d.getFullYear();
+  const mNum = String(d.getMonth() + 1).padStart(2, "0");
+  const key = `${yr}-${mNum}`;
+  const found = FINANCIAL_YEAR_MONTHS.find(m => m.monthKey === key);
+  return found ? found.monthKey : "2026-09";
+}
+
+/**
+ * Gets the current month descriptor object
+ */
+export function getCurrentMonthObject(referenceDate = new Date()) {
+  const key = getCurrentMonthKey(referenceDate);
+  return FINANCIAL_YEAR_MONTHS.find(m => m.monthKey === key) || FINANCIAL_YEAR_MONTHS[5]; // Default to SEP
+}
+
+/**
+ * Gets all monthKeys inclusive between fromKey and toKey
+ */
+export function getMonthRange(fromKey, toKey) {
+  if (!fromKey || !toKey) return [fromKey || toKey || "2026-09"];
+  const fromIdx = FINANCIAL_YEAR_MONTHS.findIndex(m => m.monthKey === fromKey);
+  const toIdx = FINANCIAL_YEAR_MONTHS.findIndex(m => m.monthKey === toKey);
+
+  if (fromIdx === -1 && toIdx === -1) return [fromKey];
+  if (fromIdx === -1) return [toKey];
+  if (toIdx === -1) return [fromKey];
+
+  const start = Math.min(fromIdx, toIdx);
+  const end = Math.max(fromIdx, toIdx);
+  return FINANCIAL_YEAR_MONTHS.slice(start, end + 1).map(m => m.monthKey);
+}
+
+/**
  * Calculates default 4 months rolling window (Current month + next 3 months)
  */
 export function getDefaultRollingMonths(referenceDate = new Date()) {
   const result = [];
-  const start = new Date(referenceDate);
+  const currentKey = getCurrentMonthKey(referenceDate);
+  const startIdx = FINANCIAL_YEAR_MONTHS.findIndex(m => m.monthKey === currentKey);
+  const baseIdx = startIdx >= 0 ? startIdx : 0;
+
   for (let i = 0; i < 4; i++) {
-    const d = new Date(start.getFullYear(), start.getMonth() + i, 1);
-    const yr = d.getFullYear();
-    const mNum = String(d.getMonth() + 1).padStart(2, "0");
-    const mCode = d.toLocaleString("en-US", { month: "short" }).toUpperCase();
-    const monthKey = `${yr}-${mNum}`;
-    const monthName = d.toLocaleString("en-US", { month: "long" }) + " " + yr;
+    const targetIdx = (baseIdx + i) % FINANCIAL_YEAR_MONTHS.length;
+    const m = FINANCIAL_YEAR_MONTHS[targetIdx];
     result.push({
-      year: yr,
-      month: mCode,
-      monthKey,
-      monthName,
-      monthNum: mNum
+      year: m.defaultYear,
+      month: m.code,
+      monthKey: m.monthKey,
+      monthName: `${m.name} ${m.defaultYear}`,
+      monthNum: m.num
     });
   }
   return result;
 }
 
 /**
+ * Calculates rolling trajectory data for previous N months + target month (default: previous 3 months + current month = 4 months)
+ * e.g., for Sep 2026 with count = 3: Jun 2026, Jul 2026, Aug 2026, Sep 2026
+ */
+export function getPreviousMonthsAndCurrent(targetMonthKey = "2026-09", count = 3) {
+  const targetIdx = FINANCIAL_YEAR_MONTHS.findIndex(m => m.monthKey === targetMonthKey);
+  const endIdx = targetIdx >= 0 ? targetIdx : 5; // Default to SEP (idx 5)
+
+  const result = [];
+  const startIdx = Math.max(0, endIdx - count);
+  for (let i = startIdx; i <= endIdx; i++) {
+    result.push(FINANCIAL_YEAR_MONTHS[i]);
+  }
+
+  // Ensure minimum count + 1 months if possible from dataset
+  if (result.length < count + 1 && FINANCIAL_YEAR_MONTHS.length >= count + 1) {
+    return FINANCIAL_YEAR_MONTHS.slice(0, count + 1);
+  }
+  return result;
+}
+
+/**
+ * Aggregates trajectory summary data for previous 3 months + current month
+ */
+export function generateMonthlyTrajectorySummary(dataset = [], targetMonthKey = "2026-09") {
+  const months = getPreviousMonthsAndCurrent(targetMonthKey, 3);
+  
+  return months.map(m => {
+    const matchingRows = dataset.filter(r => r.monthKey === m.monthKey || r.month === m.code);
+    let bTo = 0, aTo = 0, bTeu = 0, aTeu = 0, bCont = 0, aCont = 0, fTeu = 0, fTo = 0;
+
+    matchingRows.forEach(r => {
+      bTo += parseFloat(r.budgetTurnover) || 0;
+      aTo += parseFloat(r.actualTurnover) || 0;
+      bTeu += parseFloat(r.budgetTeu) || 0;
+      aTeu += parseFloat(r.actualTeu) || 0;
+      bCont += parseFloat(r.budgetContribution) || 0;
+      aCont += parseFloat(r.actualContribution) || 0;
+      fTeu += parseFloat(r.factoryTeu) || 0;
+      fTo += parseFloat(r.factoryTurnover) || 0;
+    });
+
+    const vTo = aTo - bTo;
+    const vTeu = aTeu - bTeu;
+    const ach = bTo > 0 ? Math.round((aTo / bTo) * 100) : (aTo > 0 ? 100 : 0);
+    const bMargin = bTo > 0 ? (bCont / bTo) : 0;
+    const aMargin = aTo > 0 ? (aCont / aTo) : 0;
+
+    return {
+      monthObj: m,
+      monthName: `${m.name} ${m.defaultYear}`,
+      shortLabel: `${m.name.slice(0, 3)} '${String(m.defaultYear).slice(-2)}`,
+      code: m.code,
+      year: m.defaultYear,
+      monthKey: m.monthKey,
+      count: matchingRows.length,
+      budget: { to: bTo, teu: bTeu, cont: bCont, margin: bMargin },
+      actual: { to: aTo, teu: aTeu, cont: aCont, margin: aMargin },
+      factory: { to: fTo, teu: fTeu },
+      variance: { to: vTo, teu: vTeu, achievementRate: ach },
+      status: aTo >= bTo && bTo > 0 ? "MET" : (aTo > 0 ? "VARIANCE" : "OPEN")
+    };
+  });
+}
+
+/**
  * Recalculates metrics, variances, achievement rate and status for a row
+ * Factory turnover & contribution are computed as a proportional ratio of factory capable TEU to actual/budget TEU
  */
 export function calculateRowMetrics(row) {
-  const bTeu = parseFloat(row.budgetTeu) || 0;
-  const bTo = parseFloat(row.budgetTurnover) || 0;
-  const bCont = parseFloat(row.budgetContribution) || 0;
+  const bTeu = Math.round((parseFloat(row.budgetTeu) || 0) * 100) / 100;
+  const bTo = Math.round(parseFloat(row.budgetTurnover) || 0);
+  const bCont = Math.round(parseFloat(row.budgetContribution) || 0);
   const bMargin = bTo > 0 ? (bCont / bTo) : (parseFloat(row.budgetMargin) || 0);
 
-  const aTeu = parseFloat(row.actualTeu) || 0;
-  const aTo = parseFloat(row.actualTurnover) || 0;
-  const aCont = parseFloat(row.actualContribution) || 0;
+  const aTeu = Math.round((parseFloat(row.actualTeu) || 0) * 100) / 100;
+  const aTo = Math.round(parseFloat(row.actualTurnover) || 0);
+  const aCont = Math.round(parseFloat(row.actualContribution) || 0);
   const aMargin = aTo > 0 ? (aCont / aTo) : (parseFloat(row.actualMargin) || 0);
 
-  const fTeu = row.factoryTeu !== undefined && row.factoryTeu !== null && row.factoryTeu !== "" 
-    ? (parseFloat(row.factoryTeu) || 0) 
+  let fTeu = row.factoryTeu !== undefined && row.factoryTeu !== null && row.factoryTeu !== "" 
+    ? (Math.round((parseFloat(row.factoryTeu) || 0) * 100) / 100) 
     : (row.factoryConfirmed ? aTeu : 0);
   
-  let fTo = parseFloat(row.factoryTurnover) || 0;
-  let fCont = parseFloat(row.factoryContribution) || 0;
-  if (aTeu > 0 && fTeu > 0 && fTo === 0) {
-    fTo = Math.round((fTeu / aTeu) * aTo * 100) / 100;
-    fCont = Math.round((fTeu / aTeu) * aCont * 100) / 100;
+  // Factory Turnover and Contribution proportional ratio calculation
+  let fTo = 0;
+  let fCont = 0;
+
+  if (fTeu > 0) {
+    if (aTeu > 0) {
+      // Proportional ratio of capable factory TEU to actual achieved TEU and actual TO
+      const ratio = fTeu / aTeu;
+      fTo = Math.round(ratio * aTo);
+      fCont = Math.round(ratio * aCont);
+    } else if (bTeu > 0) {
+      // If actuals are not yet filled, ratio against budget
+      const ratio = fTeu / bTeu;
+      fTo = Math.round(ratio * bTo);
+      fCont = Math.round(ratio * bCont);
+    } else {
+      fTo = Math.round(parseFloat(row.factoryTurnover) || 0);
+      fCont = Math.round(parseFloat(row.factoryContribution) || 0);
+    }
+  } else if (row.factoryConfirmed && aTeu > 0) {
+    fTeu = aTeu;
+    fTo = aTo;
+    fCont = aCont;
   }
 
   const varTeu = Math.round((aTeu - bTeu) * 100) / 100;
-  const varTo = Math.round((aTo - bTo) * 100) / 100;
-  const varCont = Math.round((aCont - bCont) * 100) / 100;
+  const varTo = Math.round(aTo - bTo);
+  const varCont = Math.round(aCont - bCont);
 
   let achRate = 0;
   if (bTo > 0) {
@@ -116,6 +236,7 @@ export function calculateRowMetrics(row) {
     factoryTeu: fTeu,
     factoryTurnover: fTo,
     factoryContribution: fCont,
+    factoryConfirmed: !!row.factoryConfirmed,
     varianceTeu: varTeu,
     varianceTurnover: varTo,
     varianceContribution: varCont,

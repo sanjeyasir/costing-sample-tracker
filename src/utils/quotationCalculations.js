@@ -165,12 +165,12 @@ export function calculateBeddingItem(item, params = DEFAULT_FINANCIAL_PARAMS) {
     qtyPer40ft = palletsPer40ft * bundlesPerPallet * qtyPerBundle;
     qtyPer20ft = palletsPer20ft * bundlesPerPallet * qtyPerBundle;
   } else {
-    // Floor loading formula:
-    // 20ft (27 CBM) => 27 / (vol) / qtyPerBundle
-    // 40ft (67 CBM) => 67 / (vol) / qtyPerBundle
+    // Floor loading formula with practical CBM tolerance:
+    // 20ft (26 CBM tolerance) => 26 / (vol) / qtyPerBundle
+    // 40ft (66 CBM tolerance) => 66 / (vol) / qtyPerBundle
     if (pieceCbm > 0 && qtyPerBundle > 0) {
-      bundlesPer20ft = 27 / pieceCbm / qtyPerBundle;
-      bundlesPer40ft = 67 / pieceCbm / qtyPerBundle;
+      bundlesPer20ft = 26 / pieceCbm / qtyPerBundle;
+      bundlesPer40ft = 66 / pieceCbm / qtyPerBundle;
       qtyPer40ft = bundlesPer40ft * qtyPerBundle;
       qtyPer20ft = bundlesPer20ft * qtyPerBundle;
     } else {
@@ -244,45 +244,65 @@ export function calculateHorticultureItem(item, params = DEFAULT_FINANCIAL_PARAM
   const palletsPer20ft = parseFloat(item.palletsPer20ft || item.pallets_20ft) || 0;
   const cartonsPerPallet = parseFloat(item.cartonsPerPallet || item.cartons_per_pallet) || 0;
   const palletSize = item.palletSize || item.pallet_size || "";
-  const loadingType = item.loadingType || (cartonsPerPallet > 0 ? "pallet" : (item.rollDiameter ? "roll" : "carton_floor"));
+  
+  const hasRollDiameter = Boolean(
+    item.rollDiameter && 
+    item.rollDiameter !== "TBA" && 
+    item.rollDiameter !== "-" && 
+    String(item.rollDiameter).trim() !== ""
+  );
+
+  const loadingType = item.loadingType || (hasRollDiameter ? "roll" : (cartonsPerPallet > 0 ? "pallet" : "carton_floor"));
 
   const cartonCbm = (dims.length * dims.width * dims.height) / 1000000;
 
   let cartonsPer20ft = 0;
   let cartonsPer40ft = 0;
+  let bundlesPer20ft = 0;
+  let bundlesPer40ft = 0;
   let qtyPer40ft = 0;
   let qtyPer20ft = 0;
 
-  if (loadingType === "pallet" && cartonsPerPallet > 0 && (palletsPer40ft > 0 || palletsPer20ft > 0)) {
+  if (loadingType === "roll" || hasRollDiameter) {
+    // Roll form loading: Full manual entry preserved for all columns
+    qtyPer40ft = parseFloat(item.qtyPer40ft) || 0;
+    qtyPer20ft = parseFloat(item.qtyPer20ft) || 0;
+    bundlesPer20ft = parseFloat(item.bundlesPer20ft) || 0;
+    bundlesPer40ft = parseFloat(item.bundlesPer40ft) || 0;
+    cartonsPer20ft = parseFloat(item.cartonsPer20ft || item.bundlesPer20ft) || 0;
+    cartonsPer40ft = parseFloat(item.cartonsPer40ft || item.bundlesPer40ft) || 0;
+  } else if (loadingType === "pallet" && cartonsPerPallet > 0 && (palletsPer40ft > 0 || palletsPer20ft > 0)) {
     // Pallet loading situation: Auto cal = (L x I x F) and (M x I x F)
     cartonsPer40ft = palletsPer40ft * cartonsPerPallet;
     cartonsPer20ft = palletsPer20ft * cartonsPerPallet;
+    bundlesPer40ft = cartonsPer40ft;
+    bundlesPer20ft = cartonsPer20ft;
     qtyPer40ft = palletsPer40ft * cartonsPerPallet * packing;
     qtyPer20ft = palletsPer20ft * cartonsPerPallet * packing;
   } else if (loadingType === "bundle_floor") {
     // No cartons, bundle pack floor loaded: Auto cal (O x F) and (N x F)
-    cartonsPer20ft = parseFloat(item.cartonsPer20ft || item.bundlesPer20ft) || 0;
-    cartonsPer40ft = parseFloat(item.cartonsPer40ft || item.bundlesPer40ft) || 0;
+    bundlesPer20ft = parseFloat(item.bundlesPer20ft || item.cartonsPer20ft) || 0;
+    bundlesPer40ft = parseFloat(item.bundlesPer40ft || item.cartonsPer40ft) || 0;
+    cartonsPer20ft = bundlesPer20ft;
+    cartonsPer40ft = bundlesPer40ft;
     qtyPer40ft = cartonsPer40ft * packing;
     qtyPer20ft = cartonsPer20ft * packing;
-  } else if (loadingType === "roll") {
-    // Roll form loading: Manual entry for quantities
-    qtyPer40ft = parseFloat(item.qtyPer40ft) || 0;
-    qtyPer20ft = parseFloat(item.qtyPer20ft) || 0;
-    cartonsPer20ft = 0;
-    cartonsPer40ft = 0;
   } else {
-    // Standard Carton floor loaded situation:
-    // 20ft: 27 / Carton_CBM
-    // 40ft: 67 / Carton_CBM - 7
+    // Standard Carton / Bundle floor loaded situation with CBM tolerance:
+    // 20ft: 26 / Carton_CBM
+    // 40ft: 66 / Carton_CBM - 7
     if (cartonCbm > 0) {
-      cartonsPer20ft = 27 / cartonCbm;
-      cartonsPer40ft = Math.max(0, (67 / cartonCbm) - 7);
+      cartonsPer20ft = 26 / cartonCbm;
+      cartonsPer40ft = Math.max(0, (66 / cartonCbm) - 7);
+      bundlesPer20ft = parseFloat(item.bundlesPer20ft) || Math.round(cartonsPer20ft);
+      bundlesPer40ft = parseFloat(item.bundlesPer40ft) || Math.round(cartonsPer40ft);
       qtyPer40ft = cartonsPer40ft * packing;
       qtyPer20ft = cartonsPer20ft * packing;
     } else {
-      cartonsPer20ft = parseFloat(item.cartonsPer20ft) || 0;
-      cartonsPer40ft = parseFloat(item.cartonsPer40ft) || 0;
+      cartonsPer20ft = parseFloat(item.cartonsPer20ft || item.bundlesPer20ft) || 0;
+      cartonsPer40ft = parseFloat(item.cartonsPer40ft || item.bundlesPer40ft) || 0;
+      bundlesPer20ft = parseFloat(item.bundlesPer20ft || item.cartonsPer20ft) || 0;
+      bundlesPer40ft = parseFloat(item.bundlesPer40ft || item.cartonsPer40ft) || 0;
       qtyPer40ft = parseFloat(item.qtyPer40ft) || (cartonsPer40ft * packing);
       qtyPer20ft = parseFloat(item.qtyPer20ft) || (cartonsPer20ft * packing);
     }
@@ -326,8 +346,11 @@ export function calculateHorticultureItem(item, params = DEFAULT_FINANCIAL_PARAM
     cartonsPerPallet,
     cartonCbm,
     loadingType,
-    cartonsPer20ft: Math.round(cartonsPer20ft * 100) / 100,
-    cartonsPer40ft: Math.round(cartonsPer40ft * 100) / 100,
+    hasRollDiameter,
+    bundlesPer20ft: typeof bundlesPer20ft === "number" ? Math.round(bundlesPer20ft * 100) / 100 : bundlesPer20ft,
+    bundlesPer40ft: typeof bundlesPer40ft === "number" ? Math.round(bundlesPer40ft * 100) / 100 : bundlesPer40ft,
+    cartonsPer20ft: typeof cartonsPer20ft === "number" ? Math.round(cartonsPer20ft * 100) / 100 : cartonsPer20ft,
+    cartonsPer40ft: typeof cartonsPer40ft === "number" ? Math.round(cartonsPer40ft * 100) / 100 : cartonsPer40ft,
     qtyPer40ft: Math.round(qtyPer40ft),
     qtyPer20ft: Math.round(qtyPer20ft),
     fobPrice40ft,

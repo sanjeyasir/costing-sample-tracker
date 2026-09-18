@@ -40,7 +40,9 @@ import {
   Tooltip,
   Modal,
   Divider,
-  Upload
+  Upload,
+  Checkbox,
+  Popover
 } from "antd";
 import {
   LeftOutlined,
@@ -58,10 +60,26 @@ import {
   UploadOutlined,
   UserOutlined,
   ReloadOutlined,
-  SafetyCertificateOutlined
+  SafetyCertificateOutlined,
+  AppstoreOutlined,
+  SettingOutlined,
+  FilterOutlined
 } from "@ant-design/icons";
 
 const { Title, Text, Paragraph } = Typography;
+
+export const ALL_HORTI_COLUMN_KEYS = [
+  "idx", "imageUrl", "description", "packing", "cartonSize", "palletSize",
+  "cartonsPerPallet", "palletsPer20ft", "palletsPer40ft", "rollDiameter",
+  "quotedPrice", "cartonsPer20ft", "qtyPer20ft", "cartonsPer40ft", "qtyPer40ft"
+];
+
+export const ALL_BEDDING_COLUMN_KEYS = [
+  "idx", "imageUrl", "description", "length", "width", "height", "organic",
+  "ncRcRatio", "density", "qtyPerBundle", "palletSize", "bundlesPerPallet",
+  "palletsPer20ft", "palletsPer40ft", "quotedPrice", "bundlesPer20ft",
+  "qtyPer20ft", "bundlesPer40ft", "qtyPer40ft"
+];
 
 export default function QuotationEditor() {
   const { id } = useParams();
@@ -88,6 +106,10 @@ export default function QuotationEditor() {
   const [quotationDate, setQuotationDate] = useState(new Date().toISOString().split("T")[0]);
   const [buyerName, setBuyerName] = useState("");
   const [shipper, setShipper] = useState(DEFAULT_COMPANY_DETAILS);
+
+  // Column Visibility Checkboxes State
+  const [selectedHortiColumns, setSelectedHortiColumns] = useState(ALL_HORTI_COLUMN_KEYS);
+  const [selectedBeddingColumns, setSelectedBeddingColumns] = useState(ALL_BEDDING_COLUMN_KEYS);
 
   // Preference Selectors (Matching Excel S2:Y6 parameters box)
   const [containerSize, setContainerSize] = useState("40ft"); // "20ft" | "40ft"
@@ -174,6 +196,13 @@ export default function QuotationEditor() {
           setLeadTime(savedQuote.leadTime || DEFAULT_TERMS.leadTime);
           setValidity(savedQuote.validity || defaultValidityStr);
           setItems(savedQuote.items || []);
+          if (Array.isArray(savedQuote.selectedColumns) && savedQuote.selectedColumns.length > 0) {
+            if (reqCat === "bedding") {
+              setSelectedBeddingColumns(savedQuote.selectedColumns);
+            } else {
+              setSelectedHortiColumns(savedQuote.selectedColumns);
+            }
+          }
         } else {
           setQuotationNo(`PQ-${req.costRequestNo || id.slice(-5).toUpperCase()}`);
           setBuyerName(req.customerName || "Customer");
@@ -345,7 +374,12 @@ export default function QuotationEditor() {
         if (row < nextItems.length && oldVal !== newVal) {
           hasDiff = true;
           let cleanVal = newVal;
-          if (["length", "width", "height", "qtyPerBundle", "bundlesPerPallet", "cartonsPerPallet", "unitCost", "palletsPer40ft", "palletsPer20ft", "packing", "gsm"].includes(prop)) {
+          if ([
+            "length", "width", "height", "qtyPerBundle", "bundlesPerPallet", 
+            "cartonsPerPallet", "unitCost", "palletsPer40ft", "palletsPer20ft", 
+            "packing", "gsm", "qtyPer40ft", "qtyPer20ft", "cartonsPer20ft", 
+            "cartonsPer40ft", "bundlesPer20ft", "bundlesPer40ft"
+          ].includes(prop)) {
             if (typeof cleanVal === "string") {
               cleanVal = parseFloat(cleanVal.replace(/[^0-9.-]+/g, "")) || 0;
             }
@@ -391,8 +425,53 @@ export default function QuotationEditor() {
     }
   };
 
+  // Validate quotation strictly on selected columns and essentials (Pallet validation is NOT required)
+  const validateQuotation = () => {
+    if (!items || items.length === 0) {
+      message.error("At least one product item is required in the quotation.");
+      return false;
+    }
+
+    const activeCols = isBedding ? selectedBeddingColumns : selectedHortiColumns;
+
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      const itemNum = i + 1;
+      const hasRoll = Boolean(
+        (it.rollDiameter && it.rollDiameter !== "TBA" && it.rollDiameter !== "-" && String(it.rollDiameter).trim() !== "") ||
+        it.loadingType === "roll"
+      );
+
+      if (!it.description && !it.specifications) {
+        message.error(`Item #${itemNum}: Product description or specification is required.`);
+        return false;
+      }
+
+      // Check carton/bundle size only when cartonSize column is selected and item is not roll
+      if (category === "horticulture" && !hasRoll && activeCols.includes("cartonSize")) {
+        if (!it.cartonSize || it.cartonSize.trim() === "" || it.cartonSize === "-") {
+          message.warning(`Item #${itemNum}: Carton / Bundle Size is missing (e.g. 57X51X58CM).`);
+        }
+      }
+
+      // If roll form is active, ensure quantities are provided
+      if (hasRoll) {
+        const calcItem = calculatedItems[i];
+        if (!calcItem.qtyPer40ft && !calcItem.qtyPer20ft) {
+          message.info(`Item #${itemNum} (Roll Form): Please enter Qty per 40ft / 20ft in the row.`);
+        }
+      }
+
+      // Pallet validation is completely optional — no blocking or requirement for pallet fields
+    }
+
+    return true;
+  };
+
   // Save Quotation State
   const handleSaveQuotation = async () => {
+    if (!validateQuotation()) return;
+
     try {
       setSaving(true);
       const payload = {
@@ -408,6 +487,7 @@ export default function QuotationEditor() {
         paymentTerms,
         leadTime,
         validity,
+        selectedColumns: category === "bedding" ? selectedBeddingColumns : selectedHortiColumns,
         items,
         costRequest: {
           id: request.id,
@@ -432,6 +512,8 @@ export default function QuotationEditor() {
 
   // Excel Export
   const handleExportExcel = async () => {
+    if (!validateQuotation()) return;
+
     try {
       const payload = {
         quotationNo,
@@ -446,6 +528,7 @@ export default function QuotationEditor() {
         paymentTerms,
         leadTime,
         validity,
+        selectedColumns: category === "bedding" ? selectedBeddingColumns : selectedHortiColumns,
         items: calculatedItems,
         costRequest: request
       };
@@ -459,6 +542,8 @@ export default function QuotationEditor() {
 
   // PDF Export
   const handleExportPDF = async () => {
+    if (!validateQuotation()) return;
+
     try {
       const payload = {
         quotationNo,
@@ -473,6 +558,7 @@ export default function QuotationEditor() {
         paymentTerms,
         leadTime,
         validity,
+        selectedColumns: category === "bedding" ? selectedBeddingColumns : selectedHortiColumns,
         items: calculatedItems
       };
       await downloadQuotationPDF(payload);
@@ -685,65 +771,27 @@ export default function QuotationEditor() {
     const item = calculatedItems[row];
     if (!item) return;
 
-    if (activeTab === "sheet1_bedding") {
-      // Bedding Sheet 1 Columns:
-      // 0: idx (A), 1: image (B), 2: spec (C), 3: L (D), 4: W (E), 5: H (F), 6: organic (G), 7: ncrc (H), 8: density (I), 9: qtyPerBdl (J),
-      // 10: pltSize (K), 11: bdlPlt (L), 12: plts40 (M), 13: plts20 (N), 14: price (O), 15: bdl20 (P), 16: bdl40 (Q), 17: qty40 (R), 18: qty20 (S)
-      switch (col) {
-        case 14: // O - Quoted Price
-          setActiveCellValue(`=IF($V$4="FOB", IF($V$2="20 ft price", U${excelRow}, T${excelRow}), IF($V$4="EX works", X${excelRow}, IF($V$4="CIF", IF($V$2="20 ft price", W${excelRow}, V${excelRow}), T${excelRow}))) -> [${getDisplayPrice(item, priceTerm, containerSize, financialParams.cifRate).label}]`);
-          break;
-        case 15: // P - Bundles per 20ft
-          setActiveCellValue(item.bundlesPerPallet > 0 && item.palletsPer20ft > 0 ? `=N${excelRow}*L${excelRow} [${item.bundlesPer20ft}]` : `=ROUND(27/CBM/J${excelRow},0) [${item.bundlesPer20ft}]`);
-          break;
-        case 16: // Q - Bundles per 40ft
-          setActiveCellValue(item.bundlesPerPallet > 0 && item.palletsPer40ft > 0 ? `=M${excelRow}*L${excelRow} [${item.bundlesPer40ft}]` : `=ROUND(67/CBM/J${excelRow},0) [${item.bundlesPer40ft}]`);
-          break;
-        case 17: // R - Qty per 40ft
-          setActiveCellValue(item.bundlesPerPallet > 0 && item.palletsPer40ft > 0 ? `=M${excelRow}*L${excelRow}*J${excelRow} [${item.qtyPer40ft.toLocaleString()}]` : `=Q${excelRow}*J${excelRow} [${item.qtyPer40ft.toLocaleString()}]`);
-          break;
-        case 18: // S - Qty per 20ft
-          setActiveCellValue(item.bundlesPerPallet > 0 && item.palletsPer20ft > 0 ? `=N${excelRow}*L${excelRow}*J${excelRow} [${item.qtyPer20ft.toLocaleString()}]` : `=P${excelRow}*J${excelRow} [${item.qtyPer20ft.toLocaleString()}]`);
-          break;
-        default:
-          {
-            const colDef = beddingTemplateHotColumns[col];
-            const val = item[colDef?.data] !== undefined ? item[colDef.data] : "";
-            setActiveCellValue(String(val));
-          }
-      }
-    } else if (activeTab === "sheet3_horti") {
-      // Horti Sheet 3 Columns:
-      // 0: idx (A), 1: image (B), 2: spec (C), 3: pack (D), 4: pltSize (E), 5: ctnPlt (F), 6: plts40 (G), 7: plts20 (H), 8: ctnSize (I),
-      // 9: price (J), 10: bdl20 (K), 11: bdl40 (L), 12: ctn40 (M), 13: qty40 (N), 14: ctn20 (O), 15: qty20 (P)
-      switch (col) {
-        case 9: // J - Quoted Price
-          setActiveCellValue(`=IF($V$4="FOB", IF($V$2="20 ft price", S${excelRow}, R${excelRow}), IF($V$4="EX works", V${excelRow}, IF($V$4="CIF", IF($V$2="20 ft price", U${excelRow}, T${excelRow}), R${excelRow}))) -> [${getDisplayPrice(item, priceTerm, containerSize, financialParams.cifRate).label}]`);
-          break;
-        case 12: // M - Cartons per 40ft
-          setActiveCellValue(item.cartonsPerPallet > 0 && item.palletsPer40ft > 0 ? `=G${excelRow}*F${excelRow} [${item.cartonsPer40ft}]` : `=L${excelRow} [${item.cartonsPer40ft}]`);
-          break;
-        case 13: // N - Qty per 40ft
-          setActiveCellValue(`=M${excelRow}*D${excelRow} [${item.qtyPer40ft.toLocaleString()}]`);
-          break;
-        case 14: // O - Cartons per 20ft
-          setActiveCellValue(item.cartonsPerPallet > 0 && item.palletsPer20ft > 0 ? `=H${excelRow}*F${excelRow} [${item.cartonsPer20ft}]` : `=K${excelRow} [${item.cartonsPer20ft}]`);
-          break;
-        case 15: // P - Qty per 20ft
-          setActiveCellValue(`=O${excelRow}*D${excelRow} [${item.qtyPer20ft.toLocaleString()}]`);
-          break;
-        default:
-          {
-            const colDef = hortiTemplateHotColumns[col];
-            const val = item[colDef?.data] !== undefined ? item[colDef.data] : "";
-            setActiveCellValue(String(val));
-          }
-      }
+    const activeCols = activeTab === "sheet1_bedding" 
+      ? activeBeddingColumns 
+      : (activeTab === "sheet3_horti" 
+        ? activeHortiColumns 
+        : (activeTab === "sheet2_bedding" ? beddingDataEntryHotColumns : hortiDataEntryHotColumns));
+    
+    const colDef = activeCols[col];
+    if (!colDef) return;
+
+    if (colDef.data === "quotedPrice") {
+      setActiveCellValue(`[Quoted Price: ${priceTerm} (${containerSize})] -> ${getDisplayPrice(item, priceTerm, containerSize, financialParams.cifRate).label}`);
+    } else if (colDef.data === "cartonsPer40ft" || colDef.data === "bundlesPer40ft") {
+      setActiveCellValue(item.cartonsPerPallet > 0 && item.palletsPer40ft > 0 ? `Pallets(${item.palletsPer40ft}) * Ctns/Plt(${item.cartonsPerPallet}) = ${item.cartonsPer40ft}` : `Floor load tolerance (66 CBM) = ${item.cartonsPer40ft}`);
+    } else if (colDef.data === "cartonsPer20ft" || colDef.data === "bundlesPer20ft") {
+      setActiveCellValue(item.cartonsPerPallet > 0 && item.palletsPer20ft > 0 ? `Pallets(${item.palletsPer20ft}) * Ctns/Plt(${item.cartonsPerPallet}) = ${item.cartonsPer20ft}` : `Floor load tolerance (26 CBM) = ${item.cartonsPer20ft}`);
+    } else if (colDef.data === "qtyPer40ft") {
+      setActiveCellValue(`Cartons/Bundles 40ft(${item.cartonsPer40ft}) * Packing(${item.packing || 1}) = ${item.qtyPer40ft.toLocaleString()}`);
+    } else if (colDef.data === "qtyPer20ft") {
+      setActiveCellValue(`Cartons/Bundles 20ft(${item.cartonsPer20ft}) * Packing(${item.packing || 1}) = ${item.qtyPer20ft.toLocaleString()}`);
     } else {
-      // Sheet 2 / Sheet 4 Data Entry
-      const colDefs = activeTab === "sheet2_bedding" ? beddingDataEntryHotColumns : hortiDataEntryHotColumns;
-      const colDef = colDefs[col];
-      const val = item[colDef?.data] !== undefined ? item[colDef.data] : "";
+      const val = item[colDef.data] !== undefined ? item[colDef.data] : "";
       setActiveCellValue(String(val));
     }
   };
@@ -764,66 +812,80 @@ export default function QuotationEditor() {
     ...item
   }));
 
-  // Handsontable Columns for Sheet 1: Quatation fomat Bedding
+  // Handsontable Columns for Sheet 1: Quotation format Bedding
   const beddingTemplateHotColumns = [
-    { data: "idx", title: "#", readOnly: true, width: 45, className: "htCenter htMiddle" },
-    { data: "imageUrl", title: "Image", renderer: imageRenderer, readOnly: true, width: 140 },
-    { data: "description", title: "Product spec", width: 220, className: "htLeft htMiddle" },
-    { data: "length", title: "L (CM)", type: "numeric", width: 75, className: "htCenter htMiddle" },
-    { data: "width", title: "W (CM)", type: "numeric", width: 75, className: "htCenter htMiddle" },
-    { data: "height", title: "H (CM)", type: "numeric", width: 75, className: "htCenter htMiddle" },
-    { data: "organic", title: "Organic/Non Org", type: "dropdown", source: ["Non-Organic", "Organic", "100% Organic"], width: 120, className: "htCenter htMiddle" },
-    { data: "ncRcRatio", title: "NC/RC Ratio", type: "dropdown", source: ["80:20", "70:30", "100:0", "60:40", "50:50"], width: 105, className: "htCenter htMiddle" },
-    { data: "density", title: "Density", type: "dropdown", source: ["80 kg/m3", "100 kg/m3", "65 kg/m3", "120 kg/m3", "70 kg/m3"], width: 100, className: "htCenter htMiddle" },
-    { data: "qtyPerBundle", title: "Qty per BUNDLE", type: "numeric", width: 110, className: "htCenter htMiddle" },
-    { data: "palletSize", title: "Pallet size", width: 100, className: "htCenter htMiddle" },
-    { data: "bundlesPerPallet", title: "Bundles per pallet", type: "numeric", width: 120, className: "htCenter htMiddle" },
-    { data: "palletsPer40ft", title: "Pallets per 40ft", type: "numeric", width: 110, className: "htCenter htMiddle" },
-    { data: "palletsPer20ft", title: "Pallets per 20ft", type: "numeric", width: 110, className: "htCenter htMiddle" },
-    { data: "quotedPrice", title: "Price FOB /cif/Ex works", renderer: priceRenderer, readOnly: true, width: 140 },
-    { data: "bundlesPer20ft", title: "Bundles per 20ft", renderer: formulaRenderer, readOnly: true, width: 105 },
-    { data: "bundlesPer40ft", title: "Bundles per 40ft", renderer: formulaRenderer, readOnly: true, width: 105 },
-    { data: "qtyPer40ft", title: "Qty per 40ft", renderer: formulaRenderer, readOnly: true, width: 110 },
-    { data: "qtyPer20ft", title: "Qty per 20ft", renderer: formulaRenderer, readOnly: true, width: 110 }
+    { data: "idx", title: "#", subTitle: "#", readOnly: true, width: 45, className: "htCenter htMiddle" },
+    { data: "imageUrl", title: "Image", subTitle: "Images common", renderer: imageRenderer, readOnly: true, width: 140 },
+    { data: "description", title: "Product spec", subTitle: "As per cost req data", width: 220, className: "htLeft htMiddle" },
+    { data: "length", title: "L (CM)", subTitle: "As per req", type: "numeric", width: 75, className: "htCenter htMiddle" },
+    { data: "width", title: "W (CM)", subTitle: "As per req", type: "numeric", width: 75, className: "htCenter htMiddle" },
+    { data: "height", title: "H (CM)", subTitle: "As per req", type: "numeric", width: 75, className: "htCenter htMiddle" },
+    { data: "organic", title: "Organic/Non Org", subTitle: "Organic/Non-Org", type: "dropdown", source: ["Non-Organic", "Organic", "100% Organic"], width: 120, className: "htCenter htMiddle" },
+    { data: "ncRcRatio", title: "NC/RC Ratio", subTitle: "80:20 (As req)", type: "dropdown", source: ["80:20", "70:30", "100:0", "60:40", "50:50"], width: 105, className: "htCenter htMiddle" },
+    { data: "density", title: "Density", subTitle: "80 kg/m3", type: "dropdown", source: ["80 kg/m3", "100 kg/m3", "65 kg/m3", "120 kg/m3", "70 kg/m3"], width: 100, className: "htCenter htMiddle" },
+    { data: "qtyPerBundle", title: "Qty per BUNDLE", subTitle: "As per req", type: "numeric", width: 110, className: "htCenter htMiddle" },
+    { data: "palletSize", title: "Pallet size (Opt)", subTitle: "If applicable", width: 100, className: "htCenter htMiddle" },
+    { data: "bundlesPerPallet", title: "Bundles per pallet", subTitle: "As per cost req", type: "numeric", width: 120, className: "htCenter htMiddle" },
+    { data: "palletsPer20ft", title: "Pallets per 20ft", subTitle: "Marketing to fill", type: "numeric", width: 110, className: "htCenter htMiddle" },
+    { data: "palletsPer40ft", title: "Pallets per 40ft", subTitle: "Marketing to fill", type: "numeric", width: 110, className: "htCenter htMiddle" },
+    { data: "quotedPrice", title: "Price FOB /cif/Ex works", subTitle: "Auto calculated price", renderer: priceRenderer, readOnly: true, width: 140 },
+    { data: "bundlesPer20ft", title: "Bundles per 20ft", subTitle: "Auto cal", renderer: formulaRenderer, readOnly: true, width: 105 },
+    { data: "qtyPer20ft", title: "Qty per 20ft", subTitle: "Auto pick", renderer: formulaRenderer, readOnly: true, width: 110 },
+    { data: "bundlesPer40ft", title: "Bundles per 40ft", subTitle: "Auto cal", renderer: formulaRenderer, readOnly: true, width: 105 },
+    { data: "qtyPer40ft", title: "Qty per 40ft", subTitle: "Auto pick", renderer: formulaRenderer, readOnly: true, width: 110 }
   ];
 
-  const beddingNestedHeaders = [
-    [
-      "#", "Image", "Product spec", "L (CM)", "W (CM)", "H (CM)", "Organic/Non Org", "NC/RC Ratio", "Density", "Qty per BUNDLE", "Pallet size", "Bundles per pallet", "Pallets per 40ft", "Pallets per 20ft", "Price FOB /cif/Ex works", "Bundles per 20ft", "Bundles per 40ft", "Qty per 40ft", "Qty per 20ft"
-    ],
-    [
-      "#", "Images common", "As per cost req data", "100 (As per req)", "100 (As per req)", "10 (As per req)", "Organic/Non-Org", "80:20 (As per req)", "80 kg/m3", "As per req", "If applicable", "AS per cost req", "Marketing to fill", "Marketing to fill", "Auto calculated price", "Auto cal", "Auto cal", "Auto pick", "Auto pick"
-    ]
-  ];
-
-  // Handsontable Columns for Sheet 3: Quatation fomat horti
+  // Handsontable Columns for Sheet 3: Quotation format Horticulture (NO DUPLICATES)
   const hortiTemplateHotColumns = [
-    { data: "idx", title: "#", readOnly: true, width: 45, className: "htCenter htMiddle" },
-    { data: "imageUrl", title: "Image", renderer: imageRenderer, readOnly: true, width: 140 },
-    { data: "description", title: "Product spec", width: 240, className: "htLeft htMiddle" },
-    { data: "packing", title: "Packing /Pcs ", type: "numeric", width: 110, className: "htCenter htMiddle" },
-    { data: "palletSize", title: "Pallet size", width: 100, className: "htCenter htMiddle" },
-    { data: "cartonsPerPallet", title: "Cartons per pallet", type: "numeric", width: 120, className: "htCenter htMiddle" },
-    { data: "palletsPer40ft", title: "Pallets per 40ft", type: "numeric", width: 110, className: "htCenter htMiddle" },
-    { data: "palletsPer20ft", title: "Pallets per 20ft", type: "numeric", width: 110, className: "htCenter htMiddle" },
-    { data: "cartonSize", title: "Carton Size CM", width: 125, className: "htCenter htMiddle" },
-    { data: "quotedPrice", title: "Price FOB /cif/Ex works", renderer: priceRenderer, readOnly: true, width: 140 },
-    { data: "bundlesPer20ft", title: "Bundles per 20ft", type: "numeric", width: 105, className: "htCenter htMiddle" },
-    { data: "bundlesPer40ft", title: "Bundles per 40ft", type: "numeric", width: 105, className: "htCenter htMiddle" },
-    { data: "cartonsPer40ft", title: "Cartons per 40ft", renderer: formulaRenderer, readOnly: true, width: 110 },
-    { data: "qtyPer40ft", title: "Qty per 40ft", renderer: formulaRenderer, readOnly: true, width: 110 },
-    { data: "cartonsPer20ft", title: "Cartons per 20ft", renderer: formulaRenderer, readOnly: true, width: 110 },
-    { data: "qtyPer20ft", title: "Qty per 20ft", renderer: formulaRenderer, readOnly: true, width: 110 }
+    { data: "idx", title: "#", subTitle: "#", readOnly: true, width: 45, className: "htCenter htMiddle" },
+    { data: "imageUrl", title: "Image", subTitle: "Images common", renderer: imageRenderer, readOnly: true, width: 140 },
+    { data: "description", title: "Product spec", subTitle: "As per cost req data", width: 230, className: "htLeft htMiddle" },
+    { data: "packing", title: "Packing (Pcs / Ctn or Bdl)", subTitle: "AS per cost req", type: "numeric", width: 130, className: "htCenter htMiddle" },
+    { data: "cartonSize", title: "Carton / Bundle Size (CM)", subTitle: "L x W x H", width: 140, className: "htCenter htMiddle" },
+    { data: "palletSize", title: "Pallet size (Opt)", subTitle: "If applicable", width: 100, className: "htCenter htMiddle" },
+    { data: "cartonsPerPallet", title: "Cartons / Bundles per Pallet", subTitle: "AS per cost req", type: "numeric", width: 145, className: "htCenter htMiddle" },
+    { data: "palletsPer20ft", title: "Pallets per 20ft", subTitle: "Marketing to fill", type: "numeric", width: 110, className: "htCenter htMiddle" },
+    { data: "palletsPer40ft", title: "Pallets per 40ft", subTitle: "Marketing to fill", type: "numeric", width: 110, className: "htCenter htMiddle" },
+    { data: "rollDiameter", title: "Roll diameter (If Roll)", subTitle: "Roll mode", width: 110, className: "htCenter htMiddle" },
+    { data: "quotedPrice", title: "Price FOB /cif/Ex works", subTitle: "Auto calculated price", renderer: priceRenderer, readOnly: true, width: 140 },
+    { data: "cartonsPer20ft", title: "Cartons / Bundles per 20ft", subTitle: "Auto / Manual", type: "numeric", width: 130, className: "htCenter htMiddle" },
+    { data: "qtyPer20ft", title: "Qty per 20ft", subTitle: "Auto pick", renderer: formulaRenderer, readOnly: true, width: 110 },
+    { data: "cartonsPer40ft", title: "Cartons / Bundles per 40ft", subTitle: "Auto / Manual", type: "numeric", width: 130, className: "htCenter htMiddle" },
+    { data: "qtyPer40ft", title: "Qty per 40ft", subTitle: "Auto pick", renderer: formulaRenderer, readOnly: true, width: 110 }
   ];
 
-  const hortiNestedHeaders = [
-    [
-      "#", "Image", "Product spec", "Packing /Pcs ", "Pallet size", "Cartons per pallet", "Pallets per 40ft", "Pallets per 20ft", "Carton Size CM", "Price FOB /cif/Ex works", "Bundles per 20ft", "Bundles per 40ft", "Cartons per 40ft", "Qty per 40ft", "Cartons per 20ft", "Qty per 20ft"
-    ],
-    [
-      "#", "Images common", "As per cost req data", "AS per cost req", "If applicable", "AS per cost req", "Marketing to fill", "Marketing to fill", "100X100X50 (As per req)", "Auto calculated price", "Manual entry", "Manual entry", "Auto pick", "Auto pick", "Auto pick", "Auto pick"
-    ]
+  // Dynamic filtered column definitions and nested headers based on user-selected checkboxes
+  const activeBeddingColumns = beddingTemplateHotColumns.filter(c => selectedBeddingColumns.includes(c.data));
+  const activeBeddingNestedHeaders = [
+    activeBeddingColumns.map(c => c.title),
+    activeBeddingColumns.map(c => c.subTitle || c.title)
   ];
+
+  const activeHortiColumns = hortiTemplateHotColumns.filter(c => selectedHortiColumns.includes(c.data));
+  const activeHortiNestedHeaders = [
+    activeHortiColumns.map(c => c.title),
+    activeHortiColumns.map(c => c.subTitle || c.title)
+  ];
+
+  // Handsontable dynamic cell properties callback:
+  // If roll diameter is present on the item (or loadingType is roll), unlocks ALL columns in that row for direct manual editing
+  const getHotCellProperties = (row, col, prop) => {
+    const cellProperties = {};
+    const item = calculatedItems[row];
+    if (!item) return cellProperties;
+
+    const hasRoll = Boolean(
+      (item.rollDiameter && item.rollDiameter !== "TBA" && item.rollDiameter !== "-" && String(item.rollDiameter).trim() !== "") ||
+      item.loadingType === "roll"
+    );
+
+    if (hasRoll) {
+      if (prop !== "idx") {
+        cellProperties.readOnly = false;
+      }
+    }
+    return cellProperties;
+  };
 
   // Handsontable Columns for Sheet 2: Data entry for Bedding
   const beddingDataEntryHotColumns = [
@@ -836,45 +898,45 @@ export default function QuotationEditor() {
     { data: "ncRcRatio", title: "NC/RC Ratio", width: 95, className: "htCenter htMiddle" },
     { data: "density", title: "Density", width: 90, className: "htCenter htMiddle" },
     { data: "qtyPerBundle", title: "Qty/BUNDLE", type: "numeric", width: 95, className: "htCenter htMiddle" },
-    { data: "palletSize", title: "Pallet size", width: 95, className: "htCenter htMiddle" },
+    { data: "palletSize", title: "Pallet size (Opt)", width: 95, className: "htCenter htMiddle" },
     { data: "bundlesPerPallet", title: "Bundles per pallet", type: "numeric", width: 115, className: "htCenter htMiddle" },
     { data: "unitCost", title: "Unit Cost (Fin)", type: "numeric", numericFormat: { pattern: "$0,0.00" }, width: 110, className: "htCenter htMiddle" },
-    { data: "palletsPer40ft", title: "Pallets (40ft)", type: "numeric", width: 100, className: "htCenter htMiddle" },
     { data: "palletsPer20ft", title: "Pallets (20ft)", type: "numeric", width: 100, className: "htCenter htMiddle" },
+    { data: "palletsPer40ft", title: "Pallets (40ft)", type: "numeric", width: 100, className: "htCenter htMiddle" },
     { data: "bundlesPer20ft", title: "Bundles 20ft", readOnly: true, width: 95, className: "htCenter htMiddle" },
+    { data: "qtyPer20ft", title: "Qty per 20ft", readOnly: true, type: "numeric", numericFormat: { pattern: "0,0" }, width: 100, className: "htCenter htMiddle htBold" },
     { data: "bundlesPer40ft", title: "Bundles 40ft", readOnly: true, width: 95, className: "htCenter htMiddle" },
     { data: "qtyPer40ft", title: "Qty per 40ft", readOnly: true, type: "numeric", numericFormat: { pattern: "0,0" }, width: 100, className: "htCenter htMiddle htBold" },
-    { data: "qtyPer20ft", title: "Qty per 20ft", readOnly: true, type: "numeric", numericFormat: { pattern: "0,0" }, width: 100, className: "htCenter htMiddle htBold" },
-    { data: "fobPrice40ft", title: "FOB Price (40ft)", readOnly: true, type: "numeric", numericFormat: { pattern: "$0,0.0000" }, width: 115, className: "htCenter htMiddle" },
     { data: "fobPrice20ft", title: "FOB Price (20ft)", readOnly: true, type: "numeric", numericFormat: { pattern: "$0,0.0000" }, width: 115, className: "htCenter htMiddle" },
-    { data: "cifPrice40ft", title: "CIF Price (40ft)", readOnly: true, type: "numeric", numericFormat: { pattern: "$0,0.0000" }, width: 115, className: "htCenter htMiddle" },
+    { data: "fobPrice40ft", title: "FOB Price (40ft)", readOnly: true, type: "numeric", numericFormat: { pattern: "$0,0.0000" }, width: 115, className: "htCenter htMiddle" },
     { data: "cifPrice20ft", title: "CIF Price (20ft)", readOnly: true, type: "numeric", numericFormat: { pattern: "$0,0.0000" }, width: 115, className: "htCenter htMiddle" },
+    { data: "cifPrice40ft", title: "CIF Price (40ft)", readOnly: true, type: "numeric", numericFormat: { pattern: "$0,0.0000" }, width: 115, className: "htCenter htMiddle" },
     { data: "exWorksPrice", title: "Ex work price", readOnly: true, type: "numeric", numericFormat: { pattern: "0,0.00" }, width: 105, className: "htCenter htMiddle" }
   ];
 
-  // Handsontable Columns for Sheet 4: Data entry for Horti
+  // Handsontable Columns for Sheet 4: Data entry for Horti (NO DUPLICATES)
   const hortiDataEntryHotColumns = [
     { data: "idx", title: "#", readOnly: true, width: 45, className: "htCenter htMiddle" },
     { data: "description", title: "Product Description (Mkt)", width: 160, className: "htLeft htMiddle" },
     { data: "specifications", title: "Product Specifications (Mkt)", width: 230, className: "htLeft htMiddle" },
     { data: "gsm", title: "GSM (Mkt)", width: 85, className: "htCenter htMiddle" },
     { data: "latexRatio", title: "Latex Ratio (Mkt)", width: 95, className: "htCenter htMiddle" },
-    { data: "packing", title: "Packing (Pcs/Ctn)", type: "numeric", width: 110, className: "htCenter htMiddle" },
-    { data: "cartonSize", title: "Carton Size (CM)", width: 115, className: "htCenter htMiddle" },
-    { data: "palletSize", title: "Pallet size", width: 95, className: "htCenter htMiddle" },
-    { data: "cartonsPerPallet", title: "Cartons/pallet", type: "numeric", width: 105, className: "htCenter htMiddle" },
-    { data: "rollDiameter", title: "Roll diameter", width: 95, className: "htCenter htMiddle" },
+    { data: "packing", title: "Packing (Pcs / Ctn or Bdl)", type: "numeric", width: 120, className: "htCenter htMiddle" },
+    { data: "cartonSize", title: "Carton / Bundle Size (CM)", width: 130, className: "htCenter htMiddle" },
+    { data: "palletSize", title: "Pallet size (Opt)", width: 95, className: "htCenter htMiddle" },
+    { data: "cartonsPerPallet", title: "Cartons / Bundles per Pallet", type: "numeric", width: 125, className: "htCenter htMiddle" },
+    { data: "rollDiameter", title: "Roll diameter (If Roll)", width: 110, className: "htCenter htMiddle" },
     { data: "unitCost", title: "Unit Cost (Fin)", type: "numeric", numericFormat: { pattern: "$0,0.00" }, width: 110, className: "htCenter htMiddle" },
-    { data: "palletsPer40ft", title: "Pallets (40ft)", type: "numeric", width: 100, className: "htCenter htMiddle" },
     { data: "palletsPer20ft", title: "Pallets (20ft)", type: "numeric", width: 100, className: "htCenter htMiddle" },
-    { data: "cartonsPer20ft", title: "Cartons 20ft", readOnly: true, width: 100, className: "htCenter htMiddle" },
-    { data: "cartonsPer40ft", title: "Cartons 40ft", readOnly: true, width: 100, className: "htCenter htMiddle" },
-    { data: "qtyPer40ft", title: "Qty per 40ft", readOnly: true, type: "numeric", numericFormat: { pattern: "0,0" }, width: 100, className: "htCenter htMiddle htBold" },
+    { data: "palletsPer40ft", title: "Pallets (40ft)", type: "numeric", width: 100, className: "htCenter htMiddle" },
+    { data: "cartonsPer20ft", title: "Cartons / Bundles 20ft", readOnly: true, width: 110, className: "htCenter htMiddle" },
     { data: "qtyPer20ft", title: "Qty per 20ft", readOnly: true, type: "numeric", numericFormat: { pattern: "0,0" }, width: 100, className: "htCenter htMiddle htBold" },
-    { data: "fobPrice40ft", title: "FOB Price (40ft)", readOnly: true, type: "numeric", numericFormat: { pattern: "$0,0.0000" }, width: 115, className: "htCenter htMiddle" },
+    { data: "cartonsPer40ft", title: "Cartons / Bundles 40ft", readOnly: true, width: 110, className: "htCenter htMiddle" },
+    { data: "qtyPer40ft", title: "Qty per 40ft", readOnly: true, type: "numeric", numericFormat: { pattern: "0,0" }, width: 100, className: "htCenter htMiddle htBold" },
     { data: "fobPrice20ft", title: "FOB Price (20ft)", readOnly: true, type: "numeric", numericFormat: { pattern: "$0,0.0000" }, width: 115, className: "htCenter htMiddle" },
-    { data: "cifPrice40ft", title: "CIF Price (40ft)", readOnly: true, type: "numeric", numericFormat: { pattern: "$0,0.0000" }, width: 115, className: "htCenter htMiddle" },
+    { data: "fobPrice40ft", title: "FOB Price (40ft)", readOnly: true, type: "numeric", numericFormat: { pattern: "$0,0.0000" }, width: 115, className: "htCenter htMiddle" },
     { data: "cifPrice20ft", title: "CIF Price (20ft)", readOnly: true, type: "numeric", numericFormat: { pattern: "$0,0.0000" }, width: 115, className: "htCenter htMiddle" },
+    { data: "cifPrice40ft", title: "CIF Price (40ft)", readOnly: true, type: "numeric", numericFormat: { pattern: "$0,0.0000" }, width: 115, className: "htCenter htMiddle" },
     { data: "exWorksPrice", title: "Ex work price", readOnly: true, type: "numeric", numericFormat: { pattern: "0,0.00" }, width: 105, className: "htCenter htMiddle" }
   ];
 
@@ -1245,19 +1307,114 @@ export default function QuotationEditor() {
 
             </div>
 
+            {/* Column Visibility Checkbox & Preset Toolbar */}
+            <div style={{ background: "#ffffff", padding: "12px 18px", borderBottom: excelGridBorder }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <FilterOutlined style={{ color: "#0284c7", fontSize: 16 }} />
+                  <Text strong style={{ fontSize: "0.88rem", color: "#0f172a" }}>
+                    Visible Columns ({isBedding ? "Bedding" : "Horticulture"}):
+                  </Text>
+                  <Tag color="blue" style={{ fontWeight: 700 }}>
+                    {isBedding ? selectedBeddingColumns.length : selectedHortiColumns.length} / {isBedding ? ALL_BEDDING_COLUMN_KEYS.length : ALL_HORTI_COLUMN_KEYS.length} Columns Active
+                  </Tag>
+                </div>
+
+                {/* Quick Presets for Column Layout */}
+                <Space wrap size="small">
+                  <Text type="secondary" style={{ fontSize: "0.78rem", fontWeight: 600 }}>Quick Presets:</Text>
+                  <Button 
+                    size="small" 
+                    onClick={() => {
+                      if (isBedding) setSelectedBeddingColumns(ALL_BEDDING_COLUMN_KEYS);
+                      else setSelectedHortiColumns(ALL_HORTI_COLUMN_KEYS);
+                    }}
+                    style={{ fontSize: "0.75rem", borderRadius: 4 }}
+                  >
+                    All Columns ({isBedding ? ALL_BEDDING_COLUMN_KEYS.length : ALL_HORTI_COLUMN_KEYS.length})
+                  </Button>
+                  
+                  {!isBedding && (
+                    <>
+                      <Button 
+                        size="small" 
+                        onClick={() => setSelectedHortiColumns(["idx", "imageUrl", "description", "packing", "cartonSize", "quotedPrice", "cartonsPer20ft", "qtyPer20ft", "cartonsPer40ft", "qtyPer40ft"])}
+                        style={{ fontSize: "0.75rem", borderRadius: 4, background: "#ecfdf5", borderColor: "#a7f3d0", color: "#065f46" }}
+                      >
+                        📦 Standard (Carton/Bundle Floor Load)
+                      </Button>
+                      <Button 
+                        size="small" 
+                        onClick={() => setSelectedHortiColumns(["idx", "imageUrl", "description", "packing", "cartonSize", "palletSize", "cartonsPerPallet", "palletsPer20ft", "palletsPer40ft", "quotedPrice", "cartonsPer20ft", "qtyPer20ft", "cartonsPer40ft", "qtyPer40ft"])}
+                        style={{ fontSize: "0.75rem", borderRadius: 4, background: "#f0fdf4", borderColor: "#86efac", color: "#166534" }}
+                      >
+                        🏗️ Palletized Loading
+                      </Button>
+                      <Button 
+                        size="small" 
+                        onClick={() => setSelectedHortiColumns(["idx", "imageUrl", "description", "packing", "rollDiameter", "quotedPrice", "cartonsPer20ft", "qtyPer20ft", "cartonsPer40ft", "qtyPer40ft"])}
+                        style={{ fontSize: "0.75rem", borderRadius: 4, background: "#f5f3ff", borderColor: "#ddd6fe", color: "#5b21b6" }}
+                      >
+                        🌀 Roll Form Loading
+                      </Button>
+                    </>
+                  )}
+
+                  {isBedding && (
+                    <>
+                      <Button 
+                        size="small" 
+                        onClick={() => setSelectedBeddingColumns(["idx", "imageUrl", "description", "length", "width", "height", "organic", "ncRcRatio", "density", "qtyPerBundle", "quotedPrice", "bundlesPer20ft", "qtyPer20ft", "bundlesPer40ft", "qtyPer40ft"])}
+                        style={{ fontSize: "0.75rem", borderRadius: 4, background: "#f0f9ff", borderColor: "#bae6fd", color: "#0369a1" }}
+                      >
+                        Standard Floor Load
+                      </Button>
+                      <Button 
+                        size="small" 
+                        onClick={() => setSelectedBeddingColumns(ALL_BEDDING_COLUMN_KEYS)}
+                        style={{ fontSize: "0.75rem", borderRadius: 4, background: "#f0fdf4", borderColor: "#86efac", color: "#166534" }}
+                      >
+                        Palletized
+                      </Button>
+                    </>
+                  )}
+                </Space>
+              </div>
+
+              {/* Interactive Column Checkboxes */}
+              <div style={{ background: "#f8fafc", padding: "8px 12px", border: "1px solid #e2e8f0", borderRadius: 6 }}>
+                <Checkbox.Group
+                  value={isBedding ? selectedBeddingColumns : selectedHortiColumns}
+                  onChange={(checkedVals) => {
+                    const updated = checkedVals.includes("idx") ? checkedVals : ["idx", ...checkedVals];
+                    if (isBedding) setSelectedBeddingColumns(updated);
+                    else setSelectedHortiColumns(updated);
+                  }}
+                  style={{ display: "flex", flexWrap: "wrap", gap: "6px 14px" }}
+                >
+                  {(isBedding ? beddingTemplateHotColumns : hortiTemplateHotColumns).map(col => (
+                    <Checkbox key={col.data} value={col.data} disabled={col.data === "idx"} style={{ fontSize: "0.8rem" }}>
+                      {col.title.replace("Price FOB /cif/Ex works", "Quoted Price")}
+                    </Checkbox>
+                  ))}
+                </Checkbox.Group>
+              </div>
+            </div>
+
             {/* Handsontable Template Grid */}
             <div className="hot-container" style={{ padding: 12, overflowX: "auto" }}>
               <HotTable
                 ref={templateHotRef}
                 data={templateHotData}
-                columns={activeTab === "sheet1_bedding" ? beddingTemplateHotColumns : hortiTemplateHotColumns}
-                nestedHeaders={activeTab === "sheet1_bedding" ? beddingNestedHeaders : hortiNestedHeaders}
+                columns={activeTab === "sheet1_bedding" ? activeBeddingColumns : activeHortiColumns}
+                nestedHeaders={activeTab === "sheet1_bedding" ? activeBeddingNestedHeaders : activeHortiNestedHeaders}
                 colHeaders={true}
                 rowHeaders={false}
                 height="auto"
                 licenseKey="non-commercial-and-evaluation"
                 afterChange={handleHotChange}
                 afterSelection={handleCellSelection}
+                cells={getHotCellProperties}
                 manualColumnResize={true}
                 stretchH="all"
               />
@@ -1623,6 +1780,7 @@ export default function QuotationEditor() {
                 licenseKey="non-commercial-and-evaluation"
                 afterChange={handleHotChange}
                 afterSelection={handleCellSelection}
+                cells={getHotCellProperties}
                 manualColumnResize={true}
                 stretchH="all"
               />

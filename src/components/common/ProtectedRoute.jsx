@@ -27,7 +27,8 @@ export default function ProtectedRoute({ children, allowedRoles, module, allowed
   // Admin has complete bypass access
   const costingRoles = currentUser.costingRoles || [];
   const sampleRoles = currentUser.sampleRoles || [];
-  const isAdmin = currentUser.roles?.includes("admin") || costingRoles.includes("admin") || sampleRoles.includes("admin");
+  const productionRoles = currentUser.productionRoles || [];
+  const isAdmin = currentUser.roles?.includes("admin") || costingRoles.includes("admin") || sampleRoles.includes("admin") || productionRoles.includes("admin") || productionRoles.includes("production_all");
 
   // Specific restriction: admin@gmail.com can only access User Management and System Settings
   const isSuperAdminUser = currentUser.email === "admin@gmail.com";
@@ -50,7 +51,12 @@ export default function ProtectedRoute({ children, allowedRoles, module, allowed
   }
 
   if (module && allowedModuleRoles) {
-    const userModuleRoles = module === "costing" ? costingRoles : sampleRoles;
+    let userModuleRoles = costingRoles;
+    if (module === "sample") {
+      userModuleRoles = sampleRoles;
+    } else if (module === "production") {
+      userModuleRoles = productionRoles;
+    }
     const hasAccess = userModuleRoles.some(r => allowedModuleRoles.includes(r));
     if (!hasAccess) {
       return <Navigate to="/dashboard" replace />;

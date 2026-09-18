@@ -61,10 +61,12 @@ export const AuthProvider = ({ children }) => {
   
   let rawCostingRoles = profile?.costingRoles || (profile?.costingRole ? [profile.costingRole] : []);
   let rawSampleRoles = profile?.sampleRoles || (profile?.sampleRole ? [profile.sampleRole] : []);
+  let rawProductionRoles = profile?.productionRoles || (profile?.productionRole ? [profile.productionRole] : []);
 
   if (profile?.email === "admin@gmail.com") {
     rawCostingRoles = ["admin"];
     rawSampleRoles = ["admin"];
+    rawProductionRoles = ["admin"];
   }
 
   // Resolve costing roles
@@ -95,7 +97,19 @@ export const AuthProvider = ({ children }) => {
     return rId;
   }).filter(r => r && r !== "none");
 
-  const userRoles = [...costingRoles, ...sampleRoles];
+  // Resolve production roles
+  const productionRoles = rawProductionRoles.map(rId => {
+    if (rId === "admin" || rId === "none" || rId === "production_all" || rId === "production_marketing" || rId === "production_factory" || rId === "production_viewer") {
+      return rId;
+    }
+    const customRole = storedRoles.find(r => r.id === rId);
+    if (customRole && customRole.module === "production") {
+      return rId;
+    }
+    return rId;
+  }).filter(r => r && r !== "none");
+
+  const userRoles = [...costingRoles, ...sampleRoles, ...productionRoles];
   if (profile?.email === "admin@gmail.com" && !userRoles.includes("admin")) {
     userRoles.push("admin");
   }
@@ -135,9 +149,11 @@ export const AuthProvider = ({ children }) => {
     displayName: profile.displayName || profile.name || "User",
     costingRoles,
     sampleRoles,
+    productionRoles,
     costingRole: costingRoles[0] || "none",
     sampleRole: sampleRoles[0] || "none",
-    role: costingRoles[0] !== "none" ? costingRoles[0] : (sampleRoles[0] || "none"),
+    productionRole: productionRoles[0] || "none",
+    role: costingRoles[0] !== "none" ? costingRoles[0] : (sampleRoles[0] !== "none" ? sampleRoles[0] : (productionRoles[0] || "none")),
     roles: userRoles,
     status: profile.status,
     requirePasswordChange: profile.requirePasswordChange || profile.isFirstLogin || false,
@@ -155,6 +171,7 @@ export const AuthProvider = ({ children }) => {
     role,
     costingRole: costingRoles[0] || "none",
     sampleRole: sampleRoles[0] || "none",
+    productionRole: productionRoles[0] || "none",
     isMockMode
   };
 

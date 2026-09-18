@@ -84,6 +84,20 @@ export async function generateQuotationExcel(quotationData) {
   document.body.removeChild(link);
 }
 
+/**
+ * Helper to convert 1-based column index to Excel column letter (e.g. 1 -> A, 27 -> AA)
+ */
+function getColumnLetter(colIndex) {
+  let letter = "";
+  let temp = colIndex;
+  while (temp > 0) {
+    let remainder = (temp - 1) % 26;
+    letter = String.fromCharCode(65 + remainder) + letter;
+    temp = Math.floor((temp - 1) / 26);
+  }
+  return letter || "A";
+}
+
 // --------------------------------------------------------------------------
 // 1. BEDDING QUOTATION SHEET (SHEET 1)
 // --------------------------------------------------------------------------
@@ -92,30 +106,39 @@ function buildBeddingQuotationSheet(workbook, data, itemImagesBase64 = []) {
   ws.views = [{ showGridLines: true }];
   ws.pageSetup = { orientation: "landscape", paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
 
-  // Set explicit column widths
-  const colWidths = [
-    5,   // A: #
-    16,  // B: Image
-    34,  // C: Product spec
-    10,  // D: L (CM)
-    10,  // E: W (CM)
-    10,  // F: H (CM)
-    16,  // G: Organic/Non Org
-    14,  // H: NC/RC Ratio
-    13,  // I: Density
-    15,  // J: Qty per BUNDLE
-    14,  // K: Pallet size
-    18,  // L: Bundles per pallet
-    16,  // M: Pallets per 40ft
-    16,  // N: Pallets per 20ft
-    22,  // O: Price FOB /cif/Ex works
-    16,  // P: Bundles per 20ft
-    16,  // Q: Bundles per 40ft
-    16,  // R: Qty per 40ft
-    16   // S: Qty per 20ft
+  const MASTER_BEDDING_COLS = [
+    { key: "idx", dataKey: "idx", header1: "#", header2: "#", width: 5, align: "center", getVal: (item, idx) => idx + 1 },
+    { key: "imageUrl", dataKey: "imageUrl", header1: "Image", header2: "Images common", width: 16, align: "center", isImage: true },
+    { key: "description", dataKey: "description", header1: "Product spec", header2: "As per cost req data", width: 34, align: "left", getVal: (item, idx) => item.description || item.specifications || `Item #${idx + 1}` },
+    { key: "length", dataKey: "length", header1: "L (CM)", header2: "100 (As per req)", width: 10, align: "center", getVal: (item) => item.length || 100 },
+    { key: "width", dataKey: "width", header1: "W (CM)", header2: "100 (As per req)", width: 10, align: "center", getVal: (item) => item.width || 100 },
+    { key: "height", dataKey: "height", header1: "H (CM)", header2: "10 (As per req)", width: 10, align: "center", getVal: (item) => item.height || 10 },
+    { key: "organic", dataKey: "organic", header1: "Organic/Non Org", header2: "Organic/Non-Org", width: 16, align: "center", getVal: (item) => item.organic || "Non-Organic" },
+    { key: "ncRcRatio", dataKey: "ncRcRatio", header1: "NC/RC Ratio", header2: "80:20 (As per req)", width: 14, align: "center", getVal: (item) => item.ncRcRatio || "80:20" },
+    { key: "density", dataKey: "density", header1: "Density", header2: "80 kg/m3", width: 13, align: "center", getVal: (item) => item.density || "80 kg/m3" },
+    { key: "qtyPerBundle", dataKey: "qtyPerBundle", header1: "Qty per BUNDLE", header2: "As per req", width: 15, align: "center", getVal: (item) => item.qtyPerBundle || 1 },
+    { key: "palletSize", dataKey: "palletSize", header1: "Pallet size", header2: "If applicable", width: 14, align: "center", getVal: (item) => item.palletSize || "TBA" },
+    { key: "bundlesPerPallet", dataKey: "bundlesPerPallet", header1: "Bundles per pallet", header2: "AS per cost req", width: 18, align: "center", getVal: (item) => item.bundlesPerPallet || 0 },
+    { key: "palletsPer20ft", dataKey: "palletsPer20ft", header1: "Pallets per 20ft", header2: "Marketing to fill", width: 16, align: "center", getVal: (item) => item.palletsPer20ft || 0 },
+    { key: "palletsPer40ft", dataKey: "palletsPer40ft", header1: "Pallets per 40ft", header2: "Marketing to fill", width: 16, align: "center", getVal: (item) => item.palletsPer40ft || 0 },
+    { key: "quotedPrice", dataKey: "quotedPrice", header1: "Price FOB /cif/Ex works", header2: "Auto calculated price", width: 22, align: "center", isPrice: true, getFormula: (rIdx) => `'Data Entry'!R${rIdx}`, getVal: (item, idx, dispPrice) => dispPrice.label },
+    { key: "bundlesPer20ft", dataKey: "bundlesPer20ft", header1: "Bundles per 20ft", header2: "Auto cal", width: 16, align: "center", getFormula: (rIdx) => `'Data Entry'!N${rIdx}`, getVal: (item) => item.bundlesPer20ft || 0 },
+    { key: "qtyPer20ft", dataKey: "qtyPer20ft", header1: "Qty per 20ft", header2: "Auto pick", width: 16, align: "center", getFormula: (rIdx) => `'Data Entry'!Q${rIdx}`, getVal: (item) => item.qtyPer20ft || 0 },
+    { key: "bundlesPer40ft", dataKey: "bundlesPer40ft", header1: "Bundles per 40ft", header2: "Auto cal", width: 16, align: "center", getFormula: (rIdx) => `'Data Entry'!O${rIdx}`, getVal: (item) => item.bundlesPer40ft || 0 },
+    { key: "qtyPer40ft", dataKey: "qtyPer40ft", header1: "Qty per 40ft", header2: "Auto pick", width: 16, align: "center", getFormula: (rIdx) => `'Data Entry'!P${rIdx}`, getVal: (item) => item.qtyPer40ft || 0 }
   ];
-  colWidths.forEach((w, idx) => {
-    ws.getColumn(idx + 1).width = w;
+
+  // Filter columns based strictly on unchecked / selected columns
+  const selected = data.selectedColumns;
+  let activeCols = MASTER_BEDDING_COLS;
+  if (Array.isArray(selected) && selected.length > 0) {
+    activeCols = MASTER_BEDDING_COLS.filter(c => selected.includes(c.dataKey) || selected.includes(c.key));
+  }
+  if (activeCols.length === 0) activeCols = MASTER_BEDDING_COLS;
+  const numCols = activeCols.length;
+
+  activeCols.forEach((col, idx) => {
+    ws.getColumn(idx + 1).width = col.width;
   });
 
   // Row 1: Blank
@@ -124,74 +147,66 @@ function buildBeddingQuotationSheet(workbook, data, itemImagesBase64 = []) {
   // Row 2: Title Box & Ref No
   const r2 = ws.addRow([]);
   r2.height = 28;
-  r2.getCell(3).value = "Price Quotation";
-  r2.getCell(3).font = { name: "Arial", size: 16, bold: true, color: { argb: "FF1E3A8A" } };
-  r2.getCell(3).alignment = { vertical: "middle" };
+  const titleCol = Math.min(3, Math.max(1, Math.floor(numCols / 2)));
+  r2.getCell(titleCol).value = "Price Quotation";
+  r2.getCell(titleCol).font = { name: "Arial", size: 16, bold: true, color: { argb: "FF1E3A8A" } };
+  r2.getCell(titleCol).alignment = { vertical: "middle" };
 
-  r2.getCell(16).value = "Quotation ref number :";
-  r2.getCell(16).font = { name: "Arial", size: 9.5, bold: true };
-  r2.getCell(16).alignment = { vertical: "middle", horizontal: "right" };
-  r2.getCell(17).value = data.quotationNo;
-  r2.getCell(17).font = { name: "Arial", size: 9.5, bold: true, color: { argb: "FF0284C7" } };
-  r2.getCell(17).alignment = { vertical: "middle", horizontal: "left" };
+  const refLabelCol = Math.max(titleCol + 1, numCols - 1);
+  const refValCol = numCols;
+  r2.getCell(refLabelCol).value = "Quotation ref number :";
+  r2.getCell(refLabelCol).font = { name: "Arial", size: 9.5, bold: true };
+  r2.getCell(refLabelCol).alignment = { vertical: "middle", horizontal: "right" };
+  r2.getCell(refValCol).value = data.quotationNo;
+  r2.getCell(refValCol).font = { name: "Arial", size: 9.5, bold: true, color: { argb: "FF0284C7" } };
+  r2.getCell(refValCol).alignment = { vertical: "middle", horizontal: "left" };
 
   // Row 3: Blank
   ws.addRow([]);
 
   // Row 4: Date
   const r4 = ws.addRow([]);
-  r4.getCell(16).value = "Date :";
-  r4.getCell(16).font = { name: "Arial", size: 9.5, bold: true };
-  r4.getCell(16).alignment = { vertical: "middle", horizontal: "right" };
-  r4.getCell(17).value = data.quotationDate;
-  r4.getCell(17).font = { name: "Arial", size: 9.5 };
-  r4.getCell(17).alignment = { vertical: "middle", horizontal: "left" };
+  r4.getCell(refLabelCol).value = "Date :";
+  r4.getCell(refLabelCol).font = { name: "Arial", size: 9.5, bold: true };
+  r4.getCell(refLabelCol).alignment = { vertical: "middle", horizontal: "right" };
+  r4.getCell(refValCol).value = data.quotationDate;
+  r4.getCell(refValCol).font = { name: "Arial", size: 9.5 };
+  r4.getCell(refValCol).alignment = { vertical: "middle", horizontal: "left" };
 
   // Row 5: Blank
   ws.addRow([]);
 
   // Row 6: Shipper & Buyer
   const r6 = ws.addRow([]);
+  const splitMid = Math.max(2, Math.floor(numCols / 2));
+
   r6.getCell(2).value = "Shipper :";
   r6.getCell(2).font = { name: "Arial", size: 9.5, bold: true, color: { argb: "FF1E3A8A" } };
   r6.getCell(3).value = `${data.shipper.shipperName || "Toyo Cushion Lanka"}\nCOMPANY NO : ${data.shipper.companyNo || "PV 5492"}\n${data.shipper.address || "400 Deans Road Colombo 10 01000 Sri Lanka"}\nTel: ${data.shipper.phone || "94112232939-Fixed"}`;
   r6.getCell(3).font = { name: "Arial", size: 8.5 };
   r6.getCell(3).alignment = { wrapText: true, vertical: "top" };
-  ws.mergeCells("C6:H7");
+  if (splitMid >= 3) {
+    ws.mergeCells(`C6:${getColumnLetter(splitMid)}7`);
+  }
 
-  r6.getCell(10).value = "Buyer :";
-  r6.getCell(10).font = { name: "Arial", size: 9.5, bold: true, color: { argb: "FF1E3A8A" } };
-  r6.getCell(11).value = `${data.buyerName}\nCategory: BEDDING | Pricing Term: ${data.priceTerm} (${data.containerSize} Container)`;
-  r6.getCell(11).font = { name: "Arial", size: 9, bold: true };
-  r6.getCell(11).alignment = { wrapText: true, vertical: "top" };
-  ws.mergeCells("K6:P7");
+  const buyerStartCol = splitMid + 1;
+  if (buyerStartCol <= numCols) {
+    r6.getCell(buyerStartCol).value = "Buyer :";
+    r6.getCell(buyerStartCol).font = { name: "Arial", size: 9.5, bold: true, color: { argb: "FF1E3A8A" } };
+    const buyerValCol = buyerStartCol + 1 <= numCols ? buyerStartCol + 1 : buyerStartCol;
+    r6.getCell(buyerValCol).value = `${data.buyerName}\nCategory: BEDDING | Pricing Term: ${data.priceTerm} (${data.containerSize} Container)`;
+    r6.getCell(buyerValCol).font = { name: "Arial", size: 9, bold: true };
+    r6.getCell(buyerValCol).alignment = { wrapText: true, vertical: "top" };
+    if (numCols >= buyerValCol) {
+      ws.mergeCells(`${getColumnLetter(buyerValCol)}6:${getColumnLetter(numCols)}7`);
+    }
+  }
 
   ws.addRow([]); // Row 7 merged spacer
   ws.addRow([]); // Row 8 blank spacer
 
   // Row 9: 2-Tier Header 1
-  const header1 = [
-    "#",
-    "Image",
-    "Product spec",
-    "L (CM)",
-    "W (CM)",
-    "H (CM)",
-    "Organic/Non Org",
-    "NC/RC Ratio",
-    "Density",
-    "Qty per BUNDLE",
-    "Pallet size",
-    "Bundles per pallet",
-    "Pallets per 40ft",
-    "Pallets per 20ft",
-    "Price FOB /cif/Ex works",
-    "Bundles per 20ft",
-    "Bundles per 40ft",
-    "Qty per 40ft",
-    "Qty per 20ft"
-  ];
-  const hRow1 = ws.addRow(header1);
+  const hRow1 = ws.addRow(activeCols.map(c => c.header1));
   hRow1.height = 24;
   hRow1.eachCell((cell) => {
     cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0284C7" } };
@@ -200,29 +215,8 @@ function buildBeddingQuotationSheet(workbook, data, itemImagesBase64 = []) {
     cell.border = { top: { style: "thin" }, bottom: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" } };
   });
 
-  // Row 10: 2-Tier Header 2 (Sub-guidelines)
-  const header2 = [
-    "#",
-    "Images common",
-    "As per cost req data",
-    "100 (As per req)",
-    "100 (As per req)",
-    "10 (As per req)",
-    "Organic/Non-Org",
-    "80:20 (As per req)",
-    "80 kg/m3",
-    "As per req",
-    "If applicable",
-    "AS per cost req",
-    "Marketing to fill",
-    "Marketing to fill",
-    "Auto calculated price",
-    "Auto cal",
-    "Auto cal",
-    "Auto pick",
-    "Auto pick"
-  ];
-  const hRow2 = ws.addRow(header2);
+  // Row 10: 2-Tier Header 2
+  const hRow2 = ws.addRow(activeCols.map(c => c.header2));
   hRow2.height = 20;
   hRow2.eachCell((cell) => {
     cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF1F5F9" } };
@@ -231,47 +225,27 @@ function buildBeddingQuotationSheet(workbook, data, itemImagesBase64 = []) {
     cell.border = { top: { style: "thin" }, bottom: { style: "medium" }, left: { style: "thin" }, right: { style: "thin" } };
   });
 
-  // Table Data Rows with Embedded Images
+  // Table Data Rows
   (data.items || []).forEach((item, idx) => {
     const rIdx = 10 + idx + 1;
-    const dispPrice = getDisplayPrice(item, data.priceTerm, data.containerSize, data.financialParams.cifRate);
+    const dispPrice = getDisplayPrice(item, data.priceTerm, data.containerSize, data.financialParams?.cifRate);
     const imgBase64 = itemImagesBase64[idx];
 
-    const rowVals = [
-      idx + 1,
-      "", // Image column placeholder
-      item.description || item.specifications || `Item #${idx + 1}`,
-      item.length || 100,
-      item.width || 100,
-      item.height || 10,
-      item.organic || "Non-Organic",
-      item.ncRcRatio || "80:20",
-      item.density || "80 kg/m3",
-      item.qtyPerBundle || 1,
-      item.palletSize || "TBA",
-      item.bundlesPerPallet || 0,
-      item.palletsPer40ft || 0,
-      item.palletsPer20ft || 0,
-      dispPrice.label,
-      item.bundlesPer20ft || 0,
-      item.bundlesPer40ft || 0,
-      item.qtyPer40ft || 0,
-      item.qtyPer20ft || 0
-    ];
+    const rowVals = activeCols.map(col => {
+      if (col.isImage) return "";
+      return col.getVal(item, idx, dispPrice);
+    });
 
     const dRow = ws.addRow(rowVals);
-    dRow.height = 48; // Ample height for thumbnail image
+    dRow.height = 48;
 
-    // Dynamic formula links to Data Entry Sheet
-    dRow.getCell(15).value = { formula: `'Data Entry'!R${rIdx}`, result: dispPrice.label };
-    dRow.getCell(16).value = { formula: `'Data Entry'!N${rIdx}`, result: item.bundlesPer20ft || 0 };
-    dRow.getCell(17).value = { formula: `'Data Entry'!O${rIdx}`, result: item.bundlesPer40ft || 0 };
-    dRow.getCell(18).value = { formula: `'Data Entry'!P${rIdx}`, result: item.qtyPer40ft || 0 };
-    dRow.getCell(19).value = { formula: `'Data Entry'!Q${rIdx}`, result: item.qtyPer20ft || 0 };
-
-    dRow.eachCell((cell, colIdx) => {
+    activeCols.forEach((col, cIdx) => {
+      const cell = dRow.getCell(cIdx + 1);
+      if (col.getFormula) {
+        cell.value = { formula: col.getFormula(rIdx), result: col.getVal(item, idx, dispPrice) };
+      }
       cell.font = { name: "Arial", size: 9 };
-      cell.alignment = { vertical: "middle", horizontal: colIdx === 3 ? "left" : "center", wrapText: true };
+      cell.alignment = { vertical: "middle", horizontal: col.align || "center", wrapText: true };
       cell.border = { 
         top: { style: "thin", color: { argb: "FFCBD5E1" } }, 
         bottom: { style: "thin", color: { argb: "FFCBD5E1" } },
@@ -279,31 +253,31 @@ function buildBeddingQuotationSheet(workbook, data, itemImagesBase64 = []) {
         right: { style: "thin", color: { argb: "FFCBD5E1" } }
       };
 
-      // Quoted Price Highlight
-      if (colIdx === 15) {
+      if (col.isPrice) {
         cell.font = { name: "Arial", size: 10, bold: true, color: { argb: "FF0284C7" } };
         cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE0F2FE" } };
       }
     });
 
-    // Embed Image into Column B (Col index 2, 0-indexed is 1)
-    if (imgBase64) {
-      try {
-        const cleanBase64 = imgBase64.replace(/^data:image\/\w+;base64,/, "");
-        const imageId = workbook.addImage({
-          base64: cleanBase64,
-          extension: "jpeg"
-        });
-        ws.addImage(imageId, {
-          tl: { col: 1.15, row: dRow.number - 1 + 0.1 },
-          ext: { width: 60, height: 48 }
-        });
-      } catch (imgErr) {
-        console.warn("Could not embed image into Excel:", imgErr);
-        dRow.getCell(2).value = "[Image]";
+    const imgColIdx = activeCols.findIndex(c => c.isImage);
+    if (imgColIdx !== -1) {
+      if (imgBase64) {
+        try {
+          const cleanBase64 = imgBase64.replace(/^data:image\/\w+;base64,/, "");
+          const imageId = workbook.addImage({
+            base64: cleanBase64,
+            extension: "jpeg"
+          });
+          ws.addImage(imageId, {
+            tl: { col: imgColIdx + 0.15, row: dRow.number - 1 + 0.1 },
+            ext: { width: 60, height: 48 }
+          });
+        } catch (imgErr) {
+          dRow.getCell(imgColIdx + 1).value = "[Image]";
+        }
+      } else {
+        dRow.getCell(imgColIdx + 1).value = "-";
       }
-    } else {
-      dRow.getCell(2).value = "-";
     }
   });
 
@@ -313,11 +287,14 @@ function buildBeddingQuotationSheet(workbook, data, itemImagesBase64 = []) {
   const noteTitle = ws.addRow(["", "Note"]);
   noteTitle.getCell(2).font = { name: "Arial", size: 11, bold: true, color: { argb: "FF0F172A" } };
 
+  const lastColLetter = getColumnLetter(numCols);
   const addTermRow = (label, val) => {
     const r = ws.addRow(["", label, val]);
     r.getCell(2).font = { name: "Arial", size: 9.5, bold: true, color: { argb: "FF334155" } };
     r.getCell(3).font = { name: "Arial", size: 9.5 };
-    ws.mergeCells(`C${r.number}:P${r.number}`);
+    if (numCols >= 3) {
+      ws.mergeCells(`C${r.number}:${lastColLetter}${r.number}`);
+    }
   };
 
   addTermRow("Packing", data.packing);
@@ -330,19 +307,30 @@ function buildBeddingQuotationSheet(workbook, data, itemImagesBase64 = []) {
   const compRow = ws.addRow(["", `${data.shipper.shipperName || "Toyo Cushion Lanka"}\nCOMPANY NO : ${data.shipper.companyNo || "PV 5492"}\n${data.shipper.address || "400 Deans Road Colombo 10 01000 Sri Lanka"}\nTel: ${data.shipper.phone || "94112232939-Fixed"}`]);
   compRow.getCell(2).font = { name: "Arial", size: 8.5, color: { argb: "FF475569" } };
   compRow.getCell(2).alignment = { wrapText: true };
-  ws.mergeCells(`B${compRow.number}:H${compRow.number + 1}`);
+  const compEndCol = Math.min(numCols, Math.max(2, Math.floor(numCols / 2)));
+  if (compEndCol >= 2) {
+    ws.mergeCells(`B${compRow.number}:${getColumnLetter(compEndCol)}${compRow.number + 1}`);
+  }
 
   ws.addRow([]);
   ws.addRow([]);
-  const sigRow = ws.addRow(["", "", "", "", "", "", "", "", "", "", "", "", "", "", "…………………………."]);
-  sigRow.getCell(15).font = { name: "Arial", size: 10, bold: true };
+  const sigCol = Math.max(1, numCols - 2);
+  const sigRowArr = new Array(numCols).fill("");
+  sigRowArr[sigCol - 1] = "………………………….";
+  const sigRow = ws.addRow(sigRowArr);
+  sigRow.getCell(sigCol).font = { name: "Arial", size: 10, bold: true };
+
   const officerNameStr = data.shipper?.signatoryName || data.shipper?.signatory || "Manager - Sales & Marketing";
   const officerRoleStr = data.shipper?.signatoryRole || "";
-  const sigTitle = ws.addRow(["", "", "", "", "", "", "", "", "", "", "", "", "", "", officerNameStr]);
-  sigTitle.getCell(15).font = { name: "Arial", size: 9.5, bold: true, color: { argb: "FF334155" } };
+  const sigTitleArr = new Array(numCols).fill("");
+  sigTitleArr[sigCol - 1] = officerNameStr;
+  const sigTitle = ws.addRow(sigTitleArr);
+  sigTitle.getCell(sigCol).font = { name: "Arial", size: 9.5, bold: true, color: { argb: "FF334155" } };
   if (officerRoleStr) {
-    const sigRoleRow = ws.addRow(["", "", "", "", "", "", "", "", "", "", "", "", "", "", officerRoleStr]);
-    sigRoleRow.getCell(15).font = { name: "Arial", size: 8.5, color: { argb: "FF64748B" } };
+    const sigRoleArr = new Array(numCols).fill("");
+    sigRoleArr[sigCol - 1] = officerRoleStr;
+    const sigRoleRow = ws.addRow(sigRoleArr);
+    sigRoleRow.getCell(sigCol).font = { name: "Arial", size: 8.5, color: { argb: "FF64748B" } };
   }
 }
 
@@ -504,8 +492,8 @@ function buildBeddingDataEntrySheet(workbook, data) {
       dRow.getCell(16).value = { formula: `L${rIdx}*J${rIdx}*H${rIdx}`, result: item.qtyPer40ft };
       dRow.getCell(17).value = { formula: `M${rIdx}*J${rIdx}*H${rIdx}`, result: item.qtyPer20ft };
     } else {
-      dRow.getCell(14).value = { formula: `27/((B${rIdx}*C${rIdx}*D${rIdx})/1000000)/H${rIdx}`, result: item.bundlesPer20ft };
-      dRow.getCell(15).value = { formula: `67/((B${rIdx}*C${rIdx}*D${rIdx})/1000000)/H${rIdx}`, result: item.bundlesPer40ft };
+      dRow.getCell(14).value = { formula: `26/((B${rIdx}*C${rIdx}*D${rIdx})/1000000)/H${rIdx}`, result: item.bundlesPer20ft };
+      dRow.getCell(15).value = { formula: `66/((B${rIdx}*C${rIdx}*D${rIdx})/1000000)/H${rIdx}`, result: item.bundlesPer40ft };
       dRow.getCell(16).value = { formula: `O${rIdx}*H${rIdx}`, result: item.qtyPer40ft };
       dRow.getCell(17).value = { formula: `N${rIdx}*H${rIdx}`, result: item.qtyPer20ft };
     }
@@ -554,96 +542,103 @@ function buildHortiQuotationSheet(workbook, data, itemImagesBase64 = []) {
   ws.views = [{ showGridLines: true }];
   ws.pageSetup = { orientation: "landscape", paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
 
-  const colWidths = [
-    5,   // A: #
-    16,  // B: Image
-    36,  // C: Product spec
-    14,  // D: Packing /Pcs
-    14,  // E: Pallet size
-    16,  // F: Cartons per pallet
-    16,  // G: Pallets per 40ft
-    16,  // H: Pallets per 20ft
-    18,  // I: Carton Size CM
-    22,  // J: Price FOB /cif/Ex works
-    16,  // K: Bundles per 20ft
-    16,  // L: Bundles per 40ft
-    16,  // M: Cartons per 40ft
-    16,  // N: Qty per 40ft
-    16,  // O: Cartons per 20ft
-    16   // P: Qty per 20ft
+  const MASTER_HORTI_COLS = [
+    { key: "idx", dataKey: "idx", header1: "#", header2: "#", width: 5, align: "center", getVal: (item, idx) => idx + 1 },
+    { key: "imageUrl", dataKey: "imageUrl", header1: "Image", header2: "Images common", width: 16, align: "center", isImage: true },
+    { key: "description", dataKey: "description", header1: "Product spec", header2: "As per cost req data", width: 38, align: "left", getVal: (item, idx) => item.description || item.specifications || `Item #${idx + 1}` },
+    { key: "packing", dataKey: "packing", header1: "Packing (Pcs / Ctn or Bdl)", header2: "AS per cost req", width: 16, align: "center", getVal: (item) => item.packing || 1 },
+    { key: "cartonSize", dataKey: "cartonSize", header1: "Carton / Bundle Size CM", header2: "100X100X50 (As per req)", width: 18, align: "center", getVal: (item) => item.cartonSize || "57X51X58CM" },
+    { key: "palletSize", dataKey: "palletSize", header1: "Pallet size", header2: "If applicable", width: 14, align: "center", getVal: (item) => item.palletSize || "TBA" },
+    { key: "cartonsPerPallet", dataKey: "cartonsPerPallet", header1: "Cartons / Bundles per Pallet", header2: "AS per cost req", width: 16, align: "center", getVal: (item) => item.cartonsPerPallet || 0 },
+    { key: "palletsPer20ft", dataKey: "palletsPer20ft", header1: "Pallets per 20ft", header2: "Marketing to fill", width: 16, align: "center", getVal: (item) => item.palletsPer20ft || 0 },
+    { key: "palletsPer40ft", dataKey: "palletsPer40ft", header1: "Pallets per 40ft", header2: "Marketing to fill", width: 16, align: "center", getVal: (item) => item.palletsPer40ft || 0 },
+    { key: "rollDiameter", dataKey: "rollDiameter", header1: "Roll diameter (If Roll)", header2: "If applicable", width: 16, align: "center", getVal: (item) => item.rollDiameter || "-" },
+    { key: "quotedPrice", dataKey: "quotedPrice", header1: "Price FOB /cif/Ex works", header2: "Auto calculated price", width: 22, align: "center", isPrice: true, getFormula: (rIdx) => `'Data Entry'!R${rIdx}`, getVal: (item, idx, dispPrice) => dispPrice.label },
+    { key: "cartonsPer20ft", dataKey: "cartonsPer20ft", header1: "Cartons / Bundles per 20ft", header2: "Auto pick", width: 16, align: "center", getFormula: (rIdx) => `'Data Entry'!N${rIdx}`, getVal: (item) => item.cartonsPer20ft || 0 },
+    { key: "qtyPer20ft", dataKey: "qtyPer20ft", header1: "Qty per 20ft", header2: "Auto pick", width: 16, align: "center", getFormula: (rIdx) => `'Data Entry'!O${rIdx}`, getVal: (item) => item.qtyPer20ft || 0 },
+    { key: "cartonsPer40ft", dataKey: "cartonsPer40ft", header1: "Cartons / Bundles per 40ft", header2: "Auto pick", width: 16, align: "center", getFormula: (rIdx) => `'Data Entry'!P${rIdx}`, getVal: (item) => item.cartonsPer40ft || 0 },
+    { key: "qtyPer40ft", dataKey: "qtyPer40ft", header1: "Qty per 40ft", header2: "Auto pick", width: 16, align: "center", getFormula: (rIdx) => `'Data Entry'!Q${rIdx}`, getVal: (item) => item.qtyPer40ft || 0 }
   ];
-  colWidths.forEach((w, idx) => {
-    ws.getColumn(idx + 1).width = w;
+
+  // Filter columns based strictly on unchecked / selected columns
+  const selected = data.selectedColumns;
+  let activeCols = MASTER_HORTI_COLS;
+  if (Array.isArray(selected) && selected.length > 0) {
+    activeCols = MASTER_HORTI_COLS.filter(c => selected.includes(c.dataKey) || selected.includes(c.key));
+  }
+  if (activeCols.length === 0) activeCols = MASTER_HORTI_COLS;
+  const numCols = activeCols.length;
+
+  activeCols.forEach((col, idx) => {
+    ws.getColumn(idx + 1).width = col.width;
   });
 
+  // Row 1: Blank
   ws.addRow([]);
 
   // Row 2: Title & Ref No
   const r2 = ws.addRow([]);
   r2.height = 28;
-  r2.getCell(3).value = "Price Quotation";
-  r2.getCell(3).font = { name: "Arial", size: 16, bold: true, color: { argb: "FF1E3A8A" } };
-  r2.getCell(3).alignment = { vertical: "middle" };
+  const titleCol = Math.min(3, Math.max(1, Math.floor(numCols / 2)));
+  r2.getCell(titleCol).value = "Price Quotation";
+  r2.getCell(titleCol).font = { name: "Arial", size: 16, bold: true, color: { argb: "FF1E3A8A" } };
+  r2.getCell(titleCol).alignment = { vertical: "middle" };
 
-  r2.getCell(13).value = "Quotation ref number :";
-  r2.getCell(13).font = { name: "Arial", size: 9.5, bold: true };
-  r2.getCell(13).alignment = { vertical: "middle", horizontal: "right" };
-  r2.getCell(14).value = data.quotationNo;
-  r2.getCell(14).font = { name: "Arial", size: 9.5, bold: true, color: { argb: "FF0284C7" } };
-  r2.getCell(14).alignment = { vertical: "middle", horizontal: "left" };
+  const refLabelCol = Math.max(titleCol + 1, numCols - 1);
+  const refValCol = numCols;
+  r2.getCell(refLabelCol).value = "Quotation ref number :";
+  r2.getCell(refLabelCol).font = { name: "Arial", size: 9.5, bold: true };
+  r2.getCell(refLabelCol).alignment = { vertical: "middle", horizontal: "right" };
+  r2.getCell(refValCol).value = data.quotationNo;
+  r2.getCell(refValCol).font = { name: "Arial", size: 9.5, bold: true, color: { argb: "FF0284C7" } };
+  r2.getCell(refValCol).alignment = { vertical: "middle", horizontal: "left" };
 
+  // Row 3: Blank
   ws.addRow([]);
 
   // Row 4: Date
   const r4 = ws.addRow([]);
-  r4.getCell(13).value = "Date :";
-  r4.getCell(13).font = { name: "Arial", size: 9.5, bold: true };
-  r4.getCell(13).alignment = { vertical: "middle", horizontal: "right" };
-  r4.getCell(14).value = data.quotationDate;
-  r4.getCell(14).font = { name: "Arial", size: 9.5 };
-  r4.getCell(14).alignment = { vertical: "middle", horizontal: "left" };
+  r4.getCell(refLabelCol).value = "Date :";
+  r4.getCell(refLabelCol).font = { name: "Arial", size: 9.5, bold: true };
+  r4.getCell(refLabelCol).alignment = { vertical: "middle", horizontal: "right" };
+  r4.getCell(refValCol).value = data.quotationDate;
+  r4.getCell(refValCol).font = { name: "Arial", size: 9.5 };
+  r4.getCell(refValCol).alignment = { vertical: "middle", horizontal: "left" };
 
+  // Row 5: Blank
   ws.addRow([]);
 
   // Row 6: Shipper & Buyer
   const r6 = ws.addRow([]);
+  const splitMid = Math.max(2, Math.floor(numCols / 2));
+
   r6.getCell(2).value = "Shipper :";
   r6.getCell(2).font = { name: "Arial", size: 9.5, bold: true, color: { argb: "FF1E3A8A" } };
   r6.getCell(3).value = `${data.shipper.shipperName || "Toyo Cushion Lanka"}\nCOMPANY NO : ${data.shipper.companyNo || "PV 5492"}\n${data.shipper.address || "400 Deans Road Colombo 10 01000 Sri Lanka"}\nTel: ${data.shipper.phone || "94112232939-Fixed"}`;
   r6.getCell(3).font = { name: "Arial", size: 8.5 };
   r6.getCell(3).alignment = { wrapText: true, vertical: "top" };
-  ws.mergeCells("C6:H7");
+  if (splitMid >= 3) {
+    ws.mergeCells(`C6:${getColumnLetter(splitMid)}7`);
+  }
 
-  r6.getCell(10).value = "Buyer :";
-  r6.getCell(10).font = { name: "Arial", size: 9.5, bold: true, color: { argb: "FF1E3A8A" } };
-  r6.getCell(11).value = `${data.buyerName}\nCategory: HORTICULTURE | Pricing Term: ${data.priceTerm} (${data.containerSize} Container)`;
-  r6.getCell(11).font = { name: "Arial", size: 9, bold: true };
-  r6.getCell(11).alignment = { wrapText: true, vertical: "top" };
-  ws.mergeCells("K6:P7");
+  const buyerStartCol = splitMid + 1;
+  if (buyerStartCol <= numCols) {
+    r6.getCell(buyerStartCol).value = "Buyer :";
+    r6.getCell(buyerStartCol).font = { name: "Arial", size: 9.5, bold: true, color: { argb: "FF1E3A8A" } };
+    const buyerValCol = buyerStartCol + 1 <= numCols ? buyerStartCol + 1 : buyerStartCol;
+    r6.getCell(buyerValCol).value = `${data.buyerName}\nCategory: HORTICULTURE | Pricing Term: ${data.priceTerm} (${data.containerSize} Container)`;
+    r6.getCell(buyerValCol).font = { name: "Arial", size: 9, bold: true };
+    r6.getCell(buyerValCol).alignment = { wrapText: true, vertical: "top" };
+    if (numCols >= buyerValCol) {
+      ws.mergeCells(`${getColumnLetter(buyerValCol)}6:${getColumnLetter(numCols)}7`);
+    }
+  }
 
   ws.addRow([]); // Row 7 merged spacer
   ws.addRow([]); // Row 8 blank spacer
 
   // Row 9: 2-Tier Header 1
-  const header1 = [
-    "#",
-    "Image",
-    "Product spec",
-    "Packing /Pcs ",
-    "Pallet size",
-    "Cartons per pallet",
-    "Pallets per 40ft",
-    "Pallets per 20ft",
-    "Carton Size CM",
-    "Price FOB /cif/Ex works",
-    "Bundles per 20ft",
-    "Bundles per 40ft",
-    "Cartons per 40ft",
-    "Qty per 40ft",
-    "Cartons per 20ft",
-    "Qty per 20ft"
-  ];
-  const hRow1 = ws.addRow(header1);
+  const hRow1 = ws.addRow(activeCols.map(c => c.header1));
   hRow1.height = 24;
   hRow1.eachCell((cell) => {
     cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF059669" } };
@@ -652,26 +647,8 @@ function buildHortiQuotationSheet(workbook, data, itemImagesBase64 = []) {
     cell.border = { top: { style: "thin" }, bottom: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" } };
   });
 
-  // Row 10: 2-Tier Header 2 (Sub-guidelines)
-  const header2 = [
-    "#",
-    "Images common",
-    "As per cost req data",
-    "AS per cost req",
-    "If applicable",
-    "AS per cost req",
-    "Marketing to fill",
-    "Marketing to fill",
-    "100X100X50 (As per req)",
-    "Auto calculated price",
-    "Manual entry",
-    "Manual entry",
-    "Auto pick",
-    "Auto pick",
-    "Auto pick",
-    "Auto pick"
-  ];
-  const hRow2 = ws.addRow(header2);
+  // Row 10: 2-Tier Header 2
+  const hRow2 = ws.addRow(activeCols.map(c => c.header2));
   hRow2.height = 20;
   hRow2.eachCell((cell) => {
     cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF1F5F9" } };
@@ -681,41 +658,25 @@ function buildHortiQuotationSheet(workbook, data, itemImagesBase64 = []) {
   });
 
   (data.items || []).forEach((item, idx) => {
-    const dispPrice = getDisplayPrice(item, data.priceTerm, data.containerSize, data.financialParams.cifRate);
+    const rIdx = 10 + idx + 1;
+    const dispPrice = getDisplayPrice(item, data.priceTerm, data.containerSize, data.financialParams?.cifRate);
     const imgBase64 = itemImagesBase64[idx];
 
-    const rowVals = [
-      idx + 1,
-      "",
-      item.description || item.specifications || `Item #${idx + 1}`,
-      item.packing || 1,
-      item.palletSize || "TBA",
-      item.cartonsPerPallet || 0,
-      item.palletsPer40ft || 0,
-      item.palletsPer20ft || 0,
-      item.cartonSize || "57X51X58CM",
-      dispPrice.label,
-      item.bundlesPer20ft || "-",
-      item.bundlesPer40ft || "-",
-      item.cartonsPer40ft || 0,
-      item.qtyPer40ft || 0,
-      item.cartonsPer20ft || 0,
-      item.qtyPer20ft || 0
-    ];
+    const rowVals = activeCols.map(col => {
+      if (col.isImage) return "";
+      return col.getVal(item, idx, dispPrice);
+    });
 
     const dRow = ws.addRow(rowVals);
     dRow.height = 48; // Ample height for thumbnail image
 
-    // Dynamic formula links to Data Entry Sheet
-    dRow.getCell(10).value = { formula: `'Data Entry'!R${rIdx}`, result: dispPrice.label };
-    dRow.getCell(13).value = { formula: `'Data Entry'!O${rIdx}`, result: item.cartonsPer40ft || 0 };
-    dRow.getCell(14).value = { formula: `'Data Entry'!P${rIdx}`, result: item.qtyPer40ft || 0 };
-    dRow.getCell(15).value = { formula: `'Data Entry'!N${rIdx}`, result: item.cartonsPer20ft || 0 };
-    dRow.getCell(16).value = { formula: `'Data Entry'!Q${rIdx}`, result: item.qtyPer20ft || 0 };
-
-    dRow.eachCell((cell, colIdx) => {
+    activeCols.forEach((col, cIdx) => {
+      const cell = dRow.getCell(cIdx + 1);
+      if (col.getFormula) {
+        cell.value = { formula: col.getFormula(rIdx), result: col.getVal(item, idx, dispPrice) };
+      }
       cell.font = { name: "Arial", size: 9 };
-      cell.alignment = { vertical: "middle", horizontal: colIdx === 3 ? "left" : "center", wrapText: true };
+      cell.alignment = { vertical: "middle", horizontal: col.align || "center", wrapText: true };
       cell.border = { 
         top: { style: "thin", color: { argb: "FFCBD5E1" } }, 
         bottom: { style: "thin", color: { argb: "FFCBD5E1" } },
@@ -723,30 +684,32 @@ function buildHortiQuotationSheet(workbook, data, itemImagesBase64 = []) {
         right: { style: "thin", color: { argb: "FFCBD5E1" } }
       };
 
-      if (colIdx === 10) {
+      if (col.isPrice) {
         cell.font = { name: "Arial", size: 10, bold: true, color: { argb: "FF059669" } };
         cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFD1FAE5" } };
       }
     });
 
-    // Embed Image into Column B
-    if (imgBase64) {
-      try {
-        const cleanBase64 = imgBase64.replace(/^data:image\/\w+;base64,/, "");
-        const imageId = workbook.addImage({
-          base64: cleanBase64,
-          extension: "jpeg"
-        });
-        ws.addImage(imageId, {
-          tl: { col: 1.15, row: dRow.number - 1 + 0.1 },
-          ext: { width: 60, height: 48 }
-        });
-      } catch (imgErr) {
-        console.warn("Could not embed image into Excel:", imgErr);
-        dRow.getCell(2).value = "[Image]";
+    // Embed Image into Column B if visible
+    const imgColIdx = activeCols.findIndex(c => c.isImage);
+    if (imgColIdx !== -1) {
+      if (imgBase64) {
+        try {
+          const cleanBase64 = imgBase64.replace(/^data:image\/\w+;base64,/, "");
+          const imageId = workbook.addImage({
+            base64: cleanBase64,
+            extension: "jpeg"
+          });
+          ws.addImage(imageId, {
+            tl: { col: imgColIdx + 0.15, row: dRow.number - 1 + 0.1 },
+            ext: { width: 60, height: 48 }
+          });
+        } catch (imgErr) {
+          dRow.getCell(imgColIdx + 1).value = "[Image]";
+        }
+      } else {
+        dRow.getCell(imgColIdx + 1).value = "-";
       }
-    } else {
-      dRow.getCell(2).value = "-";
     }
   });
 
@@ -755,11 +718,14 @@ function buildHortiQuotationSheet(workbook, data, itemImagesBase64 = []) {
   const noteTitle = ws.addRow(["", "Note"]);
   noteTitle.getCell(2).font = { name: "Arial", size: 11, bold: true, color: { argb: "FF0F172A" } };
 
+  const lastColLetter = getColumnLetter(numCols);
   const addTermRow = (label, val) => {
     const r = ws.addRow(["", label, val]);
     r.getCell(2).font = { name: "Arial", size: 9.5, bold: true, color: { argb: "FF334155" } };
     r.getCell(3).font = { name: "Arial", size: 9.5 };
-    ws.mergeCells(`C${r.number}:P${r.number}`);
+    if (numCols >= 3) {
+      ws.mergeCells(`C${r.number}:${lastColLetter}${r.number}`);
+    }
   };
 
   addTermRow("Packing", data.packing);
@@ -772,19 +738,28 @@ function buildHortiQuotationSheet(workbook, data, itemImagesBase64 = []) {
   const compRowH = ws.addRow(["", `${data.shipper.shipperName || "Toyo Cushion Lanka"}\nCOMPANY NO : ${data.shipper.companyNo || "PV 5492"}\n${data.shipper.address || "400 Deans Road Colombo 10 01000 Sri Lanka"}\nTel: ${data.shipper.phone || "94112232939-Fixed"}`]);
   compRowH.getCell(2).font = { name: "Arial", size: 8.5, color: { argb: "FF475569" } };
   compRowH.getCell(2).alignment = { wrapText: true };
-  ws.mergeCells(`B${compRowH.number}:H${compRowH.number + 1}`);
+  const compEndCol = Math.min(numCols, Math.max(2, Math.floor(numCols / 2)));
+  if (compEndCol >= 2) {
+    ws.mergeCells(`B${compRowH.number}:${getColumnLetter(compEndCol)}${compRowH.number + 1}`);
+  }
 
   ws.addRow([]);
   ws.addRow([]);
-  const sigRowH = ws.addRow(["", "", "", "", "", "", "", "", "", "", "", "", "…………………………."]);
-  sigRowH.getCell(13).font = { name: "Arial", size: 10, bold: true };
+  const sigColH = Math.max(1, numCols - 2);
+  const sigRowArr = new Array(numCols).fill("");
+  sigRowArr[sigColH - 1] = "………………………….";
+  const sigRowH = ws.addRow(sigRowArr);
+  sigRowH.getCell(sigColH).font = { name: "Arial", size: 10, bold: true };
+
   const officerNameStrH = data.shipper?.signatoryName || data.shipper?.signatory || "Manager - Sales & Marketing";
   const officerRoleStrH = data.shipper?.signatoryRole || "";
-  const sigTitleH = ws.addRow(["", "", "", "", "", "", "", "", "", "", "", "", officerNameStrH]);
-  sigTitleH.getCell(13).font = { name: "Arial", size: 9.5, bold: true, color: { argb: "FF334155" } };
+  const sigTitleArrH = new Array(numCols).fill("");
+  sigTitleArrH[sigColH - 1] = officerNameStrH;
+  const sigTitleH = ws.addRow(sigTitleArrH);
+  sigTitleH.getCell(sigColH).font = { name: "Arial", size: 9.5, bold: true, color: { argb: "FF334155" } };
   if (officerRoleStrH) {
     const sigRoleRowH = ws.addRow(["", "", "", "", "", "", "", "", "", "", "", "", officerRoleStrH]);
-    sigRoleRowH.getCell(13).font = { name: "Arial", size: 8.5, color: { argb: "FF64748B" } };
+    sigRoleRowH.getCell(sigColH).font = { name: "Arial", size: 8.5, color: { argb: "FF64748B" } };
   }
 }
 
@@ -880,15 +855,15 @@ function buildHortiDataEntrySheet(workbook, data) {
     "GSM (Mkt)",
     "Latex Ratio (Mkt)",
     "Packing - Pieces per Carton or Bundle (Fin)",
-    "Carton Size (CM) (Fin)",
+    "Carton / Bundle Size (CM) (Fin)",
     "Pallet size-Optional",
-    "Cartons/Bundles per pallet-Optional",
+    "Cartons / Bundles per Pallet-Optional",
     "Roll diameter-Optional",
     "Unit Cost (Fin)",
     "No of pallets per 40ft",
     "No of pallets per 20ft",
-    "Cartons/Bundles per 20ft",
-    "Cartons/bundles per 40ft",
+    "Cartons / Bundles per 20ft",
+    "Cartons / Bundles per 40ft",
     "Qty per 40ft",
     "Qty per 20ft",
     "FOB price-If Fob is ticked with 40ft price",
@@ -910,7 +885,7 @@ function buildHortiDataEntrySheet(workbook, data) {
   (data.items || []).forEach((item, idx) => {
     const rIdx = headerRow.number + 1 + idx;
     const isPallet = item.loadingType === "pallet" && item.cartonsPerPallet > 0;
-    const isRoll = item.loadingType === "roll";
+    const isRoll = item.loadingType === "roll" || Boolean(item.rollDiameter && item.rollDiameter !== "TBA" && item.rollDiameter !== "-" && String(item.rollDiameter).trim() !== "");
     const dims = item.dims || { length: 57, width: 51, height: 58 };
 
     const dRow = ws.addRow([
@@ -937,14 +912,14 @@ function buildHortiDataEntrySheet(workbook, data) {
       dRow.getCell(16).value = { formula: `L${rIdx}*I${rIdx}*F${rIdx}`, result: item.qtyPer40ft };
       dRow.getCell(17).value = { formula: `M${rIdx}*I${rIdx}*F${rIdx}`, result: item.qtyPer20ft };
     } else if (isRoll) {
-      dRow.getCell(14).value = 0;
-      dRow.getCell(15).value = 0;
-      dRow.getCell(16).value = item.qtyPer40ft;
-      dRow.getCell(17).value = item.qtyPer20ft;
+      dRow.getCell(14).value = item.cartonsPer20ft || item.bundlesPer20ft || 0;
+      dRow.getCell(15).value = item.cartonsPer40ft || item.bundlesPer40ft || 0;
+      dRow.getCell(16).value = item.qtyPer40ft || 0;
+      dRow.getCell(17).value = item.qtyPer20ft || 0;
     } else {
       const volFormula = `(${dims.length || 57}*${dims.width || 51}*${dims.height || 58})/1000000`;
-      dRow.getCell(14).value = { formula: `27/(${volFormula})`, result: item.cartonsPer20ft };
-      dRow.getCell(15).value = { formula: `67/(${volFormula})-7`, result: item.cartonsPer40ft };
+      dRow.getCell(14).value = { formula: `26/(${volFormula})`, result: item.cartonsPer20ft };
+      dRow.getCell(15).value = { formula: `66/(${volFormula})-7`, result: item.cartonsPer40ft };
       dRow.getCell(16).value = { formula: `+O${rIdx}*F${rIdx}`, result: item.qtyPer40ft };
       dRow.getCell(17).value = { formula: `+N${rIdx}*F${rIdx}`, result: item.qtyPer20ft };
     }

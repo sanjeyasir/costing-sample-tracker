@@ -16,7 +16,8 @@ import {
   Radio, 
   Spin, 
   Tooltip,
-  Alert
+  Alert,
+  message
 } from "antd";
 import {
   DashboardOutlined,
@@ -32,13 +33,16 @@ import {
   StarOutlined,
   TeamOutlined,
   ShopOutlined,
-  ReloadOutlined
+  ReloadOutlined,
+  SwapRightOutlined
 } from "@ant-design/icons";
 
 import { 
   FINANCIAL_YEAR_MONTHS, 
   SALES_OFFICERS, 
   getDefaultRollingMonths, 
+  getCurrentMonthKey,
+  getMonthRange,
   formatCurrency, 
   formatCompactCurrency, 
   formatPercentage, 
@@ -46,6 +50,7 @@ import {
   exportForecastToExcel
 } from "../../utils/productionPlanData";
 import { getProductionForecasts } from "../../services/firebase/productionPlanService";
+import { exportForecastToPowerPoint } from "../../utils/powerPointGenerator";
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -54,12 +59,18 @@ export default function ProductionDashboard() {
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);
+  const [exportingPpt, setExportingPpt] = useState(false);
   const [allData, setAllData] = useState([]);
   
   // Dashboard month selection
-  const [selectedMonthKey, setSelectedMonthKey] = useState("all"); // "all", "rolling", or specific month key e.g. "2026-04"
+  const currentMonthKey = useMemo(() => getCurrentMonthKey(), []);
   const default4Months = useMemo(() => getDefaultRollingMonths(), []);
-  const defaultMonthKeys = useMemo(() => default4Months.map(m => m.monthKey), [default4Months]);
+  const defaultRollingKeys = useMemo(() => default4Months.map(m => m.monthKey), [default4Months]);
+
+  const [viewMode, setViewMode] = useState("single"); // "single" | "from_to" | "rolling" | "all"
+  const [singleMonth, setSingleMonth] = useState(currentMonthKey);
+  const [fromMonth, setFromMonth] = useState("2026-04");
+  const [toMonth, setToMonth] = useState(currentMonthKey);
 
   useEffect(() => {
     loadData();
@@ -72,19 +83,55 @@ export default function ProductionDashboard() {
       setAllData(data);
     } catch (err) {
       console.error("Failed to load forecast data:", err);
+      message.error("Failed to load dashboard data");
     } finally {
       setLoading(false);
     }
   };
 
+  // Compute active month keys based on viewMode
+  const activeMonthKeys = useMemo(() => {
+    if (viewMode === "single") {
+      return [singleMonth];
+    }
+    if (viewMode === "from_to") {
+      return getMonthRange(fromMonth, toMonth);
+    }
+    if (viewMode === "rolling") {
+      return defaultRollingKeys;
+    }
+    if (viewMode === "all") {
+      return FINANCIAL_YEAR_MONTHS.map(m => m.monthKey);
+    }
+    return [singleMonth];
+  }, [viewMode, singleMonth, fromMonth, toMonth, defaultRollingKeys]);
+
+  // Compute human-readable period label
+  const activePeriodLabel = useMemo(() => {
+    if (viewMode === "single") {
+      const m = FINANCIAL_YEAR_MONTHS.find(item => item.monthKey === singleMonth);
+      return m ? `${m.name} ${m.defaultYear}` : singleMonth;
+    }
+    if (viewMode === "from_to") {
+      const f = FINANCIAL_YEAR_MONTHS.find(item => item.monthKey === fromMonth);
+      const t = FINANCIAL_YEAR_MONTHS.find(item => item.monthKey === toMonth);
+      return `From ${f ? f.name + " " + f.defaultYear : fromMonth} To ${t ? t.name + " " + t.defaultYear : toMonth}`;
+    }
+    if (viewMode === "rolling") {
+      return `Rolling 4-Months (${default4Months.map(m => m.month).join(", ")})`;
+    }
+    return "Full Financial Year 2026-2027 (12 Months)";
+  }, [viewMode, singleMonth, fromMonth, toMonth, default4Months]);
+
   // Filter data according to dashboard month filter
   const currentFilteredData = useMemo(() => {
-    if (selectedMonthKey === "all") return allData;
-    if (selectedMonthKey === "rolling") {
-      return allData.filter(r => defaultMonthKeys.includes(r.monthKey) || defaultMonthKeys.includes(r.month));
-    }
-    return allData.filter(r => r.monthKey === selectedMonthKey || r.month === selectedMonthKey);
-  }, [allData, selectedMonthKey, defaultMonthKeys]);
+    if (viewMode === "all") return allData;
+    return allData.filter(r => 
+      activeMonthKeys.includes(r.monthKey) || 
+      activeMonthKeys.includes(r.month) ||
+      activeMonthKeys.includes(r.monthName)
+    );
+  }, [allData, viewMode, activeMonthKeys]);
 
   // Generate Executive Summary Table (Sheet 3 PPT structure)
   const executiveSummary = useMemo(() => {
@@ -101,6 +148,8 @@ export default function ProductionDashboard() {
     const bTeu = tot.budget.teu;
     const aTeu = tot.actual.teu;
     const vTeu = tot.variance.teu;
+    const fTo = tot.factory.to;
+    const fTeu = tot.factory.teu;
 
     let metCount = 0;
     let newCount = 0;
@@ -120,6 +169,8 @@ export default function ProductionDashboard() {
       bTeu: Math.round(bTeu * 100) / 100,
       aTeu: Math.round(aTeu * 100) / 100,
       vTeu: Math.round(vTeu * 100) / 100,
+      fTo,
+      fTeu: Math.round(fTeu * 100) / 100,
       bMargin: tot.budget.margin,
       aMargin: tot.actual.margin,
       metCount,
@@ -217,6 +268,26 @@ export default function ProductionDashboard() {
     });
   }, [allData]);
 
+  // PowerPoint Presentation Export
+  const handleExportPowerPoint = async () => {
+    try {
+      setExportingPpt(true);
+      const filename = `Executive_Performance_${activePeriodLabel.replace(/[^a-zA-Z0-9_-]/g, "_")}.pptx`;
+      await exportForecastToPowerPoint(currentFilteredData, {
+        periodLabel: activePeriodLabel,
+        allDataset: allData,
+        targetMonthKey: activeMonthKeys[0] || singleMonth || currentMonthKey,
+        filename
+      });
+      message.success(`PowerPoint presentation for ${activePeriodLabel} exported successfully!`);
+    } catch (err) {
+      console.error("PowerPoint export error:", err);
+      message.error("Failed to export PowerPoint presentation.");
+    } finally {
+      setExportingPpt(false);
+    }
+  };
+
   // Table columns for Executive Summary (PPT Sheet 3 format)
   const executiveTableColumns = [
     {
@@ -230,7 +301,7 @@ export default function ProductionDashboard() {
       )
     },
     {
-      title: "BUDGET",
+      title: "BUDGET TARGETS",
       children: [
         {
           title: "TEU’s",
@@ -255,7 +326,7 @@ export default function ProductionDashboard() {
       ]
     },
     {
-      title: "ACTUAL",
+      title: "ACTUAL PERFORMANCE",
       children: [
         {
           title: "TEU’s",
@@ -280,15 +351,15 @@ export default function ProductionDashboard() {
       ]
     },
     {
-      title: "FACTORY CONFIRMED",
+      title: "FACTORY PERFORMANCE (RATIO)",
       children: [
         {
-          title: "TEU’s",
+          title: "Capable TEU",
           key: "fTeu",
           render: (_, row) => <span>{row.factory.teu > 0 ? row.factory.teu.toFixed(1) : "-"}</span>
         },
         {
-          title: "TO (FOB)",
+          title: "Factory TO",
           key: "fTo",
           render: (_, row) => <span>{row.factory.to > 0 ? formatCompactCurrency(row.factory.to) : "-"}</span>
         },
@@ -300,7 +371,7 @@ export default function ProductionDashboard() {
       ]
     },
     {
-      title: "VARIANCE",
+      title: "VARIANCE & ACHIEVEMENT",
       children: [
         {
           title: "TEU’s",
@@ -381,13 +452,23 @@ export default function ProductionDashboard() {
                 Production & Sales Performance Dashboard
               </Title>
               <Text type="secondary" style={{ fontSize: 13 }}>
-                Executive summary analytics, Department performance (Horti vs Bedding), PPT output data, and monthly trends
+                Executive summary analytics, Department performance (Horti vs Bedding), PPT export, and monthly trends
               </Text>
             </div>
           </Space>
         </div>
 
         <Space size="middle" wrap>
+          <Button
+            type="primary"
+            icon={<FilePptOutlined />}
+            loading={exportingPpt}
+            onClick={handleExportPowerPoint}
+            style={{ backgroundColor: "#d97706", borderColor: "#d97706", fontWeight: 600, height: 38 }}
+          >
+            Export PowerPoint
+          </Button>
+
           <Button
             type="primary"
             icon={<TableOutlined />}
@@ -399,10 +480,10 @@ export default function ProductionDashboard() {
 
           <Button
             icon={<DownloadOutlined />}
-            onClick={() => exportForecastToExcel(currentFilteredData, `Executive_Performance_${selectedMonthKey}.xlsx`)}
+            onClick={() => exportForecastToExcel(currentFilteredData, `Executive_Performance_${activePeriodLabel.replace(/[^a-zA-Z0-9_-]/g, "_")}.xlsx`)}
             style={{ height: 38 }}
           >
-            Export Report
+            Export Excel
           </Button>
         </Space>
       </div>
@@ -418,36 +499,69 @@ export default function ProductionDashboard() {
         styles={{ body: { padding: "14px 20px" } }}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
-          <Space align="center" size="middle">
+          <Space align="center" size="middle" wrap>
             <CalendarOutlined style={{ color: "#6366f1", fontSize: 16 }} />
             <Text strong style={{ color: "#334155", fontSize: 14 }}>Dashboard Time Filter:</Text>
             
             <Radio.Group 
-              value={selectedMonthKey} 
-              onChange={(e) => setSelectedMonthKey(e.target.value)} 
+              value={viewMode} 
+              onChange={(e) => setViewMode(e.target.value)} 
               optionType="button"
               buttonStyle="solid"
               size="middle"
             >
-              <Radio.Button value="all">Full Financial Year (12M)</Radio.Button>
-              <Radio.Button value="rolling">Current + Next 3M (Rolling)</Radio.Button>
+              <Radio.Button value="single">Single Month</Radio.Button>
+              <Radio.Button value="from_to">From - To Range</Radio.Button>
+              <Radio.Button value="rolling">Rolling 4M</Radio.Button>
+              <Radio.Button value="all">Full Year (12M)</Radio.Button>
             </Radio.Group>
           </Space>
 
-          <Space align="center">
-            <Text type="secondary" style={{ fontSize: 13 }}>Select Specific Month:</Text>
-            <Select
-              value={selectedMonthKey}
-              onChange={setSelectedMonthKey}
-              style={{ width: 170 }}
-              size="middle"
-            >
-              <Option value="all">Full Financial Year</Option>
-              <Option value="rolling">4M Rolling Window</Option>
-              {FINANCIAL_YEAR_MONTHS.map(m => (
-                <Option key={m.monthKey} value={m.monthKey}>{m.name} ({m.code})</Option>
-              ))}
-            </Select>
+          <Space align="center" wrap>
+            {viewMode === "single" && (
+              <Select
+                value={singleMonth}
+                onChange={setSingleMonth}
+                style={{ width: 175 }}
+                size="middle"
+              >
+                {FINANCIAL_YEAR_MONTHS.map(m => (
+                  <Option key={m.monthKey} value={m.monthKey}>
+                    {m.name} {m.defaultYear} {m.monthKey === currentMonthKey ? "(Current)" : ""}
+                  </Option>
+                ))}
+              </Select>
+            )}
+
+            {viewMode === "from_to" && (
+              <Space size="small" align="center">
+                <Select
+                  value={fromMonth}
+                  onChange={setFromMonth}
+                  style={{ width: 155 }}
+                  size="middle"
+                >
+                  {FINANCIAL_YEAR_MONTHS.map(m => (
+                    <Option key={m.monthKey} value={m.monthKey}>{m.name} {m.defaultYear}</Option>
+                  ))}
+                </Select>
+                <SwapRightOutlined style={{ color: "#64748b" }} />
+                <Select
+                  value={toMonth}
+                  onChange={setToMonth}
+                  style={{ width: 155 }}
+                  size="middle"
+                >
+                  {FINANCIAL_YEAR_MONTHS.map(m => (
+                    <Option key={m.monthKey} value={m.monthKey}>{m.name} {m.defaultYear}</Option>
+                  ))}
+                </Select>
+              </Space>
+            )}
+
+            <Tag color="blue" style={{ padding: "4px 10px", borderRadius: 6, fontWeight: 600 }}>
+              {activePeriodLabel}
+            </Tag>
           </Space>
         </div>
       </Card>
@@ -482,20 +596,20 @@ export default function ProductionDashboard() {
           <Card 
             style={{ 
               borderRadius: 14, 
-              background: "linear-gradient(135deg, #4c1d95 0%, #6d28d9 100%)", 
+              background: "linear-gradient(135deg, #5b21b6 0%, #7c3aed 100%)", 
               color: "white",
-              boxShadow: "0 4px 14px rgba(76, 29, 149, 0.25)",
+              boxShadow: "0 4px 14px rgba(91, 33, 182, 0.25)",
               border: "none" 
             }}
             styles={{ body: { padding: "20px" } }}
           >
-            <Text style={{ color: "#c4b5fd", fontWeight: 700, fontSize: 12, letterSpacing: "0.5px" }}>
+            <Text style={{ color: "#ddd6fe", fontWeight: 700, fontSize: 12, letterSpacing: "0.5px" }}>
               ACTUAL TURNOVER ACHIEVED
             </Text>
             <div style={{ fontSize: 28, fontWeight: 800, marginTop: 4, color: "white" }}>
               {formatCompactCurrency(kpis.aTo)} <span style={{ fontSize: 14, fontWeight: 500 }}>LKR</span>
             </div>
-            <div style={{ marginTop: 12, display: "flex", justifyContent: "space-between", color: "#ddd6fe", fontSize: 12 }}>
+            <div style={{ marginTop: 12, display: "flex", justifyContent: "space-between", color: "#e9d5ff", fontSize: 12 }}>
               <span>Volume: <b>{kpis.aTeu} TEUs</b></span>
               <span>Margin: <b>{formatPercentage(kpis.aMargin)}</b></span>
             </div>
@@ -506,22 +620,22 @@ export default function ProductionDashboard() {
           <Card 
             style={{ 
               borderRadius: 14, 
-              background: kpis.vTo >= 0 ? "linear-gradient(135deg, #065f46 0%, #059669 100%)" : "linear-gradient(135deg, #991b1b 0%, #dc2626 100%)", 
+              background: "linear-gradient(135deg, #0f766e 0%, #0d9488 100%)", 
               color: "white",
-              boxShadow: "0 4px 14px rgba(0,0,0,0.15)",
+              boxShadow: "0 4px 14px rgba(15, 118, 110, 0.25)",
               border: "none" 
             }}
             styles={{ body: { padding: "20px" } }}
           >
-            <Text style={{ color: "#a7f3d0", fontWeight: 700, fontSize: 12, letterSpacing: "0.5px" }}>
-              OVERALL VARIANCE (LKR)
+            <Text style={{ color: "#ccfbf1", fontWeight: 700, fontSize: 12, letterSpacing: "0.5px" }}>
+              FACTORY PERFORMANCE (RATIO)
             </Text>
             <div style={{ fontSize: 28, fontWeight: 800, marginTop: 4, color: "white" }}>
-              {kpis.vTo >= 0 ? "+" : ""}{formatCompactCurrency(kpis.vTo)} <span style={{ fontSize: 14, fontWeight: 500 }}>LKR</span>
+              {formatCompactCurrency(kpis.fTo)} <span style={{ fontSize: 14, fontWeight: 500 }}>LKR</span>
             </div>
-            <div style={{ marginTop: 12, display: "flex", justifyContent: "space-between", color: "#e2e8f0", fontSize: 12 }}>
-              <span>TEU Diff: <b>{kpis.vTeu >= 0 ? "+" : ""}{kpis.vTeu}</b></span>
-              <span>Rate: <b>{kpis.achRate}%</b></span>
+            <div style={{ marginTop: 12, display: "flex", justifyContent: "space-between", color: "#ccfbf1", fontSize: 12 }}>
+              <span>Capable: <b>{kpis.fTeu} TEUs</b></span>
+              <span>Rate: <b>{kpis.aTeu > 0 ? `${Math.round((kpis.fTeu / kpis.aTeu) * 100)}%` : "-"}</b></span>
             </div>
           </Card>
         </Col>
@@ -530,58 +644,51 @@ export default function ProductionDashboard() {
           <Card 
             style={{ 
               borderRadius: 14, 
-              background: "white", 
-              boxShadow: "0 4px 14px rgba(0,0,0,0.05)",
-              border: "1px solid #e2e8f0" 
+              background: kpis.vTo >= 0 
+                ? "linear-gradient(135deg, #065f46 0%, #059669 100%)" 
+                : "linear-gradient(135deg, #991b1b 0%, #dc2626 100%)", 
+              color: "white",
+              boxShadow: "0 4px 14px rgba(0,0,0,0.15)",
+              border: "none" 
             }}
             styles={{ body: { padding: "20px" } }}
           >
-            <Text style={{ color: "#64748b", fontWeight: 700, fontSize: 12 }}>
-              TARGET ACHIEVEMENT RATIO
+            <Text style={{ color: "rgba(255,255,255,0.85)", fontWeight: 700, fontSize: 12, letterSpacing: "0.5px" }}>
+              OVERALL TARGET VARIANCE
             </Text>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 4 }}>
-              <span style={{ fontSize: 28, fontWeight: 800, color: kpis.achRate >= 100 ? "#10b981" : "#d97706" }}>
-                {kpis.achRate}%
-              </span>
-              <Text type="secondary" style={{ fontSize: 12 }}>of turnover target</Text>
+            <div style={{ fontSize: 28, fontWeight: 800, marginTop: 4, color: "white" }}>
+              {kpis.vTo >= 0 ? "+" : ""}{formatCompactCurrency(kpis.vTo)} <span style={{ fontSize: 14, fontWeight: 500 }}>LKR</span>
             </div>
-            <Progress 
-              percent={Math.min(100, kpis.achRate)} 
-              status={kpis.achRate >= 100 ? "success" : "active"}
-              strokeColor={kpis.achRate >= 100 ? "#10b981" : "#3b82f6"}
-              style={{ marginTop: 8 }}
-            />
+            <div style={{ marginTop: 12, display: "flex", justifyContent: "space-between", color: "rgba(255,255,255,0.9)", fontSize: 12 }}>
+              <span>Achievement: <b>{kpis.achRate}%</b></span>
+              <span>Diff TEU: <b>{kpis.vTeu >= 0 ? "+" : ""}{kpis.vTeu}</b></span>
+            </div>
           </Card>
         </Col>
       </Row>
 
-      {/* REPLICATION OF SHEET 3 "PPT OUTPUT DATA" */}
+      {/* EXECUTIVE SUMMARY TABLE (Sheet 3 PPT Format) */}
       <Card 
+        title={
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <Space>
+              <TrophyOutlined style={{ color: "#f59e0b", fontSize: 18 }} />
+              <span style={{ fontWeight: 700, color: "#0f172a" }}>
+                Executive Performance Summary (Budget vs Actuals vs Factory Confirmed)
+              </span>
+            </Space>
+            <Tag color="purple" style={{ borderRadius: 6, fontWeight: 600 }}>
+              {activePeriodLabel}
+            </Tag>
+          </div>
+        }
         style={{ 
           marginBottom: 24, 
           borderRadius: 14, 
-          boxShadow: "0 2px 10px rgba(0,0,0,0.04)", 
+          boxShadow: "0 2px 8px rgba(0,0,0,0.03)", 
           border: "1px solid #e2e8f0" 
         }}
       >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
-          <Space>
-            <FilePptOutlined style={{ color: "#e11d48", fontSize: 20 }} />
-            <div>
-              <Title level={4} style={{ margin: 0, fontWeight: 700, color: "#0f172a" }}>
-                Executive Performance Summary Table (PPT Output Data)
-              </Title>
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                Matches Sheet 3 "PPT output data" structure • Department-level comparison (Horticulture vs Bedding)
-              </Text>
-            </div>
-          </Space>
-
-          <Tag color="magenta" style={{ padding: "4px 10px", borderRadius: 8, fontWeight: 600 }}>
-            Period: {selectedMonthKey === "all" ? "Full Financial Year" : (selectedMonthKey === "rolling" ? "4-Month Rolling" : selectedMonthKey)}
-          </Tag>
-        </div>
-
         <Table
           dataSource={executiveTableData}
           columns={executiveTableColumns}
@@ -589,71 +696,59 @@ export default function ProductionDashboard() {
           bordered
           size="middle"
           rowClassName={(record) => record.category === "Total" ? "bg-slate-100 font-bold" : ""}
-          style={{ overflowX: "auto" }}
         />
       </Card>
 
-      {/* Sales Officer Performance Leaderboard & Department Comparison */}
+      {/* Sales Officer Performance Ranking */}
       <Row gutter={[20, 20]} style={{ marginBottom: 24 }}>
-        {/* Sales Officer Breakdown */}
         <Col xs={24} lg={14}>
           <Card 
             title={
               <Space>
                 <TeamOutlined style={{ color: "#3b82f6" }} />
-                <span>Sales Officer Performance Leaderboard</span>
+                <span style={{ fontWeight: 700, color: "#0f172a" }}>Sales Officer Achievement & Ranking</span>
               </Space>
             }
-            style={{ borderRadius: 14, boxShadow: "0 2px 10px rgba(0,0,0,0.04)", border: "1px solid #e2e8f0", height: "100%" }}
+            style={{ 
+              borderRadius: 14, 
+              boxShadow: "0 2px 8px rgba(0,0,0,0.03)", 
+              border: "1px solid #e2e8f0",
+              height: "100%" 
+            }}
           >
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-              {officerPerformance.map((officer, idx) => (
-                <div 
-                  key={officer.code} 
-                  style={{ 
-                    padding: "14px 16px", 
-                    borderRadius: 12, 
-                    border: "1px solid #f1f5f9", 
-                    backgroundColor: idx === 0 ? "#f8fafc" : "white",
-                    boxShadow: "0 1px 3px rgba(0,0,0,0.02)"
-                  }}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                    <Space>
-                      {idx === 0 && <TrophyOutlined style={{ color: "#f59e0b", fontSize: 16 }} />}
-                      <Tag color={officer.color} style={{ fontWeight: 800, fontSize: 13, borderRadius: 6 }}>
+              {officerPerformance.map((officer) => (
+                <div key={officer.code} style={{ padding: 12, borderRadius: 10, background: "#f8fafc", border: "1px solid #f1f5f9" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                    <Space align="center">
+                      <Tag color={officer.color} style={{ fontWeight: 700, fontSize: 12, padding: "2px 8px" }}>
                         {officer.code}
                       </Tag>
-                      <Text strong style={{ color: "#1e293b", fontSize: 14 }}>{officer.department}</Text>
-                      <Text type="secondary" style={{ fontSize: 12 }}>({officer.rowsCount} entries)</Text>
+                      <Text strong style={{ fontSize: 14, color: "#1e293b" }}>{officer.name}</Text>
+                      <Text type="secondary" style={{ fontSize: 12 }}>({officer.department})</Text>
                     </Space>
-
-                    <Space size="large">
-                      <div>
-                        <Text type="secondary" style={{ fontSize: 11 }}>Actual TO:</Text>{" "}
-                        <Text strong style={{ color: "#4c1d95" }}>{formatCompactCurrency(officer.aTo)} LKR</Text>
-                      </div>
-                      <div>
-                        <Text type="secondary" style={{ fontSize: 11 }}>Target Met:</Text>{" "}
-                        <Tag color={officer.achRate >= 100 ? "success" : "warning"} style={{ fontWeight: 700 }}>
-                          {officer.achRate}%
-                        </Tag>
-                      </div>
-                    </Space>
+                    
+                    <div style={{ textAlign: "right" }}>
+                      <Text strong style={{ fontSize: 14, color: officer.achRate >= 100 ? "#10b981" : "#4f46e5" }}>
+                        {officer.achRate}% Achieved
+                      </Text>
+                      <Text type="secondary" style={{ fontSize: 11, display: "block" }}>
+                        {formatCompactCurrency(officer.aTo)} / {formatCompactCurrency(officer.bTo)} LKR
+                      </Text>
+                    </div>
                   </div>
 
                   <Progress 
-                    percent={Math.min(100, officer.achRate)} 
-                    strokeColor={officer.color}
+                    percent={Math.min(officer.achRate, 100)} 
+                    strokeColor={officer.achRate >= 100 ? "#10b981" : officer.color} 
+                    showInfo={false} 
                     size="small"
                   />
 
-                  <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, fontSize: 12, color: "#64748b" }}>
-                    <span>Budget: {formatCompactCurrency(officer.bTo)} LKR ({officer.bTeu.toFixed(1)} TEU)</span>
-                    <span>Actual: {formatCompactCurrency(officer.aTo)} LKR ({officer.aTeu.toFixed(1)} TEU)</span>
-                    <span style={{ fontWeight: 600, color: officer.varianceTo >= 0 ? "#10b981" : "#ef4444" }}>
-                      Var: {officer.varianceTo >= 0 ? "+" : ""}{formatCompactCurrency(officer.varianceTo)}
-                    </span>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, fontSize: 11, color: "#64748b" }}>
+                    <span>Actual Volume: <b>{officer.aTeu.toFixed(1)} TEU</b></span>
+                    <span>Margin: <b>{formatPercentage(officer.margin)}</b></span>
+                    <span>Turnover Diff: <b style={{ color: officer.varianceTo >= 0 ? "#10b981" : "#ef4444" }}>{officer.varianceTo >= 0 ? "+" : ""}{formatCompactCurrency(officer.varianceTo)}</b></span>
                   </div>
                 </div>
               ))}
@@ -661,136 +756,118 @@ export default function ProductionDashboard() {
           </Card>
         </Col>
 
-        {/* Department Comparison Cards */}
         <Col xs={24} lg={10}>
           <Card 
             title={
               <Space>
-                <ShopOutlined style={{ color: "#10b981" }} />
-                <span>Department Comparison (Horti vs Bedding)</span>
+                <ShopOutlined style={{ color: "#8b5cf6" }} />
+                <span style={{ fontWeight: 700, color: "#0f172a" }}>Department Split Analysis</span>
               </Space>
             }
-            style={{ borderRadius: 14, boxShadow: "0 2px 10px rgba(0,0,0,0.04)", border: "1px solid #e2e8f0", height: "100%" }}
+            style={{ 
+              borderRadius: 14, 
+              boxShadow: "0 2px 8px rgba(0,0,0,0.03)", 
+              border: "1px solid #e2e8f0",
+              height: "100%" 
+            }}
           >
-            {/* Horticulture */}
-            <div style={{ padding: "16px", borderRadius: 12, background: "linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)", border: "1px solid #bbf7d0", marginBottom: 16 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <Text strong style={{ fontSize: 16, color: "#166534" }}>🌿 Horticulture</Text>
-                <Tag color="green" style={{ fontWeight: 700 }}>DP, HR, MM</Tag>
-              </div>
-              <Row gutter={12} style={{ marginTop: 12 }}>
-                <Col span={12}>
-                  <Text type="secondary" style={{ fontSize: 11 }}>Budget TO / TEU:</Text>
-                  <div style={{ fontWeight: 700, color: "#14532d" }}>
-                    {formatCompactCurrency(executiveSummary.horticulture.budget.to)} LKR
-                  </div>
-                  <Text style={{ fontSize: 11, color: "#15803d" }}>({executiveSummary.horticulture.budget.teu.toFixed(1)} TEUs)</Text>
-                </Col>
-                <Col span={12}>
-                  <Text type="secondary" style={{ fontSize: 11 }}>Actual TO / TEU:</Text>
-                  <div style={{ fontWeight: 700, color: "#166534" }}>
-                    {formatCompactCurrency(executiveSummary.horticulture.actual.to)} LKR
-                  </div>
-                  <Text style={{ fontSize: 11, color: "#15803d" }}>({executiveSummary.horticulture.actual.teu.toFixed(1)} TEUs)</Text>
-                </Col>
-              </Row>
-              <div style={{ marginTop: 10 }}>
-                <Text style={{ fontSize: 12, fontWeight: 600, color: "#166534" }}>
-                  Achievement: {Math.round(executiveSummary.horticulture.variance.achievementRate)}%
-                </Text>
+            <div style={{ padding: "10px 0" }}>
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                  <Text strong style={{ color: "#1e3a8a" }}>🌱 Horticulture Products</Text>
+                  <Text strong>{formatPercentage(executiveSummary.horticulture.actual.to / (kpis.aTo || 1))}</Text>
+                </div>
                 <Progress 
-                  percent={Math.min(100, Math.round(executiveSummary.horticulture.variance.achievementRate))} 
-                  strokeColor="#16a34a" 
-                  size="small" 
+                  percent={Math.round((executiveSummary.horticulture.actual.to / (kpis.aTo || 1)) * 100)} 
+                  strokeColor="#3b82f6" 
+                  showInfo={false}
                 />
+                <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4, fontSize: 12, color: "#64748b" }}>
+                  <span>Actual: <b>{formatCompactCurrency(executiveSummary.horticulture.actual.to)} LKR</b></span>
+                  <span>Target: <b>{formatCompactCurrency(executiveSummary.horticulture.budget.to)} LKR</b></span>
+                </div>
               </div>
-            </div>
 
-            {/* Bedding */}
-            <div style={{ padding: "16px", borderRadius: 12, background: "linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)", border: "1px solid #fcd34d" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <Text strong style={{ fontSize: 16, color: "#92400e" }}>🛏️ Bedding</Text>
-                <Tag color="gold" style={{ fontWeight: 700 }}>PD</Tag>
-              </div>
-              <Row gutter={12} style={{ marginTop: 12 }}>
-                <Col span={12}>
-                  <Text type="secondary" style={{ fontSize: 11 }}>Budget TO / TEU:</Text>
-                  <div style={{ fontWeight: 700, color: "#78350f" }}>
-                    {formatCompactCurrency(executiveSummary.bedding.budget.to)} LKR
-                  </div>
-                  <Text style={{ fontSize: 11, color: "#92400e" }}>({executiveSummary.bedding.budget.teu.toFixed(1)} TEUs)</Text>
-                </Col>
-                <Col span={12}>
-                  <Text type="secondary" style={{ fontSize: 11 }}>Actual TO / TEU:</Text>
-                  <div style={{ fontWeight: 700, color: "#92400e" }}>
-                    {formatCompactCurrency(executiveSummary.bedding.actual.to)} LKR
-                  </div>
-                  <Text style={{ fontSize: 11, color: "#92400e" }}>({executiveSummary.bedding.actual.teu.toFixed(1)} TEUs)</Text>
-                </Col>
-              </Row>
-              <div style={{ marginTop: 10 }}>
-                <Text style={{ fontSize: 12, fontWeight: 600, color: "#92400e" }}>
-                  Achievement: {Math.round(executiveSummary.bedding.variance.achievementRate)}%
-                </Text>
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                  <Text strong style={{ color: "#d97706" }}>🛏️ Bedding Products</Text>
+                  <Text strong>{formatPercentage(executiveSummary.bedding.actual.to / (kpis.aTo || 1))}</Text>
+                </div>
                 <Progress 
-                  percent={Math.min(100, Math.round(executiveSummary.bedding.variance.achievementRate))} 
-                  strokeColor="#d97706" 
-                  size="small" 
+                  percent={Math.round((executiveSummary.bedding.actual.to / (kpis.aTo || 1)) * 100)} 
+                  strokeColor="#f59e0b" 
+                  showInfo={false}
                 />
+                <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4, fontSize: 12, color: "#64748b" }}>
+                  <span>Actual: <b>{formatCompactCurrency(executiveSummary.bedding.actual.to)} LKR</b></span>
+                  <span>Target: <b>{formatCompactCurrency(executiveSummary.bedding.budget.to)} LKR</b></span>
+                </div>
+              </div>
+
+              <Divider style={{ margin: "16px 0" }} />
+
+              <div style={{ background: "#f8fafc", padding: 12, borderRadius: 10 }}>
+                <Text strong style={{ fontSize: 13, color: "#334155" }}>Quick Executive Summary:</Text>
+                <ul style={{ paddingLeft: 18, marginTop: 6, fontSize: 12, color: "#64748b", lineHeight: 1.6 }}>
+                  <li>Total {kpis.totalCount} customer orders tracked for {activePeriodLabel}.</li>
+                  <li>Overall achievement rate is standing at <b>{kpis.achRate}%</b>.</li>
+                  <li>Factory capable TEU fulfilment stands at <b>{kpis.fTeu} TEUs</b> ({formatCompactCurrency(kpis.fTo)} LKR).</li>
+                </ul>
               </div>
             </div>
           </Card>
         </Col>
       </Row>
 
-      {/* Month-by-Month Trajectory (12 Months of Financial Year) */}
+      {/* 12-Month Trajectory Overview */}
       <Card 
         title={
           <Space>
-            <CalendarOutlined style={{ color: "#3b82f6" }} />
-            <span>12-Month Financial Year Trajectory (APR to MAR)</span>
+            <CalendarOutlined style={{ color: "#10b981" }} />
+            <span style={{ fontWeight: 700, color: "#0f172a" }}>Full Year Monthly Trajectory (FY 2026-2027)</span>
           </Space>
         }
-        style={{ borderRadius: 14, boxShadow: "0 2px 10px rgba(0,0,0,0.04)", border: "1px solid #e2e8f0" }}
+        style={{ 
+          borderRadius: 14, 
+          boxShadow: "0 2px 8px rgba(0,0,0,0.03)", 
+          border: "1px solid #e2e8f0" 
+        }}
       >
-        <Row gutter={[12, 12]}>
-          {monthlyTrends.map((m) => (
-            <Col xs={24} sm={12} md={8} lg={4} key={m.monthKey}>
-              <div 
-                onClick={() => setSelectedMonthKey(m.monthKey)}
-                style={{ 
-                  padding: "12px", 
-                  borderRadius: 10, 
-                  border: selectedMonthKey === m.monthKey ? "2px solid #3b82f6" : "1px solid #e2e8f0", 
-                  backgroundColor: selectedMonthKey === m.monthKey ? "#eff6ff" : (m.hasActuals ? "white" : "#f8fafc"),
-                  cursor: "pointer",
-                  transition: "all 0.2s ease"
-                }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                  <Text strong style={{ color: "#0f172a" }}>{m.code}</Text>
-                  {m.hasActuals ? (
-                    <Tag color={m.achRate >= 100 ? "success" : "warning"} style={{ margin: 0, fontSize: 10, padding: "0 4px" }}>
-                      {m.achRate}%
-                    </Tag>
-                  ) : (
-                    <Tag style={{ margin: 0, fontSize: 10, padding: "0 4px" }}>Budget</Tag>
-                  )}
-                </div>
-
-                <div style={{ fontSize: 11, color: "#64748b" }}>
-                  B: {formatCompactCurrency(m.bTo)} LKR
-                </div>
-                <div style={{ fontSize: 11, color: m.hasActuals ? "#4c1d95" : "#94a3b8", fontWeight: 600 }}>
-                  A: {m.hasActuals ? `${formatCompactCurrency(m.aTo)} LKR` : "Pending"}
-                </div>
-                <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 4 }}>
-                  {m.aTeu > 0 ? `${m.aTeu} / ${m.bTeu} TEU` : `${m.bTeu} TEU`}
-                </div>
-              </div>
-            </Col>
-          ))}
-        </Row>
+        <Table
+          dataSource={monthlyTrends}
+          rowKey="monthKey"
+          pagination={false}
+          size="small"
+          columns={[
+            { title: "Month", dataIndex: "name", key: "name", render: (text, r) => <span style={{ fontWeight: 700 }}>{text} {r.year}</span> },
+            { title: "Code", dataIndex: "code", key: "code", align: "center", render: c => <Tag color="blue">{c}</Tag> },
+            { title: "Budget TO (LKR)", dataIndex: "bTo", key: "bTo", align: "right", render: v => formatCompactCurrency(v) },
+            { title: "Budget TEU", dataIndex: "bTeu", key: "bTeu", align: "right", render: v => v.toFixed(1) },
+            { title: "Actual TO (LKR)", dataIndex: "aTo", key: "aTo", align: "right", render: (v, r) => <span style={{ fontWeight: 700, color: r.hasActuals ? "#5b21b6" : "#94a3b8" }}>{r.hasActuals ? formatCompactCurrency(v) : "-"}</span> },
+            { title: "Actual TEU", dataIndex: "aTeu", key: "aTeu", align: "right", render: (v, r) => r.hasActuals ? v.toFixed(1) : "-" },
+            { 
+              title: "% Achieved", 
+              dataIndex: "achRate", 
+              key: "achRate", 
+              align: "center", 
+              render: (v, r) => r.hasActuals ? (
+                <Tag color={v >= 100 ? "success" : "warning"} style={{ fontWeight: 700 }}>
+                  {v}%
+                </Tag>
+              ) : "-"
+            },
+            {
+              title: "Status",
+              key: "status",
+              align: "center",
+              render: (_, r) => {
+                if (!r.hasActuals) return <Tag>UPCOMING</Tag>;
+                if (r.aTo >= r.bTo) return <Tag color="success">✓ TARGET MET</Tag>;
+                return <Tag color="error">⚠ VARIANCE</Tag>;
+              }
+            }
+          ]}
+        />
       </Card>
     </div>
   );

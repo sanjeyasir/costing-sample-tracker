@@ -170,3 +170,26 @@ body {
   color: #64748b !important;
 }
 
+/* Role-Based Cell Visual Indicators */
+.ht-locked-cell {
+  background-color: #f8fafc !important;
+  color: #64748b !important;
+}
+
+.ht-actual-editable {
+  background-color: #faf5ff !important;
+  border-left: 2px solid #a855f7 !important;
+}
+
+.ht-factory-editable {
+  background-color: #f0fdf4 !important;
+  border-left: 2px solid #22c55e !important;
+}
+
+/* Frozen Column Pinned Border */
+.handsontable .ht_clone_left {
+  box-shadow: 4px 0 8px -2px rgba(0, 0, 0, 0.08) !important;
+  z-index: 100 !important;
+}
+
+
