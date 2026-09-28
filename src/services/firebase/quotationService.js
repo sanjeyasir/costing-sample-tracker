@@ -10,7 +10,7 @@ import {
   Timestamp 
 } from "firebase/firestore";
 import { db, isMockMode } from "./config";
-import { DEFAULT_FINANCIAL_PARAMS, DEFAULT_SAVED_PRODUCTS } from "../../utils/quotationCalculations";
+import { DEFAULT_FINANCIAL_PARAMS } from "../../utils/quotationCalculations";
 
 /**
  * Fetch or initialize a quotation for a completed costing request
@@ -141,7 +141,7 @@ export async function getSavedProducts(category = null) {
     }
   }
 
-  const all = [...DEFAULT_SAVED_PRODUCTS, ...customPresets];
+  const all = [...customPresets];
   if (category) {
     return all.filter(p => p.category?.toLowerCase() === category.toLowerCase());
   }

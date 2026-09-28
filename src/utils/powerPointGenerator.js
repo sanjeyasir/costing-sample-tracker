@@ -370,7 +370,6 @@ export async function exportForecastToPowerPoint(rows = [], options = {}) {
       { text: "Capable TEU", options: { bold: true, fill: "0D9488", color: C_WHITE, align: "right" } },
       { text: "Factory TO (Ratio)", options: { bold: true, fill: "0D9488", color: C_WHITE, align: "right" } },
       { text: "Factory Contri", options: { bold: true, fill: "0D9488", color: C_WHITE, align: "right" } },
-      { text: "Confirmed", options: { bold: true, fill: "334155", color: C_WHITE, align: "center" } },
       { text: "Notes / Remarks", options: { bold: true, fill: "334155", color: C_WHITE, align: "left" } }
     ]
   ];
@@ -381,7 +380,6 @@ export async function exportForecastToPowerPoint(rows = [], options = {}) {
     const fTeu = parseFloat(r.factoryTeu) || 0;
     const fTo = parseFloat(r.factoryTurnover) || 0;
     const fCont = parseFloat(r.factoryContribution) || 0;
-    const isConfirmed = !!r.factoryConfirmed;
 
     return [
       { text: r.monthName || r.month || "SEP", options: { fontSize: 8.5 } },
@@ -393,17 +391,16 @@ export async function exportForecastToPowerPoint(rows = [], options = {}) {
       { text: fTeu.toFixed(1), options: { align: "right", bold: true, color: C_TEAL, fontSize: 8.5 } },
       { text: formatCurrency(fTo), options: { align: "right", bold: true, color: C_TEAL, fontSize: 8.5 } },
       { text: formatCurrency(fCont), options: { align: "right", fontSize: 8.5 } },
-      { text: isConfirmed ? "✓ YES" : "PENDING", options: { align: "center", bold: true, color: isConfirmed ? C_EMERALD : "D97706", fontSize: 8 } },
-      { text: (r.notes || "").slice(0, 20), options: { fontSize: 8, color: C_GRAY } }
+      { text: (r.notes || "").slice(0, 24), options: { fontSize: 8, color: C_GRAY } }
     ];
   });
 
-  // Exact 11 column widths summing to 12.0 in
+  // Exact 10 column widths summing to 12.0 in
   slide3.addTable([...factoryTableHeaders, ...factoryTableContent], {
     x: 0.66,
     y: 1.20,
     w: 12.0,
-    colW: [1.10, 0.55, 2.45, 0.95, 0.75, 1.20, 0.85, 1.25, 1.10, 0.80, 1.00],
+    colW: [1.10, 0.55, 2.60, 1.00, 0.85, 1.35, 1.05, 1.40, 1.10, 1.00],
     fontSize: 8.5,
     rowH: 0.33,
     border: { pt: 0.5, color: C_BORDER },
@@ -411,7 +408,7 @@ export async function exportForecastToPowerPoint(rows = [], options = {}) {
   });
 
   // Summary box at bottom within safety boundary
-  const confirmedCount = rows.filter(r => !!r.factoryConfirmed).length;
+  const confirmedCount = rows.filter(r => (parseFloat(r.factoryTeu) || 0) > 0).length;
   slide3.addShape(pptx.ShapeType.roundRect, {
     x: 0.66,
     y: 5.15,
@@ -422,7 +419,7 @@ export async function exportForecastToPowerPoint(rows = [], options = {}) {
     line: { color: "99F6E4", width: 1 }
   });
 
-  slide3.addText(`🏭 FACTORY CONFIRMATION SUMMARY: ${confirmedCount} of ${rows.length} accounts confirmed (${rows.length > 0 ? Math.round((confirmedCount / rows.length) * 100) : 0}%) • Total Capable: ${total.factory.teu.toFixed(1)} TEUs • Total Factory TO (Ratio): LKR ${formatCompactCurrency(total.factory.to)}`, {
+  slide3.addText(`🏭 FACTORY CONFIRMATION SUMMARY: ${confirmedCount} of ${rows.length} accounts confirmed with Capable TEU (${rows.length > 0 ? Math.round((confirmedCount / rows.length) * 100) : 0}%) • Total Capable: ${total.factory.teu.toFixed(1)} TEUs • Total Factory TO (Ratio): LKR ${formatCompactCurrency(total.factory.to)}`, {
     x: 0.86,
     y: 5.35,
     w: 11.6,

@@ -82,17 +82,28 @@ export const DEFAULT_CATEGORIES = [
     createdAt: new Date(2026, 7, 1).toISOString(),
     fields: [
       { key: "description", label: "Description", type: "text", required: true, owner: "marketing" },
+      { 
+        key: "packingConfiguration", 
+        label: "Packing Configuration", 
+        type: "select", 
+        options: ["Bundle Floor Loaded", "Bundle Pallet Loading"], 
+        required: true, 
+        owner: "marketing" 
+      },
       { key: "length", label: "Length (CM)", type: "number", required: true, owner: "marketing" },
       { key: "width", label: "Width (CM)", type: "number", required: true, owner: "marketing" },
       { key: "height", label: "Height (CM)", type: "number", required: true, owner: "marketing" },
       { key: "organic", label: "Organic / Non-Organic", type: "select", options: ["Organic", "Non-Organic"], required: true, owner: "marketing" },
-      { key: "ncRcRatio", label: "NC/RC Ratio", type: "text", required: true, owner: "marketing" },
-      { key: "density", label: "Density", type: "text", required: true, owner: "marketing" },
+      { key: "ncRcRatio", label: "NC/RC Ratio", type: "select", options: ["80:20", "70:30", "100:0", "60:40", "50:50", "90:10"], required: true, owner: "marketing" },
+      { key: "density", label: "Density", type: "select", options: ["80 kg/m3", "65 kg/m3", "70 kg/m3", "90 kg/m3", "100 kg/m3", "120 kg/m3"], required: true, owner: "marketing" },
       { key: "qtyPerBundle", label: "Quantity per Bundle (Optional)", type: "number", required: false, owner: "marketing" },
       { key: "marketingRemarks", label: "Marketing Remarks", type: "text", required: false, owner: "marketing" },
       // Finance fields
-      { key: "unitCost", label: "Unit Cost", type: "number", required: true, owner: "finance" },
-      { key: "qtyPerBundleFinance", label: "Quantity per Bundle (Finance)", type: "number", required: true, owner: "finance" }
+      { key: "packing", label: "Packing (Pcs / Bdl)", type: "number", required: false, owner: "finance" },
+      { key: "cartonSize", label: "Bundle Size (CM)", type: "text", required: false, owner: "finance" },
+      { key: "palletSize", label: "Pallet Size (CM)", type: "text", required: false, owner: "finance" },
+      { key: "cartonsPerPallet", label: "Bundles per Pallet", type: "number", required: false, owner: "finance" },
+      { key: "unitCost", label: "Unit Cost", type: "number", required: true, owner: "finance" }
     ]
   },
   {
@@ -101,16 +112,32 @@ export const DEFAULT_CATEGORIES = [
     createdAt: new Date(2026, 7, 1).toISOString(),
     fields: [
       { key: "description", label: "Product Description", type: "text", required: true, owner: "marketing" },
+      { 
+        key: "packingConfiguration", 
+        label: "Packing Configuration", 
+        type: "select", 
+        options: [
+          "Carton Floor Loaded",
+          "Carton Pallet Loading",
+          "Bundle Floor Loaded",
+          "Bundle Pallet Loading",
+          "Roll Floor Loaded",
+          "Roll Pallet Loading"
+        ], 
+        required: true, 
+        owner: "marketing" 
+      },
       { key: "specifications", label: "Product Specifications", type: "textarea", required: true, owner: "marketing" },
       { key: "gsm", label: "GSM", type: "number", required: true, owner: "marketing" },
-      { key: "latexRatio", label: "Latex Ratio", type: "text", required: true, owner: "marketing" },
+      { key: "latexRatio", label: "Latex Ratio", type: "select", options: ["80:20", "70:30", "100:0", "60:40", "50:50"], required: true, owner: "marketing" },
       { key: "marketingRemarks", label: "Marketing Remarks", type: "text", required: false, owner: "marketing" },
       // Finance fields
-      { key: "packing", label: "Packing - Pieces per Carton or Bundle", type: "text", required: true, owner: "finance" },
-      { key: "cartonSize", label: "Carton Size (CM)", type: "text", required: true, owner: "finance" },
-      { key: "palletSize", label: "Pallet Size (Optional)", type: "text", required: false, owner: "finance" },
-      { key: "cartonsPerPallet", label: "Cartons per Pallet (Optional)", type: "number", required: false, owner: "finance" },
-      { key: "rollDiameter", label: "Roll Diameter (If Applicable)", type: "text", required: false, owner: "finance" },
+      { key: "packing", label: "Packing - Pieces per Carton/Bundle/Roll", type: "text", required: false, owner: "finance" },
+      { key: "cartonSize", label: "Carton / Bundle Size (CM)", type: "text", required: false, owner: "finance" },
+      { key: "palletSize", label: "Pallet Size (CM)", type: "text", required: false, owner: "finance" },
+      { key: "cartonsPerPallet", label: "Cartons / Bundles per Pallet", type: "number", required: false, owner: "finance" },
+      { key: "rollDiameter", label: "Roll Diameter (CM)", type: "text", required: false, owner: "finance" },
+      { key: "rollLength", label: "Roll Length (CM / M)", type: "text", required: false, owner: "finance" },
       { key: "unitCost", label: "Unit Cost", type: "number", required: true, owner: "finance" }
     ]
   }

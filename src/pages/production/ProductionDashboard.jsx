@@ -120,7 +120,15 @@ export default function ProductionDashboard() {
     if (viewMode === "rolling") {
       return `Rolling 4-Months (${default4Months.map(m => m.month).join(", ")})`;
     }
-    return "Full Financial Year 2026-2027 (12 Months)";
+    if (viewMode === "all") {
+      const firstM = FINANCIAL_YEAR_MONTHS[0];
+      const lastM = FINANCIAL_YEAR_MONTHS[FINANCIAL_YEAR_MONTHS.length - 1];
+      const fyYears = firstM && lastM && firstM.defaultYear !== lastM.defaultYear 
+        ? `${firstM.defaultYear}-${lastM.defaultYear}` 
+        : (firstM?.defaultYear ? `${firstM.defaultYear}` : "");
+      return fyYears ? `Full Financial Year ${fyYears} (12 Months)` : "Full Financial Year (12 Months)";
+    }
+    return "Full Financial Year (12 Months)";
   }, [viewMode, singleMonth, fromMonth, toMonth, default4Months]);
 
   // Filter data according to dashboard month filter
@@ -824,7 +832,14 @@ export default function ProductionDashboard() {
         title={
           <Space>
             <CalendarOutlined style={{ color: "#10b981" }} />
-            <span style={{ fontWeight: 700, color: "#0f172a" }}>Full Year Monthly Trajectory (FY 2026-2027)</span>
+            <span style={{ fontWeight: 700, color: "#0f172a" }}>
+              Full Year Monthly Trajectory {(() => {
+                const firstM = FINANCIAL_YEAR_MONTHS[0];
+                const lastM = FINANCIAL_YEAR_MONTHS[FINANCIAL_YEAR_MONTHS.length - 1];
+                const fyYears = firstM && lastM && firstM.defaultYear !== lastM.defaultYear ? `${firstM.defaultYear}-${lastM.defaultYear}` : (firstM?.defaultYear || "");
+                return fyYears ? `(FY ${fyYears})` : "";
+              })()}
+            </span>
           </Space>
         }
         style={{ 

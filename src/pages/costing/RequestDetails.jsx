@@ -22,6 +22,8 @@ import {
   CalculatorOutlined
 } from "@ant-design/icons";
 
+import * as costingPacking from "../../utils/costingPackingConfig";
+
 // Handsontable imports
 import { HotTable } from "@handsontable/react";
 import { registerAllModules } from "handsontable/registry";
@@ -84,8 +86,58 @@ export default function RequestDetails() {
   } else {
     requestFields = request?.categoryFields || activeCategory?.fields || [];
   }
-  const financeFields = requestFields.filter(f => f.owner === "finance");
+
+  // 1. Ensure Marketing Fields include packingConfiguration
   let rawMarketingFields = requestFields.filter(f => f.owner === "marketing");
+  const packingOptions = costingPacking.getPackingOptionsForCategory(request?.productUnit || activeCategory?.name);
+  if (!rawMarketingFields.some(f => f.key === "packingConfiguration")) {
+    const insertIdx = rawMarketingFields.length > 0 ? 1 : 0;
+    rawMarketingFields.splice(insertIdx, 0, {
+      key: "packingConfiguration",
+      label: "Packing Configuration",
+      type: "select",
+      options: packingOptions,
+      required: true,
+      owner: "marketing"
+    });
+  } else {
+    rawMarketingFields = rawMarketingFields.map(f => {
+      if (f.key === "packingConfiguration") {
+        return { ...f, type: "select", options: packingOptions, required: true };
+      }
+      return f;
+    });
+  }
+
+  // Ensure NC/RC Ratio, Density, and Latex Ratio are select dropdowns with standard presets
+  rawMarketingFields = rawMarketingFields.map(f => {
+    if (f.key === "ncRcRatio") {
+      return {
+        ...f,
+        type: "select",
+        options: f.options && f.options.length > 0 ? f.options : ["80:20", "70:30", "100:0", "60:40", "50:50", "90:10"],
+        required: true
+      };
+    }
+    if (f.key === "density") {
+      return {
+        ...f,
+        type: "select",
+        options: f.options && f.options.length > 0 ? f.options : ["80 kg/m3", "65 kg/m3", "70 kg/m3", "90 kg/m3", "100 kg/m3", "120 kg/m3"],
+        required: true
+      };
+    }
+    if (f.key === "latexRatio") {
+      return {
+        ...f,
+        type: "select",
+        options: f.options && f.options.length > 0 ? f.options : ["80:20", "70:30", "100:0", "60:40", "50:50"],
+        required: true
+      };
+    }
+    return f;
+  });
+
   if (!rawMarketingFields.some(f => f.key === "marketingRemarks" || f.key === "remarks")) {
     rawMarketingFields = [
       ...rawMarketingFields,
@@ -93,6 +145,35 @@ export default function RequestDetails() {
     ];
   }
   const marketingFields = rawMarketingFields;
+
+  // 2. Ensure Finance Fields have complete standardized packing & dimension fields
+  let rawFinanceFields = requestFields.filter(f => f.owner === "finance");
+  const isBedding = (request?.productUnit || "").toLowerCase().includes("bedding") || (activeCategory?.name || "").toLowerCase().includes("bedding");
+  
+  const standardFinanceKeys = [
+    { key: "packing", label: "Packing (Pcs / Ctn / Bdl / Roll)", type: "number", required: false, owner: "finance" },
+    { key: "cartonSize", label: isBedding ? "Bundle Size (CM)" : "Carton / Bundle Size (CM)", type: "text", required: false, owner: "finance" },
+    { key: "palletSize", label: "Pallet Size (CM)", type: "text", required: false, owner: "finance" },
+    { key: "cartonsPerPallet", label: isBedding ? "Bundles per Pallet" : "Cartons / Bundles per Pallet", type: "number", required: false, owner: "finance" },
+    ...(!isBedding ? [
+      { key: "rollDiameter", label: "Roll Diameter (CM)", type: "text", required: false, owner: "finance" },
+      { key: "rollLength", label: "Roll Length (CM / M)", type: "text", required: false, owner: "finance" },
+    ] : []),
+    { key: "unitCost", label: "Unit Cost ($)", type: "number", required: true, owner: "finance" }
+  ];
+
+  // Merge so we preserve any custom fields from Firestore while ensuring standard keys exist
+  const existingFinanceKeys = new Set(rawFinanceFields.map(f => f.key));
+  standardFinanceKeys.forEach(sf => {
+    if (!existingFinanceKeys.has(sf.key)) {
+      rawFinanceFields.push(sf);
+    }
+  });
+  // Sort finance fields order
+  const orderMap = { packing: 1, cartonSize: 2, palletSize: 3, cartonsPerPallet: 4, rollDiameter: 5, rollLength: 6, unitCost: 7 };
+  rawFinanceFields.sort((a, b) => (orderMap[a.key] || 99) - (orderMap[b.key] || 99));
+
+  const financeFields = rawFinanceFields;
 
   const isFinanceOfficer = currentUser.costingRoles?.includes("costing_finance") || currentUser.costingRoles?.includes("admin") || currentUser.roles?.includes("admin");
   const isMarketingOfficer = currentUser.costingRoles?.includes("costing_marketing") || currentUser.costingRoles?.includes("admin") || currentUser.roles?.includes("admin") || request?.marketingOfficer?.uid === currentUser.uid || request?.createdByUid === currentUser.uid;
@@ -130,12 +211,20 @@ export default function RequestDetails() {
         marketingFields.forEach(f => {
           rowObj[`spec_${f.key}`] = item && item[f.key] !== undefined ? item[f.key] : "";
         });
+
+        const packingConfig = item?.packingConfiguration || rowObj.spec_packingConfiguration || costingPacking.getDefaultPackingOption(request.productUnit);
+        if (!rowObj.spec_packingConfiguration) {
+          rowObj.spec_packingConfiguration = packingConfig;
+        }
         
         // Costing values
-        const itemCosting = request.specs?.items 
+        let itemCosting = request.specs?.items 
           ? (costingDraft.items?.[idx] || costingDraft.items?.[String(idx)] || request.costing?.items?.[idx] || request.costing?.items?.[String(idx)] || {})
           : (costingDraft || request.costing || {});
         
+        // Apply auto-zero to non-applicable fields
+        itemCosting = costingPacking.applyAutoZeroToCosting(itemCosting, packingConfig);
+
         financeFields.forEach(f => {
           rowObj[`cost_${f.key}`] = itemCosting && itemCosting[f.key] !== undefined ? itemCosting[f.key] : "";
         });
@@ -149,6 +238,29 @@ export default function RequestDetails() {
   const handleDetailsTableChange = (changes, source) => {
     if (source === "loadData" || !changes) return;
     
+    // Check if finance entered an irrelevant/non-numeric carton or bundle size
+    changes.forEach(([row, prop, oldVal, newVal]) => {
+      if (prop === "cost_cartonSize" && newVal !== oldVal && newVal !== "" && newVal !== "0" && newVal !== undefined && newVal !== null) {
+        if (!costingPacking.isValidDimensionString(newVal)) {
+          Modal.warning({
+            title: "Numerical Dimension Required",
+            centered: true,
+            content: (
+              <div style={{ marginTop: 8 }}>
+                <p style={{ color: "#0f172a", fontWeight: 600, marginBottom: 8 }}>
+                  The entered Carton / Bundle size <code>"{newVal}"</code> is not a valid numerical dimension.
+                </p>
+                <p style={{ color: "#64748b", fontSize: "0.85rem", margin: 0 }}>
+                  Please enter numerical dimensions in centimeters (e.g. <strong>57X51X58 CM</strong>, <strong>60x60x50</strong>, or <strong>L x W x H</strong>). Irrelevant text or words without dimensions cannot be accepted.
+                </p>
+              </div>
+            ),
+            okText: "Understand"
+          });
+        }
+      }
+    });
+
     const hot = hotTableRef.current?.hotInstance;
     if (!hot) return;
     
@@ -165,13 +277,19 @@ export default function RequestDetails() {
         });
         updatedSpecsItems.push(specObj);
         
+        const packingConfig = specObj.packingConfiguration || row.spec_packingConfiguration || costingPacking.getDefaultPackingOption(request.productUnit);
+        const rules = costingPacking.getFinanceFieldRules(packingConfig);
+
         const costObj = {};
         financeFields.forEach(f => {
           let val = row[`cost_${f.key}`];
-          if (f.type === "number" && val !== "" && val !== undefined && val !== null) {
+          if (rules.nonApplicable.includes(f.key)) {
+            val = f.type === "number" ? 0 : "0";
+            row[`cost_${f.key}`] = val;
+          } else if (f.type === "number" && val !== "" && val !== undefined && val !== null) {
             val = Number(val);
           }
-          costObj[f.key] = val;
+          costObj[f.key] = val !== undefined ? val : "";
         });
         updatedCostingItems[idx] = costObj;
       });
@@ -190,13 +308,19 @@ export default function RequestDetails() {
       });
       setSpecsDraft(specObj);
       
+      const packingConfig = specObj.packingConfiguration || row.spec_packingConfiguration || costingPacking.getDefaultPackingOption(request.productUnit);
+      const rules = costingPacking.getFinanceFieldRules(packingConfig);
+
       const costObj = {};
       financeFields.forEach(f => {
         let val = row[`cost_${f.key}`];
-        if (f.type === "number" && val !== "" && val !== undefined && val !== null) {
+        if (rules.nonApplicable.includes(f.key)) {
+          val = f.type === "number" ? 0 : "0";
+          row[`cost_${f.key}`] = val;
+        } else if (f.type === "number" && val !== "" && val !== undefined && val !== null) {
           val = Number(val);
         }
-        costObj[f.key] = val;
+        costObj[f.key] = val !== undefined ? val : "";
       });
       setCostingDraft(prev => ({
         ...prev,
@@ -280,22 +404,88 @@ export default function RequestDetails() {
 
     if (request.specs?.excelFile) {
       if (!costingDraft.excelFile) {
-        return setError("Please upload the completed costing Excel file.");
+        const errorMsg = "Please upload the completed costing Excel file before completing costing.";
+        setError(errorMsg);
+        Modal.error({
+          title: "Costing Incomplete",
+          content: errorMsg,
+          okText: "OK"
+        });
+        return;
       }
     } else {
       const itemsCount = request.specs?.items ? request.specs.items.length : 1;
       const costingItems = request.specs?.items ? (costingDraft.items || {}) : costingDraft;
-      
+      const specsItems = request.specs?.items || [request.specs || {}];
+      const finalizedCostingItems = {};
+      const errors = [];
+
       for (let i = 0; i < itemsCount; i++) {
-        const itemCosting = request.specs?.items ? costingItems[i] : costingItems;
+        const itemCosting = request.specs?.items ? (costingItems[i] || costingItems[String(i)]) : costingItems;
+        const itemSpec = specsItems[i] || {};
+        const packingConfig = itemSpec.packingConfiguration || tableData[i]?.spec_packingConfiguration || costingPacking.getDefaultPackingOption(request.productUnit);
+
         if (!itemCosting) {
-          return setError(`Please enter costing parameters for Item #${i + 1}.`);
+          errors.push(`Item #${i + 1}: Costing parameters have not been entered.`);
+          continue;
         }
-        for (const field of financeFields) {
-          if (field.required && (itemCosting[field.key] === undefined || itemCosting[field.key] === "")) {
-            return setError(`Item #${i + 1} is missing required costing field: "${field.label}"`);
+
+        // Validate mandatory fields for the selected packing configuration
+        const validation = costingPacking.validateFinanceCostingItem(itemCosting, packingConfig, i);
+        if (!validation.valid) {
+          errors.push(validation.error);
+        } else {
+          // Ensure non-applicable fields are auto-zeroed
+          finalizedCostingItems[i] = costingPacking.applyAutoZeroToCosting(itemCosting, packingConfig);
+        }
+      }
+
+      if (errors.length > 0) {
+        setError(errors.join(" | "));
+        Modal.error({
+          title: "Cannot Complete Costing",
+          width: 540,
+          centered: true,
+          content: (
+            <div style={{ marginTop: 12 }}>
+              <p style={{ marginBottom: 12, color: "#334155", fontSize: "0.92rem", fontWeight: 500 }}>
+                Costing submission cannot proceed because mandatory fields are missing or invalid for the selected packing configurations:
+              </p>
+              <div 
+                style={{ 
+                  background: "#fef2f2", 
+                  border: "1px solid #fecaca", 
+                  borderRadius: 10, 
+                  padding: "12px 16px",
+                  maxHeight: 240,
+                  overflowY: "auto"
+                }}
+              >
+                <ul style={{ margin: 0, paddingLeft: 18, color: "#b91c1c", fontSize: "0.86rem", lineHeight: 1.6 }}>
+                  {errors.map((err, idx) => (
+                    <li key={idx} style={{ marginBottom: 4 }}>
+                      <strong>{err}</strong>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <p style={{ marginTop: 12, marginBottom: 0, fontSize: "0.82rem", color: "#64748b" }}>
+                💡 Tip: Review the highlighted columns in the grid for each item and ensure required values (e.g. Dimensions, Pallet size, Units per pallet, Unit cost) are provided.
+              </p>
+            </div>
+          ),
+          okText: "Got It",
+          okButtonProps: {
+            style: { borderRadius: 6, fontWeight: 700, background: "#ef4444", borderColor: "#ef4444" }
           }
-        }
+        });
+        return;
+      }
+
+      if (request.specs?.items) {
+        costingDraft.items = finalizedCostingItems;
+      } else {
+        Object.assign(costingDraft, finalizedCostingItems[0] || {});
       }
     }
 
@@ -305,7 +495,13 @@ export default function RequestDetails() {
       setRequest(updated);
       setSuccessMsg("Costing successfully completed and marked ready for Marketing.");
     } catch (err) {
-      setError(err.message || "Failed to complete costing.");
+      const errMsg = err.message || "Failed to complete costing.";
+      setError(errMsg);
+      Modal.error({
+        title: "Submission Error",
+        content: errMsg,
+        okText: "Close"
+      });
     } finally {
       setSaving(false);
     }
@@ -385,15 +581,20 @@ export default function RequestDetails() {
             });
             updatedSpecsItems.push(specObj);
             
+            const packingConfig = specObj.packingConfiguration || row.spec_packingConfiguration || costingPacking.getDefaultPackingOption(request.productUnit);
+            const rules = costingPacking.getFinanceFieldRules(packingConfig);
+
             const costObj = {};
             financeFields.forEach(f => {
               let val = row[`cost_${f.key}`];
-              if (f.type === "number" && val !== "" && val !== undefined && val !== null) {
+              if (rules.nonApplicable.includes(f.key)) {
+                val = f.type === "number" ? 0 : "0";
+              } else if (f.type === "number" && val !== "" && val !== undefined && val !== null) {
                 val = Number(val);
               }
               costObj[f.key] = val !== undefined ? val : "";
             });
-            updatedCostingItems[idx] = costObj;
+            updatedCostingItems[idx] = costingPacking.applyAutoZeroToCosting(costObj, packingConfig);
           });
           
           finalSpecsDraft = { items: updatedSpecsItems };
@@ -406,16 +607,47 @@ export default function RequestDetails() {
           });
           finalSpecsDraft = specObj;
           
+          const packingConfig = specObj.packingConfiguration || row.spec_packingConfiguration || costingPacking.getDefaultPackingOption(request.productUnit);
+          const rules = costingPacking.getFinanceFieldRules(packingConfig);
+
           const costObj = {};
           financeFields.forEach(f => {
             let val = row[`cost_${f.key}`];
-            if (f.type === "number" && val !== "" && val !== undefined && val !== null) {
+            if (rules.nonApplicable.includes(f.key)) {
+              val = f.type === "number" ? 0 : "0";
+            } else if (f.type === "number" && val !== "" && val !== undefined && val !== null) {
               val = Number(val);
             }
             costObj[f.key] = val !== undefined ? val : "";
           });
-          finalCostingDraft = { ...costingDraft, ...costObj };
+          finalCostingDraft = { ...costingDraft, ...costingPacking.applyAutoZeroToCosting(costObj, packingConfig) };
         }
+      }
+
+      // Validate specs if correcting details
+      const correctionErrors = [];
+      const specItemsToCheck = finalSpecsDraft.items || [finalSpecsDraft];
+      specItemsToCheck.forEach((item, idx) => {
+        if (item.specifications && !costingPacking.containsLxWxHSequence(item.specifications)) {
+          correctionErrors.push(`Item #${idx + 1}: "Product Specifications" must contain the L x W x H dimension sequence (e.g. 57X51X58 CM or 30x30x5 CM).`);
+        }
+      });
+
+      if (correctionErrors.length > 0) {
+        Modal.error({
+          title: "Cannot Save Changes",
+          content: (
+            <div>
+              <p style={{ color: "#334155", fontWeight: 600 }}>Please fix the following specifications:</p>
+              <ul>
+                {correctionErrors.map((err, i) => <li key={i}><strong>{err}</strong></li>)}
+              </ul>
+            </div>
+          ),
+          okText: "Review & Fix"
+        });
+        setSaving(false);
+        return;
       }
 
       await costingService.updateRequestSpecs(id, finalSpecsDraft);
@@ -704,20 +936,33 @@ export default function RequestDetails() {
     data: "itemNo",
     title: "#",
     readOnly: true,
-    width: 50
+    width: 45,
+    className: "htCenter htMiddle"
   });
 
   marketingFields.forEach(f => {
     const col = {
       data: `spec_${f.key}`,
       title: `${f.label} (Mkt)`,
-      readOnly: !isCorrectingDetails
+      readOnly: !isCorrectingDetails,
+      className: "htCenter htMiddle"
     };
-    if (f.type === "number") col.type = "numeric";
-    else if (f.type === "select") {
+    if (f.key === "packingConfiguration") {
+      col.width = 200;
+      col.type = "dropdown";
+      col.source = f.options || costingPacking.getPackingOptionsForCategory(request?.productUnit);
+      col.visibleRows = 10;
+    } else if (f.type === "number") {
+      col.type = "numeric";
+      col.width = 120;
+    } else if (f.type === "select") {
       col.type = "dropdown";
       col.source = f.options || [];
       col.visibleRows = 10;
+      col.width = 140;
+    } else {
+      col.type = "text";
+      col.width = f.key === "description" || f.key === "specifications" ? 220 : 150;
     }
     gridColumns.push(col);
   });
@@ -726,13 +971,20 @@ export default function RequestDetails() {
     const col = {
       data: `cost_${f.key}`,
       title: `${f.label} (Fin)`,
-      readOnly: !isCostingActive && !isCorrectingDetails
+      readOnly: !isCostingActive && !isCorrectingDetails,
+      className: "htCenter htMiddle"
     };
-    if (f.type === "number") col.type = "numeric";
-    else if (f.type === "select") {
+    if (f.type === "number") {
+      col.type = "numeric";
+      col.width = 130;
+    } else if (f.type === "select") {
       col.type = "dropdown";
       col.source = f.options || [];
       col.visibleRows = 10;
+      col.width = 140;
+    } else {
+      col.type = "text";
+      col.width = 160;
     }
     gridColumns.push(col);
   });
@@ -1064,13 +1316,39 @@ export default function RequestDetails() {
               )}
               {isCostingActive && !isCorrectingDetails && (
                 <Alert
-                  message="Spreadsheet Editing Enabled"
-                  description="Double click on the green column header cells to input Unit Cost and other costing values directly in Excel style."
+                  message="Finance Costing Mode Active"
+                  description={
+                    <div>
+                      <div>Double-click on the Finance column cells to input required costing values. Non-applicable fields for each line's Packing Configuration are locked and automatically zeroed:</div>
+                      <div style={{ marginTop: 6, fontSize: "0.82rem", color: "#475569" }}>
+                        • <strong>Carton Floor Loaded:</strong> Carton Size & Unit Cost required.<br />
+                        • <strong>Carton Pallet Loading:</strong> Carton Size, Pallet Size, Cartons per Pallet & Unit Cost required.<br />
+                        • <strong>Bundle Floor Loaded:</strong> Bundle Size (in Carton/Bundle size column) & Unit Cost required.<br />
+                        • <strong>Bundle Pallet Loading:</strong> Bundle Size, Pallet Size, Bundles per Pallet & Unit Cost required.<br />
+                        • <strong>Roll Floor Loaded:</strong> Roll Diameter, Roll Length & Unit Cost required.<br />
+                        • <strong>Roll Pallet Loading:</strong> Roll Diameter, Roll Length, Pallet Size & Unit Cost required.
+                      </div>
+                    </div>
+                  }
                   type="info"
                   showIcon
                   style={{ marginBottom: 16 }}
                 />
               )}
+
+              <style>{`
+                .non-applicable-finance-cell {
+                  background-color: #f1f5f9 !important;
+                  color: #94a3b8 !important;
+                  font-style: italic;
+                  cursor: not-allowed !important;
+                }
+                .required-finance-cell {
+                  background-color: #f0fdf4 !important;
+                  color: #0f172a !important;
+                  font-weight: 600;
+                }
+              `}</style>
 
               <div className="hot-container">
                 <HotTable
@@ -1081,9 +1359,30 @@ export default function RequestDetails() {
                   rowHeaders={false}
                   height="auto"
                   licenseKey="non-commercial-and-evaluation"
-                  colWidths={(index) => index === 0 ? 50 : 180}
+                  colWidths={(index) => gridColumns[index]?.width || 150}
                   afterChange={handleDetailsTableChange}
                   manualColumnResize={true}
+                  cells={function (row, col, prop) {
+                    const cellProperties = {};
+                    if (!tableData || !tableData[row]) return cellProperties;
+
+                    const rowItem = tableData[row];
+                    const packingConfig = rowItem.spec_packingConfiguration || (request?.specs?.items ? request.specs.items[row]?.packingConfiguration : request?.specs?.packingConfiguration) || costingPacking.getDefaultPackingOption(request?.productUnit);
+                    const rules = costingPacking.getFinanceFieldRules(packingConfig);
+
+                    if (prop && prop.startsWith("cost_")) {
+                      const fieldKey = prop.replace("cost_", "");
+                      if (rules.nonApplicable.includes(fieldKey)) {
+                        cellProperties.readOnly = true;
+                        cellProperties.className = "htCenter htMiddle non-applicable-finance-cell";
+                      } else if (rules.required.includes(fieldKey)) {
+                        cellProperties.className = "htCenter htMiddle required-finance-cell";
+                      } else {
+                        cellProperties.className = "htCenter htMiddle";
+                      }
+                    }
+                    return cellProperties;
+                  }}
                 />
               </div>
 

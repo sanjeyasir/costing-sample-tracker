@@ -37,7 +37,7 @@ body {
 /* Custom Handsontable styles to match premium design system */
 .handsontable {
   font-family: 'Outfit', 'Inter', sans-serif !important;
-  font-size: 14px !important;
+  font-size: 13.5px !important;
   color: #0f172a !important;
 }
 
@@ -46,14 +46,44 @@ body {
   color: #475569 !important;
   font-weight: 700 !important;
   border-color: #cbd5e1 !important;
-  padding: 10px 14px !important;
+  padding: 8px 12px !important;
   vertical-align: middle !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  box-sizing: border-box !important;
+  height: 38px !important;
+  line-height: 20px !important;
 }
 
 .handsontable td {
   border-color: #e2e8f0 !important;
-  padding: 10px 14px !important;
+  padding: 6px 12px !important;
   vertical-align: middle !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  box-sizing: border-box !important;
+  height: 38px !important;
+  max-height: 38px !important;
+  line-height: 22px !important;
+}
+
+.handsontable tr {
+  height: 38px !important;
+  max-height: 38px !important;
+}
+
+.handsontable .htCore {
+  border-collapse: separate !important;
+  table-layout: fixed !important;
+}
+
+.handsontable .ht_clone_left .htCore,
+.handsontable .ht_master .htCore,
+.handsontable .ht_clone_top .htCore,
+.handsontable .ht_clone_top_left_corner .htCore {
+  table-layout: fixed !important;
 }
 
 .handsontable tr:hover td {
@@ -190,6 +220,19 @@ body {
 .handsontable .ht_clone_left {
   box-shadow: 4px 0 8px -2px rgba(0, 0, 0, 0.08) !important;
   z-index: 100 !important;
+}
+
+/* Spill Orders Indicator - Yellow Highlight for Spilled Buyer / Customer */
+.ht-spill-cell {
+  background-color: #fef08a !important; /* Distinct bright yellow */
+  color: #713f12 !important; /* Dark amber text for maximum contrast and legibility */
+  font-weight: 600 !important;
+  border-left: 3px solid #eab308 !important;
+}
+
+.ht-spill-cell.ht-locked-cell {
+  background-color: #fef9c3 !important; /* Slightly softer yellow when locked */
+  color: #854d0e !important;
 }
 
 

@@ -7,10 +7,10 @@ import {
   DEFAULT_FINANCIAL_PARAMS, 
   DEFAULT_COMPANY_DETAILS, 
   DEFAULT_TERMS, 
-  DEFAULT_SAVED_PRODUCTS,
   calculateBeddingItem, 
   calculateHorticultureItem, 
-  getDisplayPrice 
+  getDisplayPrice,
+  formatMergedDescription 
 } from "../../utils/quotationCalculations";
 import { generateQuotationExcel } from "../../utils/quotationExcelEngine";
 import { downloadQuotationPDF } from "../../utils/quotationPdfGenerator";
@@ -68,17 +68,27 @@ import {
 
 const { Title, Text, Paragraph } = Typography;
 
-export const ALL_HORTI_COLUMN_KEYS = [
+export const DEFAULT_SELECTED_HORTI_COLUMNS = [
   "idx", "imageUrl", "description", "packing", "cartonSize", "palletSize",
   "cartonsPerPallet", "palletsPer20ft", "palletsPer40ft", "rollDiameter",
   "quotedPrice", "cartonsPer20ft", "qtyPer20ft", "cartonsPer40ft", "qtyPer40ft"
 ];
 
-export const ALL_BEDDING_COLUMN_KEYS = [
+export const ALL_HORTI_COLUMN_KEYS = [
+  ...DEFAULT_SELECTED_HORTI_COLUMNS,
+  "margin", "orderVolume", "orderCartons", "orderPallets", "orderTotalCbm"
+];
+
+export const DEFAULT_SELECTED_BEDDING_COLUMNS = [
   "idx", "imageUrl", "description", "length", "width", "height", "organic",
   "ncRcRatio", "density", "qtyPerBundle", "palletSize", "bundlesPerPallet",
   "palletsPer20ft", "palletsPer40ft", "quotedPrice", "bundlesPer20ft",
   "qtyPer20ft", "bundlesPer40ft", "qtyPer40ft"
+];
+
+export const ALL_BEDDING_COLUMN_KEYS = [
+  ...DEFAULT_SELECTED_BEDDING_COLUMNS,
+  "margin", "orderVolume", "orderCartons", "orderPallets", "orderTotalCbm"
 ];
 
 export default function QuotationEditor() {
@@ -107,9 +117,9 @@ export default function QuotationEditor() {
   const [buyerName, setBuyerName] = useState("");
   const [shipper, setShipper] = useState(DEFAULT_COMPANY_DETAILS);
 
-  // Column Visibility Checkboxes State
-  const [selectedHortiColumns, setSelectedHortiColumns] = useState(ALL_HORTI_COLUMN_KEYS);
-  const [selectedBeddingColumns, setSelectedBeddingColumns] = useState(ALL_BEDDING_COLUMN_KEYS);
+  // Column Visibility Checkboxes State (Default OFF for optional calculation columns)
+  const [selectedHortiColumns, setSelectedHortiColumns] = useState(DEFAULT_SELECTED_HORTI_COLUMNS);
+  const [selectedBeddingColumns, setSelectedBeddingColumns] = useState(DEFAULT_SELECTED_BEDDING_COLUMNS);
 
   // Preference Selectors (Matching Excel S2:Y6 parameters box)
   const [containerSize, setContainerSize] = useState("40ft"); // "20ft" | "40ft"
@@ -195,7 +205,51 @@ export default function QuotationEditor() {
           setPaymentTerms(savedQuote.paymentTerms || DEFAULT_TERMS.paymentTerms);
           setLeadTime(savedQuote.leadTime || DEFAULT_TERMS.leadTime);
           setValidity(savedQuote.validity || defaultValidityStr);
-          setItems(savedQuote.items || []);
+          // Clean up savedQuote items to ensure no legacy default values leak in
+          let rawItems = [];
+          if (Array.isArray(req.specs?.items)) {
+            rawItems = req.specs.items;
+          } else if (req.specs?.items && typeof req.specs.items === "object") {
+            rawItems = Object.values(req.specs.items);
+          } else if (req.specs && typeof req.specs === "object") {
+            rawItems = [req.specs];
+          } else {
+            rawItems = [{}];
+          }
+
+          const sanitizedItems = (savedQuote.items || []).map((savedItem, idx) => {
+            const costItem = (req.costing?.items && (req.costing.items[idx] || req.costing.items[String(idx)])) || req.costing || {};
+            const specItem = rawItems[idx] || {};
+            const fallbackDesc = reqCat === "bedding" ? `Coir Bedding Item #${idx + 1}` : `FHN095${idx + 4}`;
+            const mergedDescription = formatMergedDescription(specItem.description ? specItem : savedItem, savedItem.description || fallbackDesc);
+
+            const rawCostCartons = costItem.cartonsPerPallet !== undefined && costItem.cartonsPerPallet !== null && costItem.cartonsPerPallet !== "" 
+              ? costItem.cartonsPerPallet 
+              : costItem.bundlesPerPallet;
+            const financeCartonsPerPallet = (rawCostCartons !== undefined && rawCostCartons !== null && rawCostCartons !== "") 
+              ? (parseFloat(rawCostCartons) || 0) 
+              : (savedItem.cartonsPerPallet !== undefined && savedItem.cartonsPerPallet !== null && savedItem.cartonsPerPallet !== "" ? parseFloat(savedItem.cartonsPerPallet) || 0 : 0);
+
+            const rawCostBundles = costItem.bundlesPerPallet !== undefined && costItem.bundlesPerPallet !== null && costItem.bundlesPerPallet !== "" 
+              ? costItem.bundlesPerPallet 
+              : costItem.cartonsPerPallet;
+            const financeBundlesPerPallet = (rawCostBundles !== undefined && rawCostBundles !== null && rawCostBundles !== "") 
+              ? (parseFloat(rawCostBundles) || 0) 
+              : (savedItem.bundlesPerPallet !== undefined && savedItem.bundlesPerPallet !== null && savedItem.bundlesPerPallet !== "" ? parseFloat(savedItem.bundlesPerPallet) || 0 : 0);
+
+            return {
+              ...savedItem,
+              description: mergedDescription,
+              bundlesPerPallet: financeBundlesPerPallet,
+              cartonsPerPallet: financeCartonsPerPallet,
+              cartonSize: costItem.cartonSize !== undefined && costItem.cartonSize !== null && costItem.cartonSize !== "" ? costItem.cartonSize : (savedItem.cartonSize || ""),
+              palletSize: costItem.palletSize !== undefined && costItem.palletSize !== null && costItem.palletSize !== "" ? costItem.palletSize : (savedItem.palletSize || ""),
+              unitCost: costItem.unitCost !== undefined && costItem.unitCost !== null && costItem.unitCost !== "" ? parseFloat(costItem.unitCost) || 0 : (parseFloat(savedItem.unitCost) || 0),
+              packing: costItem.packing !== undefined && costItem.packing !== null && costItem.packing !== "" ? parseFloat(costItem.packing) || 0 : (parseFloat(savedItem.packing) || 0)
+            };
+          });
+
+          setItems(sanitizedItems);
           if (Array.isArray(savedQuote.selectedColumns) && savedQuote.selectedColumns.length > 0) {
             if (reqCat === "bedding") {
               setSelectedBeddingColumns(savedQuote.selectedColumns);
@@ -230,28 +284,46 @@ export default function QuotationEditor() {
 
           const initialItems = rawItems.map((specItem, idx) => {
             const costItem = (req.costing?.items && (req.costing.items[idx] || req.costing.items[String(idx)])) || req.costing || {};
+            const fallbackDesc = reqCat === "bedding" ? `Coir Bedding Item #${idx + 1}` : `FHN095${idx + 4}`;
+            const mergedDescription = formatMergedDescription(specItem, fallbackDesc);
+
+            const rawCostCartons = costItem.cartonsPerPallet !== undefined && costItem.cartonsPerPallet !== null && costItem.cartonsPerPallet !== "" 
+              ? costItem.cartonsPerPallet 
+              : costItem.bundlesPerPallet;
+            const financeCartonsPerPallet = (rawCostCartons !== undefined && rawCostCartons !== null && rawCostCartons !== "") 
+              ? (parseFloat(rawCostCartons) || 0) 
+              : 0;
+
+            const rawCostBundles = costItem.bundlesPerPallet !== undefined && costItem.bundlesPerPallet !== null && costItem.bundlesPerPallet !== "" 
+              ? costItem.bundlesPerPallet 
+              : costItem.cartonsPerPallet;
+            const financeBundlesPerPallet = (rawCostBundles !== undefined && rawCostBundles !== null && rawCostBundles !== "") 
+              ? (parseFloat(rawCostBundles) || 0) 
+              : 0;
             
             return {
               id: `item-${idx + 1}`,
-              description: specItem.description || specItem.productDescription || (reqCat === "bedding" ? `Coir Bedding Item #${idx + 1}` : `FHN095${idx + 4}`),
-              specifications: specItem.specifications || specItem.description || (reqCat === "bedding" ? "Standard Rubberized Coir Bedding Sheet" : "30 CM | ROUND WEED DISC | WITH SAME LABEL AND PACKING REQUIREMENTS"),
+              description: mergedDescription,
+              specifications: specItem.specifications || specItem.description || "",
               imageUrl: specItem.imageUrl || "",
-              length: parseFloat(specItem.length || specItem.l) || 100,
-              width: parseFloat(specItem.width || specItem.w) || 100,
-              height: parseFloat(specItem.height || specItem.h) || 10,
-              organic: specItem.organic || "Non-Organic",
-              ncRcRatio: specItem.ncRcRatio || specItem.nc_rc || "80:20",
-              density: specItem.density || "80 kg/m3",
-              qtyPerBundle: parseFloat(specItem.qtyPerBundle || costItem.qtyPerBundle) || 1,
-              gsm: specItem.gsm || 800,
-              latexRatio: specItem.latexRatio || "80:20",
-              packing: parseFloat(costItem.packing || specItem.packing) || 128,
-              cartonSize: costItem.cartonSize || specItem.cartonSize || "57X51X58CM",
-              palletSize: costItem.palletSize || specItem.palletSize || "TBA",
-              bundlesPerPallet: parseFloat(costItem.bundlesPerPallet || specItem.bundlesPerPallet) || 0,
-              cartonsPerPallet: parseFloat(costItem.cartonsPerPallet || specItem.cartonsPerPallet) || 16,
-              rollDiameter: costItem.rollDiameter || specItem.rollDiameter || "TBA",
-              unitCost: parseFloat(costItem.unitCost || specItem.unitCost) || 26.73,
+              length: parseFloat(specItem.length || specItem.l) || 0,
+              width: parseFloat(specItem.width || specItem.w) || 0,
+              height: parseFloat(specItem.height || specItem.h) || 0,
+              organic: specItem.organic || "",
+              ncRcRatio: specItem.ncRcRatio || specItem.nc_rc || "",
+              density: specItem.density || "",
+              qtyPerBundle: parseFloat(specItem.qtyPerBundle || costItem.qtyPerBundle) || 0,
+              gsm: specItem.gsm || "",
+              latexRatio: specItem.latexRatio || "",
+              packingConfiguration: specItem.packingConfiguration || costItem.packingConfiguration || "",
+              packing: costItem.packing !== undefined && costItem.packing !== "" ? parseFloat(costItem.packing) || 0 : (specItem.packing !== undefined && specItem.packing !== "" ? parseFloat(specItem.packing) || 0 : 0),
+              cartonSize: costItem.cartonSize || specItem.cartonSize || "",
+              palletSize: costItem.palletSize || specItem.palletSize || "",
+              bundlesPerPallet: financeBundlesPerPallet,
+              cartonsPerPallet: financeCartonsPerPallet,
+              rollDiameter: costItem.rollDiameter || specItem.rollDiameter || "",
+              rollLength: costItem.rollLength || specItem.rollLength || "",
+              unitCost: parseFloat(costItem.unitCost || specItem.unitCost) || 0,
               palletsPer40ft: parseFloat(costItem.palletsPer40ft) || 0,
               palletsPer20ft: parseFloat(costItem.palletsPer20ft) || 0
             };
@@ -374,11 +446,18 @@ export default function QuotationEditor() {
         if (row < nextItems.length && oldVal !== newVal) {
           hasDiff = true;
           let cleanVal = newVal;
-          if ([
+          if (prop === "margin") {
+            if (cleanVal === "" || cleanVal === null || cleanVal === undefined || cleanVal === "Default" || cleanVal === "default") {
+              cleanVal = "";
+            } else if (typeof cleanVal === "string") {
+              const num = parseFloat(cleanVal.replace(/[^0-9.-]+/g, ""));
+              cleanVal = isNaN(num) ? "" : (num <= 1 && num > 0 ? Math.round(num * 100) : num);
+            }
+          } else if ([
             "length", "width", "height", "qtyPerBundle", "bundlesPerPallet", 
             "cartonsPerPallet", "unitCost", "palletsPer40ft", "palletsPer20ft", 
             "packing", "gsm", "qtyPer40ft", "qtyPer20ft", "cartonsPer20ft", 
-            "cartonsPer40ft", "bundlesPer20ft", "bundlesPer40ft"
+            "cartonsPer40ft", "bundlesPer20ft", "bundlesPer40ft", "orderVolume"
           ].includes(prop)) {
             if (typeof cleanVal === "string") {
               cleanVal = parseFloat(cleanVal.replace(/[^0-9.-]+/g, "")) || 0;
@@ -401,6 +480,14 @@ export default function QuotationEditor() {
       ...prev,
       [paramKey]: newVal
     }));
+    // When overall margin is changed in original dropdown, update all rows individually
+    if (paramKey === "margin") {
+      const newMarginPct = Math.round(newVal * 100);
+      setItems(prev => prev.map(item => ({
+        ...item,
+        margin: newMarginPct
+      })));
+    }
   };
 
   // Commit parameter change with audit logging
@@ -582,11 +669,6 @@ export default function QuotationEditor() {
       if (preset.length) target.length = preset.length;
       if (preset.width) target.width = preset.width;
       if (preset.height) target.height = preset.height;
-      if (preset.cartonSize) target.cartonSize = preset.cartonSize;
-      if (preset.packing) target.packing = preset.packing;
-      if (preset.palletSize) target.palletSize = preset.palletSize;
-      if (preset.bundlesPerPallet) target.bundlesPerPallet = preset.bundlesPerPallet;
-      if (preset.cartonsPerPallet) target.cartonsPerPallet = preset.cartonsPerPallet;
       if (preset.gsm) target.gsm = preset.gsm;
       if (preset.latexRatio) target.latexRatio = preset.latexRatio;
       updated[selectedItemIndex] = target;
@@ -760,6 +842,31 @@ export default function QuotationEditor() {
     return td;
   };
 
+  // Custom Yellow Margin Cell Renderer for highlighted editable line margin column
+  const marginRenderer = (instance, td, row, col, prop, value) => {
+    td.className = "htCenter htMiddle";
+    td.style.background = "#fef08a"; // Soft Excel yellow fill
+    td.style.color = "#854d0e";      // Dark gold / amber text
+    td.style.fontWeight = "700";
+    td.style.fontSize = "12px";
+    
+    if (value !== undefined && value !== null && value !== "") {
+      const clean = String(value).replace("%", "").trim();
+      const num = parseFloat(clean);
+      if (!isNaN(num) && num > 0) {
+        td.innerText = `${num}%`;
+      } else {
+        const defM = Math.round((financialParams.margin !== undefined ? financialParams.margin : 0.40) * 100);
+        td.innerText = `${defM}%`;
+      }
+    } else {
+      const defM = Math.round((financialParams.margin !== undefined ? financialParams.margin : 0.40) * 100);
+      td.innerText = `${defM}%`;
+    }
+    td.title = "Margin % (Yellow cell = line margin override. Edit here or change global dropdown)";
+    return td;
+  };
+
   // Cell Selection Handler to display exact Excel coordinates and formula expressions in fx Formula Bar
   const handleCellSelection = (row, col) => {
     const colLetters = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"];
@@ -782,6 +889,11 @@ export default function QuotationEditor() {
 
     if (colDef.data === "quotedPrice") {
       setActiveCellValue(`[Quoted Price: ${priceTerm} (${containerSize})] -> ${getDisplayPrice(item, priceTerm, containerSize, financialParams.cifRate).label}`);
+    } else if (colDef.data === "margin") {
+      const lineM = item.margin;
+      const isCustom = lineM !== undefined && lineM !== null && lineM !== "";
+      const effM = item.effectiveMargin !== undefined ? item.effectiveMargin : financialParams.margin;
+      setActiveCellValue(`Line Margin: ${(effM * 100).toFixed(1)}% (Yellow cell: edit to set custom line margin or change global dropdown)`);
     } else if (colDef.data === "cartonsPer40ft" || colDef.data === "bundlesPer40ft") {
       setActiveCellValue(item.cartonsPerPallet > 0 && item.palletsPer40ft > 0 ? `Pallets(${item.palletsPer40ft}) * Ctns/Plt(${item.cartonsPerPallet}) = ${item.cartonsPer40ft}` : `Floor load tolerance (66 CBM) = ${item.cartonsPer40ft}`);
     } else if (colDef.data === "cartonsPer20ft" || colDef.data === "bundlesPer20ft") {
@@ -790,27 +902,53 @@ export default function QuotationEditor() {
       setActiveCellValue(`Cartons/Bundles 40ft(${item.cartonsPer40ft}) * Packing(${item.packing || 1}) = ${item.qtyPer40ft.toLocaleString()}`);
     } else if (colDef.data === "qtyPer20ft") {
       setActiveCellValue(`Cartons/Bundles 20ft(${item.cartonsPer20ft}) * Packing(${item.packing || 1}) = ${item.qtyPer20ft.toLocaleString()}`);
+    } else if (colDef.data === "orderVolume") {
+      setActiveCellValue(`Customer Order Volume (Manual Entry): ${Number(item.orderVolume || 0).toLocaleString()} pieces`);
+    } else if (colDef.data === "orderCartons") {
+      setActiveCellValue(`Order Cartons/Bundles/Rolls = Volume(${Number(item.orderVolume || 0).toLocaleString()}) / Packing(${item.packing || item.qtyPerBundle || 1}) = ${item.orderCartons}`);
+    } else if (colDef.data === "orderPallets") {
+      const plQty = (item.cartonsPerPallet || item.bundlesPerPallet || 0) * (item.packing || item.qtyPerBundle || 1);
+      setActiveCellValue(`Order Pallets = Volume(${Number(item.orderVolume || 0).toLocaleString()}) / QtyPerPallet(${plQty}) = ${item.orderPallets}`);
+    } else if (colDef.data === "orderTotalCbm") {
+      const uCbm = item.rollCbm || item.itemCbm || item.cartonCbm || item.pieceCbm || 0;
+      setActiveCellValue(`Total CBM = Unit CBM(${uCbm.toFixed(4)}) * Order Units(${item.orderCartons || 0}) = ${item.orderTotalCbm} CBM`);
     } else {
       const val = item[colDef.data] !== undefined ? item[colDef.data] : "";
       setActiveCellValue(String(val));
     }
   };
 
+  const globalMarginPct = Math.round((financialParams.margin !== undefined ? financialParams.margin : 0.40) * 100);
+
   // Prepare Data for Handsontable in Quotation Format Template (Sheet 1 & 3)
   const templateHotData = calculatedItems.map((item, idx) => {
     const dispPrice = getDisplayPrice(item, priceTerm, containerSize, financialParams.cifRate);
+    const mergedDesc = formatMergedDescription(item, item.description || `Item #${idx + 1}`);
+    const rowMargin = (item.margin !== undefined && item.margin !== null && item.margin !== "")
+      ? (typeof item.margin === "number" ? item.margin : parseFloat(String(item.margin).replace("%", "")) || globalMarginPct)
+      : globalMarginPct;
+
     return {
       idx: idx + 1,
       quotedPrice: dispPrice.label,
-      ...item
+      ...item,
+      margin: rowMargin,
+      description: mergedDesc
     };
   });
 
   // Prepare Data for Handsontable in Data Entry Backend (Sheet 2 & 4)
-  const dataEntryHotData = calculatedItems.map((item, idx) => ({
-    idx: idx + 1,
-    ...item
-  }));
+  const dataEntryHotData = calculatedItems.map((item, idx) => {
+    const rowMargin = (item.margin !== undefined && item.margin !== null && item.margin !== "")
+      ? (typeof item.margin === "number" ? item.margin : parseFloat(String(item.margin).replace("%", "")) || globalMarginPct)
+      : globalMarginPct;
+
+    return {
+      idx: idx + 1,
+      ...item,
+      margin: rowMargin
+    };
+  });
 
   // Handsontable Columns for Sheet 1: Quotation format Bedding
   const beddingTemplateHotColumns = [
@@ -828,11 +966,16 @@ export default function QuotationEditor() {
     { data: "bundlesPerPallet", title: "Bundles per pallet", subTitle: "As per cost req", type: "numeric", width: 120, className: "htCenter htMiddle" },
     { data: "palletsPer20ft", title: "Pallets per 20ft", subTitle: "Marketing to fill", type: "numeric", width: 110, className: "htCenter htMiddle" },
     { data: "palletsPer40ft", title: "Pallets per 40ft", subTitle: "Marketing to fill", type: "numeric", width: 110, className: "htCenter htMiddle" },
+    { data: "margin", title: "Margin % (Opt)", subTitle: "Override global %", type: "numeric", renderer: marginRenderer, width: 115, className: "htCenter htMiddle" },
     { data: "quotedPrice", title: "Price FOB /cif/Ex works", subTitle: "Auto calculated price", renderer: priceRenderer, readOnly: true, width: 140 },
     { data: "bundlesPer20ft", title: "Bundles per 20ft", subTitle: "Auto cal", renderer: formulaRenderer, readOnly: true, width: 105 },
     { data: "qtyPer20ft", title: "Qty per 20ft", subTitle: "Auto pick", renderer: formulaRenderer, readOnly: true, width: 110 },
     { data: "bundlesPer40ft", title: "Bundles per 40ft", subTitle: "Auto cal", renderer: formulaRenderer, readOnly: true, width: 105 },
-    { data: "qtyPer40ft", title: "Qty per 40ft", subTitle: "Auto pick", renderer: formulaRenderer, readOnly: true, width: 110 }
+    { data: "qtyPer40ft", title: "Qty per 40ft", subTitle: "Auto pick", renderer: formulaRenderer, readOnly: true, width: 110 },
+    { data: "orderVolume", title: "Customer Order Volume", subTitle: "Manual Entry (Pcs)", type: "numeric", width: 145, className: "htCenter htMiddle" },
+    { data: "orderCartons", title: "Order Bundles", subTitle: "Auto cal (Vol / Pcs)", renderer: formulaRenderer, readOnly: true, width: 125 },
+    { data: "orderPallets", title: "Order Pallets", subTitle: "Auto cal (Vol / Plt Qty)", renderer: formulaRenderer, readOnly: true, width: 125 },
+    { data: "orderTotalCbm", title: "Total CBM", subTitle: "Auto cal (CBM x Bdls)", renderer: formulaRenderer, readOnly: true, width: 125 }
   ];
 
   // Handsontable Columns for Sheet 3: Quotation format Horticulture (NO DUPLICATES)
@@ -847,11 +990,16 @@ export default function QuotationEditor() {
     { data: "palletsPer20ft", title: "Pallets per 20ft", subTitle: "Marketing to fill", type: "numeric", width: 110, className: "htCenter htMiddle" },
     { data: "palletsPer40ft", title: "Pallets per 40ft", subTitle: "Marketing to fill", type: "numeric", width: 110, className: "htCenter htMiddle" },
     { data: "rollDiameter", title: "Roll diameter (If Roll)", subTitle: "Roll mode", width: 110, className: "htCenter htMiddle" },
+    { data: "margin", title: "Margin % (Opt)", subTitle: "Override global %", type: "numeric", renderer: marginRenderer, width: 115, className: "htCenter htMiddle" },
     { data: "quotedPrice", title: "Price FOB /cif/Ex works", subTitle: "Auto calculated price", renderer: priceRenderer, readOnly: true, width: 140 },
     { data: "cartonsPer20ft", title: "Cartons / Bundles per 20ft", subTitle: "Auto / Manual", type: "numeric", width: 130, className: "htCenter htMiddle" },
     { data: "qtyPer20ft", title: "Qty per 20ft", subTitle: "Auto pick", renderer: formulaRenderer, readOnly: true, width: 110 },
     { data: "cartonsPer40ft", title: "Cartons / Bundles per 40ft", subTitle: "Auto / Manual", type: "numeric", width: 130, className: "htCenter htMiddle" },
-    { data: "qtyPer40ft", title: "Qty per 40ft", subTitle: "Auto pick", renderer: formulaRenderer, readOnly: true, width: 110 }
+    { data: "qtyPer40ft", title: "Qty per 40ft", subTitle: "Auto pick", renderer: formulaRenderer, readOnly: true, width: 110 },
+    { data: "orderVolume", title: "Customer Order Volume", subTitle: "Manual Entry (Pcs)", type: "numeric", width: 145, className: "htCenter htMiddle" },
+    { data: "orderCartons", title: "Order Ctns/Bdls/Rolls", subTitle: "Auto cal (Vol / Packing)", renderer: formulaRenderer, readOnly: true, width: 140 },
+    { data: "orderPallets", title: "Order Pallets", subTitle: "Auto cal (Vol / Plt Qty)", renderer: formulaRenderer, readOnly: true, width: 125 },
+    { data: "orderTotalCbm", title: "Total CBM", subTitle: "Auto cal (CBM x Units)", renderer: formulaRenderer, readOnly: true, width: 125 }
   ];
 
   // Dynamic filtered column definitions and nested headers based on user-selected checkboxes
@@ -901,6 +1049,7 @@ export default function QuotationEditor() {
     { data: "palletSize", title: "Pallet size (Opt)", width: 95, className: "htCenter htMiddle" },
     { data: "bundlesPerPallet", title: "Bundles per pallet", type: "numeric", width: 115, className: "htCenter htMiddle" },
     { data: "unitCost", title: "Unit Cost (Fin)", type: "numeric", numericFormat: { pattern: "$0,0.00" }, width: 110, className: "htCenter htMiddle" },
+    { data: "margin", title: "Margin % (Opt)", type: "numeric", renderer: marginRenderer, width: 115, className: "htCenter htMiddle" },
     { data: "palletsPer20ft", title: "Pallets (20ft)", type: "numeric", width: 100, className: "htCenter htMiddle" },
     { data: "palletsPer40ft", title: "Pallets (40ft)", type: "numeric", width: 100, className: "htCenter htMiddle" },
     { data: "bundlesPer20ft", title: "Bundles 20ft", readOnly: true, width: 95, className: "htCenter htMiddle" },
@@ -911,7 +1060,11 @@ export default function QuotationEditor() {
     { data: "fobPrice40ft", title: "FOB Price (40ft)", readOnly: true, type: "numeric", numericFormat: { pattern: "$0,0.0000" }, width: 115, className: "htCenter htMiddle" },
     { data: "cifPrice20ft", title: "CIF Price (20ft)", readOnly: true, type: "numeric", numericFormat: { pattern: "$0,0.0000" }, width: 115, className: "htCenter htMiddle" },
     { data: "cifPrice40ft", title: "CIF Price (40ft)", readOnly: true, type: "numeric", numericFormat: { pattern: "$0,0.0000" }, width: 115, className: "htCenter htMiddle" },
-    { data: "exWorksPrice", title: "Ex work price", readOnly: true, type: "numeric", numericFormat: { pattern: "0,0.00" }, width: 105, className: "htCenter htMiddle" }
+    { data: "exWorksPrice", title: "Ex work price", readOnly: true, type: "numeric", numericFormat: { pattern: "0,0.00" }, width: 105, className: "htCenter htMiddle" },
+    { data: "orderVolume", title: "Order Volume", type: "numeric", width: 120, className: "htCenter htMiddle" },
+    { data: "orderCartons", title: "Order Bundles", readOnly: true, type: "numeric", numericFormat: { pattern: "0,0" }, width: 110, className: "htCenter htMiddle" },
+    { data: "orderPallets", title: "Order Pallets", readOnly: true, type: "numeric", numericFormat: { pattern: "0,0.00" }, width: 110, className: "htCenter htMiddle" },
+    { data: "orderTotalCbm", title: "Total CBM", readOnly: true, type: "numeric", numericFormat: { pattern: "0,0.000" }, width: 110, className: "htCenter htMiddle" }
   ];
 
   // Handsontable Columns for Sheet 4: Data entry for Horti (NO DUPLICATES)
@@ -927,6 +1080,7 @@ export default function QuotationEditor() {
     { data: "cartonsPerPallet", title: "Cartons / Bundles per Pallet", type: "numeric", width: 125, className: "htCenter htMiddle" },
     { data: "rollDiameter", title: "Roll diameter (If Roll)", width: 110, className: "htCenter htMiddle" },
     { data: "unitCost", title: "Unit Cost (Fin)", type: "numeric", numericFormat: { pattern: "$0,0.00" }, width: 110, className: "htCenter htMiddle" },
+    { data: "margin", title: "Margin % (Opt)", type: "numeric", renderer: marginRenderer, width: 115, className: "htCenter htMiddle" },
     { data: "palletsPer20ft", title: "Pallets (20ft)", type: "numeric", width: 100, className: "htCenter htMiddle" },
     { data: "palletsPer40ft", title: "Pallets (40ft)", type: "numeric", width: 100, className: "htCenter htMiddle" },
     { data: "cartonsPer20ft", title: "Cartons / Bundles 20ft", readOnly: true, width: 110, className: "htCenter htMiddle" },
@@ -937,7 +1091,11 @@ export default function QuotationEditor() {
     { data: "fobPrice40ft", title: "FOB Price (40ft)", readOnly: true, type: "numeric", numericFormat: { pattern: "$0,0.0000" }, width: 115, className: "htCenter htMiddle" },
     { data: "cifPrice20ft", title: "CIF Price (20ft)", readOnly: true, type: "numeric", numericFormat: { pattern: "$0,0.0000" }, width: 115, className: "htCenter htMiddle" },
     { data: "cifPrice40ft", title: "CIF Price (40ft)", readOnly: true, type: "numeric", numericFormat: { pattern: "$0,0.0000" }, width: 115, className: "htCenter htMiddle" },
-    { data: "exWorksPrice", title: "Ex work price", readOnly: true, type: "numeric", numericFormat: { pattern: "0,0.00" }, width: 105, className: "htCenter htMiddle" }
+    { data: "exWorksPrice", title: "Ex work price", readOnly: true, type: "numeric", numericFormat: { pattern: "0,0.00" }, width: 105, className: "htCenter htMiddle" },
+    { data: "orderVolume", title: "Order Volume", type: "numeric", width: 120, className: "htCenter htMiddle" },
+    { data: "orderCartons", title: "Order Ctns/Bdls/Rolls", readOnly: true, type: "numeric", numericFormat: { pattern: "0,0" }, width: 125, className: "htCenter htMiddle" },
+    { data: "orderPallets", title: "Order Pallets", readOnly: true, type: "numeric", numericFormat: { pattern: "0,0.00" }, width: 110, className: "htCenter htMiddle" },
+    { data: "orderTotalCbm", title: "Total CBM", readOnly: true, type: "numeric", numericFormat: { pattern: "0,0.000" }, width: 110, className: "htCenter htMiddle" }
   ];
 
   return (
@@ -1326,12 +1484,12 @@ export default function QuotationEditor() {
                   <Button 
                     size="small" 
                     onClick={() => {
-                      if (isBedding) setSelectedBeddingColumns(ALL_BEDDING_COLUMN_KEYS);
-                      else setSelectedHortiColumns(ALL_HORTI_COLUMN_KEYS);
+                      if (isBedding) setSelectedBeddingColumns(DEFAULT_SELECTED_BEDDING_COLUMNS);
+                      else setSelectedHortiColumns(DEFAULT_SELECTED_HORTI_COLUMNS);
                     }}
                     style={{ fontSize: "0.75rem", borderRadius: 4 }}
                   >
-                    All Columns ({isBedding ? ALL_BEDDING_COLUMN_KEYS.length : ALL_HORTI_COLUMN_KEYS.length})
+                    Default Standard ({isBedding ? DEFAULT_SELECTED_BEDDING_COLUMNS.length : DEFAULT_SELECTED_HORTI_COLUMNS.length})
                   </Button>
                   
                   {!isBedding && (
@@ -1341,21 +1499,21 @@ export default function QuotationEditor() {
                         onClick={() => setSelectedHortiColumns(["idx", "imageUrl", "description", "packing", "cartonSize", "quotedPrice", "cartonsPer20ft", "qtyPer20ft", "cartonsPer40ft", "qtyPer40ft"])}
                         style={{ fontSize: "0.75rem", borderRadius: 4, background: "#ecfdf5", borderColor: "#a7f3d0", color: "#065f46" }}
                       >
-                        📦 Standard (Carton/Bundle Floor Load)
+                        📦 Floor Load
                       </Button>
                       <Button 
                         size="small" 
                         onClick={() => setSelectedHortiColumns(["idx", "imageUrl", "description", "packing", "cartonSize", "palletSize", "cartonsPerPallet", "palletsPer20ft", "palletsPer40ft", "quotedPrice", "cartonsPer20ft", "qtyPer20ft", "cartonsPer40ft", "qtyPer40ft"])}
                         style={{ fontSize: "0.75rem", borderRadius: 4, background: "#f0fdf4", borderColor: "#86efac", color: "#166534" }}
                       >
-                        🏗️ Palletized Loading
+                        🏗️ Palletized
                       </Button>
                       <Button 
                         size="small" 
                         onClick={() => setSelectedHortiColumns(["idx", "imageUrl", "description", "packing", "rollDiameter", "quotedPrice", "cartonsPer20ft", "qtyPer20ft", "cartonsPer40ft", "qtyPer40ft"])}
                         style={{ fontSize: "0.75rem", borderRadius: 4, background: "#f5f3ff", borderColor: "#ddd6fe", color: "#5b21b6" }}
                       >
-                        🌀 Roll Form Loading
+                        🌀 Roll Form
                       </Button>
                     </>
                   )}
@@ -1367,17 +1525,42 @@ export default function QuotationEditor() {
                         onClick={() => setSelectedBeddingColumns(["idx", "imageUrl", "description", "length", "width", "height", "organic", "ncRcRatio", "density", "qtyPerBundle", "quotedPrice", "bundlesPer20ft", "qtyPer20ft", "bundlesPer40ft", "qtyPer40ft"])}
                         style={{ fontSize: "0.75rem", borderRadius: 4, background: "#f0f9ff", borderColor: "#bae6fd", color: "#0369a1" }}
                       >
-                        Standard Floor Load
+                        📦 Floor Load
                       </Button>
                       <Button 
                         size="small" 
-                        onClick={() => setSelectedBeddingColumns(ALL_BEDDING_COLUMN_KEYS)}
+                        onClick={() => setSelectedBeddingColumns(DEFAULT_SELECTED_BEDDING_COLUMNS)}
                         style={{ fontSize: "0.75rem", borderRadius: 4, background: "#f0fdf4", borderColor: "#86efac", color: "#166534" }}
                       >
-                        Palletized
+                        🏗️ Palletized
                       </Button>
                     </>
                   )}
+
+                  <Button 
+                    size="small" 
+                    onClick={() => {
+                      const orderCols = ["orderVolume", "orderCartons", "orderPallets", "orderTotalCbm"];
+                      if (isBedding) {
+                        const hasAll = orderCols.every(c => selectedBeddingColumns.includes(c));
+                        if (hasAll) {
+                          setSelectedBeddingColumns(prev => prev.filter(c => !orderCols.includes(c)));
+                        } else {
+                          setSelectedBeddingColumns(prev => Array.from(new Set([...prev, ...orderCols])));
+                        }
+                      } else {
+                        const hasAll = orderCols.every(c => selectedHortiColumns.includes(c));
+                        if (hasAll) {
+                          setSelectedHortiColumns(prev => prev.filter(c => !orderCols.includes(c)));
+                        } else {
+                          setSelectedHortiColumns(prev => Array.from(new Set([...prev, ...orderCols])));
+                        }
+                      }
+                    }}
+                    style={{ fontSize: "0.75rem", borderRadius: 4, background: "#fffbeb", borderColor: "#fde68a", color: "#b45309", fontWeight: 700 }}
+                  >
+                    📊 Toggle Order Plan (+4 Cols)
+                  </Button>
                 </Space>
               </div>
 
@@ -1410,6 +1593,7 @@ export default function QuotationEditor() {
                 nestedHeaders={activeTab === "sheet1_bedding" ? activeBeddingNestedHeaders : activeHortiNestedHeaders}
                 colHeaders={true}
                 rowHeaders={false}
+                fixedColumnsStart={3}
                 height="auto"
                 licenseKey="non-commercial-and-evaluation"
                 afterChange={handleHotChange}
@@ -1776,6 +1960,7 @@ export default function QuotationEditor() {
                 columns={isBedding ? beddingDataEntryHotColumns : hortiDataEntryHotColumns}
                 colHeaders={true}
                 rowHeaders={false}
+                fixedColumnsStart={2}
                 height="auto"
                 licenseKey="non-commercial-and-evaluation"
                 afterChange={handleHotChange}

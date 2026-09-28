@@ -1,6 +1,6 @@
 import { jsPDF } from "jspdf";
 import logoUrl from "../assets/hayleys-fibre-eco-solutions.jpg";
-import { DEFAULT_COMPANY_DETAILS, getDisplayPrice } from "./quotationCalculations";
+import { DEFAULT_COMPANY_DETAILS, getDisplayPrice, formatMergedDescription } from "./quotationCalculations";
 
 const loadImageBase64 = (url) => {
   return new Promise((resolve) => {
@@ -80,82 +80,84 @@ export async function downloadQuotationPDF(quotationData) {
   doc.setLineWidth(0.3);
   doc.setDrawColor(0, 0, 0);
   
-  const headerRightWidth = 75;
-  const headerLeftWidth = tableWidth - headerRightWidth; // 198mm
+  const headerRightWidth = 85;
+  const headerLeftWidth = tableWidth - headerRightWidth; // 188mm
 
   doc.setFillColor(250, 250, 250);
-  doc.rect(margin + 2, y, headerLeftWidth, 16, "FD");
-  doc.rect(margin + 2 + headerLeftWidth, y, headerRightWidth, 16, "D");
+  doc.rect(margin + 2, y, headerLeftWidth, 17, "FD");
+  doc.rect(margin + 2 + headerLeftWidth, y, headerRightWidth, 17, "D");
 
   // Header Left: Logo + "Price Quotation" Title
   let textStartX = margin + 6;
   if (logoBase64) {
     try {
-      doc.addImage(logoBase64, "JPEG", margin + 5, y + 2, 32, 12);
-      textStartX = margin + 42;
+      doc.addImage(logoBase64, "JPEG", margin + 5, y + 2, 34, 13);
+      textStartX = margin + 44;
     } catch (e) {
       textStartX = margin + 6;
     }
   }
 
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(16);
+  doc.setFontSize(18);
   doc.setTextColor(0, 0, 0);
-  doc.text("Price Quotation", textStartX, y + 10.5);
+  doc.text("Price Quotation", textStartX, y + 11);
 
   // Header Right: Quotation Ref Number & Date
-  doc.setFontSize(7.5);
+  doc.setFontSize(9);
   doc.setFont("helvetica", "bold");
-  doc.text("Quotation ref number :", margin + 2 + headerLeftWidth + 4, y + 5.5);
+  doc.text("Quotation ref number :", margin + 2 + headerLeftWidth + 4, y + 6);
   doc.setFont("helvetica", "bold");
-  doc.text(quotationNo, margin + 2 + headerLeftWidth + 38, y + 5.5);
+  doc.setFontSize(9.5);
+  doc.text(quotationNo, margin + 2 + headerLeftWidth + 42, y + 6);
 
-  doc.line(margin + 2 + headerLeftWidth, y + 8, margin + 2 + tableWidth, y + 8);
+  doc.line(margin + 2 + headerLeftWidth, y + 8.5, margin + 2 + tableWidth, y + 8.5);
 
+  doc.setFontSize(9);
   doc.setFont("helvetica", "bold");
-  doc.text("Date :", margin + 2 + headerLeftWidth + 4, y + 13);
+  doc.text("Date :", margin + 2 + headerLeftWidth + 4, y + 14);
   doc.setFont("helvetica", "normal");
-  doc.text(quotationDate, margin + 2 + headerLeftWidth + 38, y + 13);
+  doc.text(quotationDate, margin + 2 + headerLeftWidth + 42, y + 14);
 
-  y += 18;
+  y += 19;
 
   // 2. Shipper & Buyer Grid Boxes (Exact B6:T8 layout)
   const boxWidth = tableWidth / 2; // 136.5mm each
-  const boxHeight = 18;
+  const boxHeight = 20;
 
   doc.rect(margin + 2, y, boxWidth, boxHeight, "D");
   doc.rect(margin + 2 + boxWidth, y, boxWidth, boxHeight, "D");
 
   // Shipper Block
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(7.5);
+  doc.setFontSize(9);
   doc.setTextColor(0, 0, 0);
-  doc.text("Shipper :", margin + 5, y + 4);
+  doc.text("Shipper :", margin + 5, y + 4.5);
 
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(7.5);
-  doc.text(shipper.shipperName || "Toyo Cushion Lanka", margin + 5, y + 8);
+  doc.setFontSize(9);
+  doc.text(shipper.shipperName || "Toyo Cushion Lanka", margin + 5, y + 9);
   
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(6.5);
-  doc.text(`COMPANY NO : ${shipper.companyNo || "PV 5492"}`, margin + 5, y + 11.5);
-  doc.text(shipper.address || "400 Deans Road Colombo 10 01000 Sri Lanka", margin + 5, y + 14.5);
-  doc.text(`Tel: ${shipper.phone || "94112232939-Fixed"}`, margin + 5, y + 17.5);
+  doc.setFontSize(7.5);
+  doc.text(`COMPANY NO : ${shipper.companyNo || "PV 5492"}`, margin + 5, y + 13);
+  doc.text(shipper.address || "400 Deans Road Colombo 10 01000 Sri Lanka", margin + 5, y + 16.5);
+  doc.text(`Tel: ${shipper.phone || "94112232939-Fixed"}`, margin + 5, y + 19.5);
 
   // Buyer Block
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(7.5);
-  doc.text("Buyer :", margin + 2 + boxWidth + 4, y + 4);
+  doc.setFontSize(9);
+  doc.text("Buyer :", margin + 2 + boxWidth + 4, y + 4.5);
 
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(8.5);
-  doc.text(buyerName, margin + 2 + boxWidth + 4, y + 8.5);
+  doc.setFontSize(10);
+  doc.text(buyerName, margin + 2 + boxWidth + 4, y + 9.5);
 
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(7);
-  doc.text(`Category: ${category.toUpperCase()}   |   Pricing Basis: ${priceTerm} (${containerSize} Container)`, margin + 2 + boxWidth + 4, y + 13.5);
+  doc.setFontSize(8);
+  doc.text(`Category: ${category.toUpperCase()}   |   Pricing Basis: ${priceTerm} (${containerSize} Container)`, margin + 2 + boxWidth + 4, y + 15);
 
-  y += 20;
+  y += 22;
 
   // 3. Master Table Column Layouts
   let masterCols = [];
@@ -176,18 +178,23 @@ export async function downloadQuotationPDF(quotationData) {
       { key: "bdlPlt", dataKey: "bundlesPerPallet", title: "Bdl/Plt", subTitle: "As req", baseWidth: 12, align: "center" },
       { key: "plts20", dataKey: "palletsPer20ft", title: "Plt20", subTitle: "20ft", baseWidth: 11, align: "center" },
       { key: "plts40", dataKey: "palletsPer40ft", title: "Plt40", subTitle: "40ft", baseWidth: 11, align: "center" },
+      { key: "margin", dataKey: "margin", title: "Margin %", subTitle: "Override", baseWidth: 12, align: "center" },
       { key: "price", dataKey: "quotedPrice", title: `Price (${priceTerm})`, subTitle: "Auto cal", baseWidth: 18, align: "center" },
       { key: "bdl20", dataKey: "bundlesPer20ft", title: "Bdl20ft", subTitle: "Auto cal", baseWidth: 12, align: "center" },
       { key: "qty20", dataKey: "qtyPer20ft", title: "Qty 20ft", subTitle: "Auto pick", baseWidth: 15, align: "center" },
       { key: "bdl40", dataKey: "bundlesPer40ft", title: "Bdl40ft", subTitle: "Auto cal", baseWidth: 12, align: "center" },
-      { key: "qty40", dataKey: "qtyPer40ft", title: "Qty 40ft", subTitle: "Auto pick", baseWidth: 15, align: "center" }
+      { key: "qty40", dataKey: "qtyPer40ft", title: "Qty 40ft", subTitle: "Auto pick", baseWidth: 15, align: "center" },
+      { key: "ordVol", dataKey: "orderVolume", title: "Order Vol", subTitle: "Pcs", baseWidth: 14, align: "center" },
+      { key: "ordCtns", dataKey: "orderCartons", title: "Order Bdls", subTitle: "Auto cal", baseWidth: 14, align: "center" },
+      { key: "ordPlts", dataKey: "orderPallets", title: "Order Plts", subTitle: "Auto cal", baseWidth: 14, align: "center" },
+      { key: "ordCbm", dataKey: "orderTotalCbm", title: "Total CBM", subTitle: "Auto cal", baseWidth: 14, align: "center" }
     ];
   } else {
     // Horticulture Master Columns
     masterCols = [
       { key: "idx", dataKey: "idx", title: "#", subTitle: "#", baseWidth: 7, align: "center" },
       { key: "image", dataKey: "imageUrl", title: "Image", subTitle: "Images", baseWidth: 15, align: "center" },
-      { key: "spec", dataKey: "description", title: "Product spec", subTitle: "As per cost req data", baseWidth: 60, align: "left" },
+      { key: "spec", dataKey: "description", title: "Product spec", subTitle: "As per cost req data", baseWidth: 55, align: "left" },
       { key: "packing", dataKey: "packing", title: "Pack (Ctn/Bdl)", subTitle: "As req", baseWidth: 16, align: "center" },
       { key: "ctnSize", dataKey: "cartonSize", title: "Ctn/Bdl Size", subTitle: "CM", baseWidth: 18, align: "center" },
       { key: "pltSize", dataKey: "palletSize", title: "Pallet", subTitle: "Size", baseWidth: 13, align: "center" },
@@ -195,11 +202,16 @@ export async function downloadQuotationPDF(quotationData) {
       { key: "plts20", dataKey: "palletsPer20ft", title: "Plt 20ft", subTitle: "Marketing", baseWidth: 12, align: "center" },
       { key: "plts40", dataKey: "palletsPer40ft", title: "Plt 40ft", subTitle: "Marketing", baseWidth: 12, align: "center" },
       { key: "rollDiameter", dataKey: "rollDiameter", title: "Roll Dia", subTitle: "CM", baseWidth: 12, align: "center" },
+      { key: "margin", dataKey: "margin", title: "Margin %", subTitle: "Override", baseWidth: 12, align: "center" },
       { key: "price", dataKey: "quotedPrice", title: `Price (${priceTerm})`, subTitle: "Auto cal", baseWidth: 20, align: "center" },
       { key: "ctn20", dataKey: "cartonsPer20ft", title: "Ctn/Bdl 20ft", subTitle: "Auto pick", baseWidth: 16, align: "center" },
       { key: "qty20", dataKey: "qtyPer20ft", title: "Qty 20ft", subTitle: "Auto pick", baseWidth: 18, align: "center" },
       { key: "ctn40", dataKey: "cartonsPer40ft", title: "Ctn/Bdl 40ft", subTitle: "Auto pick", baseWidth: 16, align: "center" },
-      { key: "qty40", dataKey: "qtyPer40ft", title: "Qty 40ft", subTitle: "Auto pick", baseWidth: 18, align: "center" }
+      { key: "qty40", dataKey: "qtyPer40ft", title: "Qty 40ft", subTitle: "Auto pick", baseWidth: 18, align: "center" },
+      { key: "ordVol", dataKey: "orderVolume", title: "Order Vol", subTitle: "Pcs", baseWidth: 15, align: "center" },
+      { key: "ordCtns", dataKey: "orderCartons", title: "Order Ctns", subTitle: "Auto cal", baseWidth: 15, align: "center" },
+      { key: "ordPlts", dataKey: "orderPallets", title: "Order Plts", subTitle: "Auto cal", baseWidth: 14, align: "center" },
+      { key: "ordCbm", dataKey: "orderTotalCbm", title: "Total CBM", subTitle: "Auto cal", baseWidth: 14, align: "center" }
     ];
   }
 
@@ -219,8 +231,8 @@ export async function downloadQuotationPDF(quotationData) {
   }));
 
   // Draw 2-Tier Table Header Rows (matching Excel Row 9 & Row 10)
-  const headerHeight1 = 5;
-  const headerHeight2 = 4.5;
+  const headerHeight1 = 6;
+  const headerHeight2 = 5.5;
   const totalHeaderHeight = headerHeight1 + headerHeight2;
 
   doc.setFillColor(235, 235, 235);
@@ -235,22 +247,22 @@ export async function downloadQuotationPDF(quotationData) {
 
     // Header Tier 1 Text
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(6);
+    doc.setFontSize(7.5);
     doc.setTextColor(0, 0, 0);
     if (col.align === "center") {
-      doc.text(col.title, curX + (col.width / 2), y + 3.5, { align: "center" });
+      doc.text(col.title, curX + (col.width / 2), y + 4.2, { align: "center" });
     } else {
-      doc.text(col.title, curX + 1.5, y + 3.5);
+      doc.text(col.title, curX + 1.5, y + 4.2);
     }
 
     // Header Tier 2 Sub-Text
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(5);
+    doc.setFontSize(6);
     doc.setTextColor(70, 70, 70);
     if (col.align === "center") {
-      doc.text(col.subTitle, curX + (col.width / 2), y + headerHeight1 + 3.2, { align: "center" });
+      doc.text(col.subTitle, curX + (col.width / 2), y + headerHeight1 + 3.8, { align: "center" });
     } else {
-      doc.text(col.subTitle, curX + 1.5, y + headerHeight1 + 3.2);
+      doc.text(col.subTitle, curX + 1.5, y + headerHeight1 + 3.8);
     }
 
     curX += col.width;
@@ -266,10 +278,10 @@ export async function downloadQuotationPDF(quotationData) {
     const item = items[i];
     const imgBase64 = itemImagesBase64[i];
     const dispPrice = getDisplayPrice(item, priceTerm, containerSize, financialParams.cifRate);
-    const rowHeight = 15;
+    const rowHeight = 16;
 
     // Check pagination (Ensure space for bottom box on final page)
-    if (y + rowHeight > 148) {
+    if (y + rowHeight > 146) {
       doc.addPage("a4", "l");
       y = margin + 8;
       doc.setLineWidth(0.4);
@@ -281,7 +293,7 @@ export async function downloadQuotationPDF(quotationData) {
 
     curX = margin + 2;
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(6);
+    doc.setFontSize(7.5);
     doc.setTextColor(0, 0, 0);
 
     cols.forEach(col => {
@@ -289,81 +301,114 @@ export async function downloadQuotationPDF(quotationData) {
 
       if (col.key === "idx") {
         doc.setFont("helvetica", "bold");
-        doc.text(String(i + 1), curX + (col.width / 2), y + 8, { align: "center" });
+        doc.setFontSize(8);
+        doc.text(String(i + 1), curX + (col.width / 2), y + 9, { align: "center" });
         doc.setFont("helvetica", "normal");
       } else if (col.key === "image") {
         if (imgBase64) {
           try {
-            doc.addImage(imgBase64, "JPEG", curX + 1.5, y + 1.5, col.width - 3, 12);
+            doc.addImage(imgBase64, "JPEG", curX + 1.5, y + 1.5, col.width - 3, 13);
           } catch (e) {
-            doc.text("-", curX + (col.width / 2), y + 8, { align: "center" });
+            doc.text("-", curX + (col.width / 2), y + 9, { align: "center" });
           }
         } else {
-          doc.text("-", curX + (col.width / 2), y + 8, { align: "center" });
+          doc.text("-", curX + (col.width / 2), y + 9, { align: "center" });
         }
       } else if (col.key === "spec") {
-        const titleText = item.description || `Item #${i + 1}`;
-        const specText = item.specifications || "";
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(6);
-        const splitTitle = doc.splitTextToSize(titleText, col.width - 2);
-        doc.text(splitTitle[0] || "", curX + 1, y + 4.5);
-        
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(5);
-        const splitSpec = doc.splitTextToSize(specText, col.width - 2);
-        doc.text(splitSpec.slice(0, 3), curX + 1, y + 8);
-      } else if (col.key === "length") {
-        doc.text(String(item.length || "-"), curX + (col.width / 2), y + 8, { align: "center" });
-      } else if (col.key === "width") {
-        doc.text(String(item.width || "-"), curX + (col.width / 2), y + 8, { align: "center" });
-      } else if (col.key === "height") {
-        doc.text(String(item.height || "-"), curX + (col.width / 2), y + 8, { align: "center" });
-      } else if (col.key === "organic") {
-        doc.text(item.organic === "Organic" ? "Organic" : "Non-Org", curX + (col.width / 2), y + 8, { align: "center" });
-      } else if (col.key === "ncrc") {
-        doc.text(String(item.ncRcRatio || "80:20"), curX + (col.width / 2), y + 8, { align: "center" });
-      } else if (col.key === "density") {
-        doc.text(String(item.density || "-"), curX + (col.width / 2), y + 8, { align: "center" });
-      } else if (col.key === "qtyBdl") {
-        doc.text(String(item.qtyPerBundle || 1), curX + (col.width / 2), y + 8, { align: "center" });
-      } else if (col.key === "packing") {
-        doc.text(String(item.packing || 128), curX + (col.width / 2), y + 8, { align: "center" });
-      } else if (col.key === "ctnSize") {
-        doc.text(String(item.cartonSize || "-"), curX + (col.width / 2), y + 8, { align: "center" });
-      } else if (col.key === "pltSize") {
-        doc.text(String(item.palletSize || "TBA"), curX + (col.width / 2), y + 8, { align: "center" });
-      } else if (col.key === "bdlPlt") {
-        doc.text(String(item.bundlesPerPallet || "-"), curX + (col.width / 2), y + 8, { align: "center" });
-      } else if (col.key === "ctnPlt") {
-        doc.text(String(item.cartonsPerPallet || "-"), curX + (col.width / 2), y + 8, { align: "center" });
-      } else if (col.key === "plts40") {
-        doc.text(String(item.palletsPer40ft || "-"), curX + (col.width / 2), y + 8, { align: "center" });
-      } else if (col.key === "plts20") {
-        doc.text(String(item.palletsPer20ft || "-"), curX + (col.width / 2), y + 8, { align: "center" });
-      } else if (col.key === "rollDiameter") {
-        doc.text(String(item.rollDiameter || "-"), curX + (col.width / 2), y + 8, { align: "center" });
-      } else if (col.key === "price") {
+        const fullDesc = formatMergedDescription(item, item.description || `Item #${i + 1}`);
         doc.setFont("helvetica", "bold");
         doc.setFontSize(7);
-        doc.text(dispPrice.label, curX + (col.width / 2), y + 8, { align: "center" });
+        const splitLines = doc.splitTextToSize(fullDesc, col.width - 2);
+        doc.text(splitLines.slice(0, 4), curX + 1.5, y + 5);
+      } else if (col.key === "length") {
+        doc.setFontSize(7.5);
+        doc.text(String(item.length || "-"), curX + (col.width / 2), y + 9, { align: "center" });
+      } else if (col.key === "width") {
+        doc.setFontSize(7.5);
+        doc.text(String(item.width || "-"), curX + (col.width / 2), y + 9, { align: "center" });
+      } else if (col.key === "height") {
+        doc.setFontSize(7.5);
+        doc.text(String(item.height || "-"), curX + (col.width / 2), y + 9, { align: "center" });
+      } else if (col.key === "organic") {
+        doc.setFontSize(7.5);
+        doc.text(item.organic === "Organic" ? "Organic" : (item.organic || "Non-Org"), curX + (col.width / 2), y + 9, { align: "center" });
+      } else if (col.key === "ncrc") {
+        doc.setFontSize(7.5);
+        doc.text(String(item.ncRcRatio || "-"), curX + (col.width / 2), y + 9, { align: "center" });
+      } else if (col.key === "density") {
+        doc.setFontSize(7.5);
+        doc.text(String(item.density || "-"), curX + (col.width / 2), y + 9, { align: "center" });
+      } else if (col.key === "qtyBdl") {
+        doc.setFontSize(7.5);
+        doc.text(String(item.qtyPerBundle || "-"), curX + (col.width / 2), y + 9, { align: "center" });
+      } else if (col.key === "packing") {
+        doc.setFontSize(7.5);
+        doc.text(String(item.packing || "-"), curX + (col.width / 2), y + 9, { align: "center" });
+      } else if (col.key === "ctnSize") {
+        doc.setFontSize(7.5);
+        doc.text(String(item.cartonSize || "-"), curX + (col.width / 2), y + 9, { align: "center" });
+      } else if (col.key === "pltSize") {
+        doc.setFontSize(7.5);
+        doc.text(String(item.palletSize || "-"), curX + (col.width / 2), y + 9, { align: "center" });
+      } else if (col.key === "bdlPlt") {
+        doc.setFontSize(7.5);
+        doc.text(String(item.bundlesPerPallet || "-"), curX + (col.width / 2), y + 9, { align: "center" });
+      } else if (col.key === "ctnPlt") {
+        doc.setFontSize(7.5);
+        doc.text(String(item.cartonsPerPallet || "-"), curX + (col.width / 2), y + 9, { align: "center" });
+      } else if (col.key === "plts40") {
+        doc.setFontSize(7.5);
+        doc.text(String(item.palletsPer40ft || "-"), curX + (col.width / 2), y + 9, { align: "center" });
+      } else if (col.key === "plts20") {
+        doc.setFontSize(7.5);
+        doc.text(String(item.palletsPer20ft || "-"), curX + (col.width / 2), y + 9, { align: "center" });
+      } else if (col.key === "rollDiameter") {
+        doc.setFontSize(7.5);
+        doc.text(String(item.rollDiameter || "-"), curX + (col.width / 2), y + 9, { align: "center" });
+      } else if (col.key === "margin" || col.dataKey === "margin") {
+        doc.setFontSize(7.5);
+        const mNum = item.margin ? parseFloat(String(item.margin).replace("%", "")) : Math.round((financialParams.margin || 0.4) * 100);
+        const mVal = !isNaN(mNum) && mNum > 0 ? `${mNum}%` : "-";
+        doc.text(mVal, curX + (col.width / 2), y + 9, { align: "center" });
+      } else if (col.key === "price") {
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(9);
+        doc.text(dispPrice.label, curX + (col.width / 2), y + 9, { align: "center" });
         doc.setFont("helvetica", "normal");
       } else if (col.key === "bdl20") {
-        doc.text(String(item.bundlesPer20ft || "-"), curX + (col.width / 2), y + 8, { align: "center" });
+        doc.setFontSize(7.5);
+        doc.text(item.bundlesPer20ft ? String(Math.round(Number(item.bundlesPer20ft)).toLocaleString()) : "-", curX + (col.width / 2), y + 9, { align: "center" });
       } else if (col.key === "bdl40") {
-        doc.text(String(item.bundlesPer40ft || "-"), curX + (col.width / 2), y + 8, { align: "center" });
+        doc.setFontSize(7.5);
+        doc.text(item.bundlesPer40ft ? String(Math.round(Number(item.bundlesPer40ft)).toLocaleString()) : "-", curX + (col.width / 2), y + 9, { align: "center" });
       } else if (col.key === "ctn40") {
-        doc.text(String(item.cartonsPer40ft || "-"), curX + (col.width / 2), y + 8, { align: "center" });
+        doc.setFontSize(7.5);
+        doc.text(item.cartonsPer40ft ? String(Math.round(Number(item.cartonsPer40ft)).toLocaleString()) : "-", curX + (col.width / 2), y + 9, { align: "center" });
       } else if (col.key === "ctn20") {
-        doc.text(String(item.cartonsPer20ft || "-"), curX + (col.width / 2), y + 8, { align: "center" });
+        doc.setFontSize(7.5);
+        doc.text(item.cartonsPer20ft ? String(Math.round(Number(item.cartonsPer20ft)).toLocaleString()) : "-", curX + (col.width / 2), y + 9, { align: "center" });
       } else if (col.key === "qty40") {
         doc.setFont("helvetica", "bold");
-        doc.text(Number(item.qtyPer40ft || 0).toLocaleString(), curX + (col.width / 2), y + 8, { align: "center" });
+        doc.setFontSize(8);
+        doc.text(Number(item.qtyPer40ft || 0).toLocaleString(), curX + (col.width / 2), y + 9, { align: "center" });
         doc.setFont("helvetica", "normal");
       } else if (col.key === "qty20") {
         doc.setFont("helvetica", "bold");
-        doc.text(Number(item.qtyPer20ft || 0).toLocaleString(), curX + (col.width / 2), y + 8, { align: "center" });
+        doc.setFontSize(8);
+        doc.text(Number(item.qtyPer20ft || 0).toLocaleString(), curX + (col.width / 2), y + 9, { align: "center" });
         doc.setFont("helvetica", "normal");
+      } else if (col.key === "ordVol") {
+        doc.setFontSize(7.5);
+        doc.text(item.orderVolume ? Number(item.orderVolume).toLocaleString() : "-", curX + (col.width / 2), y + 9, { align: "center" });
+      } else if (col.key === "ordCtns") {
+        doc.setFontSize(7.5);
+        doc.text(item.orderCartons ? Number(item.orderCartons).toLocaleString() : "-", curX + (col.width / 2), y + 9, { align: "center" });
+      } else if (col.key === "ordPlts") {
+        doc.setFontSize(7.5);
+        doc.text(item.orderPallets ? Number(item.orderPallets).toFixed(2) : "-", curX + (col.width / 2), y + 9, { align: "center" });
+      } else if (col.key === "ordCbm") {
+        doc.setFontSize(7.5);
+        doc.text(item.orderTotalCbm ? Number(item.orderTotalCbm).toFixed(3) : "-", curX + (col.width / 2), y + 9, { align: "center" });
       }
 
       curX += col.width;
@@ -373,84 +418,84 @@ export async function downloadQuotationPDF(quotationData) {
   }
 
   // 4. Commercial Notes & Terms (Bottom Box - Exact match of Excel rows 15 - 26)
-  const bottomBoxY = Math.max(y + 3, 149);
-  const bottomBoxHeight = 45;
+  const bottomBoxY = Math.max(y + 3, 146);
+  const bottomBoxHeight = 48;
 
   doc.rect(margin + 2, bottomBoxY, tableWidth, bottomBoxHeight, "D");
 
   // Title Note
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(8);
+  doc.setFontSize(10);
   doc.setTextColor(0, 0, 0);
-  doc.text("Note :", margin + 5, bottomBoxY + 5.5);
+  doc.text("Note :", margin + 5, bottomBoxY + 6);
 
   // Note items grid
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(6.5);
-  doc.text("Packing :", margin + 5, bottomBoxY + 10.5);
+  doc.setFontSize(8);
+  doc.text("Packing :", margin + 5, bottomBoxY + 11.5);
   doc.setFont("helvetica", "normal");
-  doc.text(packing, margin + 26, bottomBoxY + 10.5);
+  doc.text(packing, margin + 28, bottomBoxY + 11.5);
 
   doc.setFont("helvetica", "bold");
-  doc.text("Price term :", margin + 5, bottomBoxY + 15.5);
+  doc.text("Price term :", margin + 5, bottomBoxY + 17);
   doc.setFont("helvetica", "normal");
-  doc.text(`${priceTerm} (${containerSize} Container)`, margin + 26, bottomBoxY + 15.5);
+  doc.text(`${priceTerm} (${containerSize} Container)`, margin + 28, bottomBoxY + 17);
 
   doc.setFont("helvetica", "bold");
-  doc.text("Payment terms :", margin + 5, bottomBoxY + 20.5);
+  doc.text("Payment terms :", margin + 5, bottomBoxY + 22.5);
   doc.setFont("helvetica", "normal");
-  doc.text(paymentTerms, margin + 26, bottomBoxY + 20.5);
+  doc.text(paymentTerms, margin + 28, bottomBoxY + 22.5);
 
   doc.setFont("helvetica", "bold");
-  doc.text("Validity :", margin + 5, bottomBoxY + 25.5);
+  doc.text("Validity :", margin + 5, bottomBoxY + 28);
   doc.setFont("helvetica", "normal");
-  doc.text(validity, margin + 26, bottomBoxY + 25.5);
+  doc.text(validity, margin + 28, bottomBoxY + 28);
 
   doc.setFont("helvetica", "bold");
-  doc.text("Utilization Lead time :", margin + 5, bottomBoxY + 30.5);
+  doc.text("Utilization Lead time :", margin + 5, bottomBoxY + 33.5);
   doc.setFont("helvetica", "normal");
-  doc.text(leadTime, margin + 34, bottomBoxY + 30.5);
+  doc.text(leadTime, margin + 38, bottomBoxY + 33.5);
 
   // Bottom Shipper address line
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(6);
-  doc.text(`${shipper.shipperName || "Toyo Cushion Lanka"}   |   COMPANY NO : ${shipper.companyNo || "PV 5492"}   |   ${shipper.address || "400 Deans Road Colombo 10 01000 Sri Lanka"}   |   Tel: ${shipper.phone || "94112232939-Fixed"}`, margin + 5, bottomBoxY + 40);
+  doc.setFontSize(7.5);
+  doc.text(`${shipper.shipperName || "Toyo Cushion Lanka"}   |   COMPANY NO : ${shipper.companyNo || "PV 5492"}   |   ${shipper.address || "400 Deans Road Colombo 10 01000 Sri Lanka"}   |   Tel: ${shipper.phone || "94112232939-Fixed"}`, margin + 5, bottomBoxY + 43);
 
   // Right Signatory block (Populated Sales Officer Details & Signature)
-  const sigX = margin + tableWidth - 85;
+  const sigX = margin + tableWidth - 90;
 
   if (sigImageBase64) {
     try {
-      doc.addImage(sigImageBase64, "PNG", sigX + 18, bottomBoxY + 13, 30, 9);
+      doc.addImage(sigImageBase64, "PNG", sigX + 15, bottomBoxY + 11, 35, 12);
     } catch (e) {
       console.warn("Could not render signature stamp into PDF:", e);
     }
   }
 
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(8);
+  doc.setFontSize(9);
   doc.setTextColor(0, 0, 0);
-  doc.text("………………………….", sigX + 18, bottomBoxY + 24);
+  doc.text("………………………….", sigX + 15, bottomBoxY + 26);
 
   const officerNameStr = shipper.signatoryName || shipper.signatory || "Manager - Sales & Marketing";
   const officerRoleStr = shipper.signatoryRole || (shipper.signatoryName ? "Manager - Sales & Marketing" : "");
 
-  doc.setFontSize(7.5);
-  doc.text(officerNameStr, sigX + 18, bottomBoxY + 28);
+  doc.setFontSize(8.5);
+  doc.text(officerNameStr, sigX + 15, bottomBoxY + 30.5);
 
   if (officerRoleStr) {
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(6.5);
+    doc.setFontSize(7.5);
     doc.setTextColor(60, 60, 60);
-    doc.text(officerRoleStr, sigX + 18, bottomBoxY + 31.5);
+    doc.text(officerRoleStr, sigX + 15, bottomBoxY + 34.5);
   }
 
   if (shipper.signatoryEmail || shipper.signatoryPhone) {
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(5.5);
+    doc.setFontSize(6.5);
     doc.setTextColor(100, 100, 100);
     const contactStr = [shipper.signatoryEmail, shipper.signatoryPhone].filter(Boolean).join(" | ");
-    doc.text(contactStr, sigX + 18, bottomBoxY + 34.5);
+    doc.text(contactStr, sigX + 15, bottomBoxY + 38);
   }
 
   // Save PDF

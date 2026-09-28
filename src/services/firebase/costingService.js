@@ -131,8 +131,9 @@ export async function updateProductCategory(categoryId, updatedData) {
  * Create a costing request
  */
 export async function createCostingRequest(requestData, currentUser) {
-  const { customerName, productUnit, specs, marketingRemarks } = requestData;
-  const fyStr = getFinancialYearStr(new Date());
+  const { customerName, productUnit, specs, marketingRemarks, requestDate } = requestData;
+  const reqDateObj = requestDate ? new Date(requestDate) : new Date();
+  const fyStr = getFinancialYearStr(reqDateObj);
 
   if (isMockMode) {
     // Simulate atomic transaction in localStorage
@@ -143,8 +144,8 @@ export async function createCostingRequest(requestData, currentUser) {
     // Increment counter
     localStorage.setItem(counterKey, JSON.stringify({ current: nextCounter }));
     
-    const nowStr = new Date().toISOString();
-    const overdueStr = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString();
+    const nowStr = reqDateObj.toISOString();
+    const overdueStr = new Date(reqDateObj.getTime() + 2 * 24 * 60 * 60 * 1000).toISOString();
     
     const categories = JSON.parse(localStorage.getItem("productCategories") || "[]");
     const activeCategory = categories.find(c => c.id === productUnit);
@@ -200,7 +201,6 @@ export async function createCostingRequest(requestData, currentUser) {
       }
     };
   } else {
-    const fyStr = getFinancialYearStr(new Date());
     const counterDocId = `costRequestCounter_${fyStr}`;
     const counterRef = doc(db, "systemSettings", counterDocId);
     const requestRef = doc(collection(db, "costRequests"));
@@ -226,9 +226,9 @@ export async function createCostingRequest(requestData, currentUser) {
         // 3. Execute all writes
         transaction.set(counterRef, { current: nextCounter }, { merge: true });
 
-        const now = Timestamp.now();
+        const reqTimestamp = requestDate ? Timestamp.fromDate(reqDateObj) : Timestamp.now();
         const overdueAt = Timestamp.fromMillis(
-          now.toMillis() + 2 * 24 * 60 * 60 * 1000 // 2 days in milliseconds
+          reqTimestamp.toMillis() + 2 * 24 * 60 * 60 * 1000 // 2 days in milliseconds
         );
 
         const seqNum = String(nextCounter).padStart(4, "0");
@@ -249,7 +249,7 @@ export async function createCostingRequest(requestData, currentUser) {
           createdByUid: currentUser.uid,
           createdByEmail: currentUser.email,
           financeOfficer: null,
-          requestDate: now,
+          requestDate: reqTimestamp,
           status: "Submitted",
           completionDate: null,
           specs,
@@ -267,7 +267,7 @@ export async function createCostingRequest(requestData, currentUser) {
           message: `New costing request #${costRequestNo} is awaiting Finance.`,
           read: false,
           readBy: [],
-          createdAt: now
+          createdAt: Timestamp.now()
         };
         transaction.set(notificationRef, notification);
 

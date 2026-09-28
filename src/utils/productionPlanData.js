@@ -173,9 +173,11 @@ export function calculateRowMetrics(row) {
   const aCont = Math.round(parseFloat(row.actualContribution) || 0);
   const aMargin = aTo > 0 ? (aCont / aTo) : (parseFloat(row.actualMargin) || 0);
 
-  let fTeu = row.factoryTeu !== undefined && row.factoryTeu !== null && row.factoryTeu !== "" 
-    ? (Math.round((parseFloat(row.factoryTeu) || 0) * 100) / 100) 
-    : (row.factoryConfirmed ? aTeu : 0);
+  // If capable TEU is filled and > 0, it is confirmed
+  const fTeuRaw = row.factoryTeu;
+  const hasFTeu = fTeuRaw !== undefined && fTeuRaw !== null && fTeuRaw !== "";
+  const fTeu = hasFTeu ? (Math.round((parseFloat(fTeuRaw) || 0) * 100) / 100) : 0;
+  const isConfirmed = hasFTeu && fTeu > 0;
   
   // Factory Turnover and Contribution proportional ratio calculation
   let fTo = 0;
@@ -196,10 +198,6 @@ export function calculateRowMetrics(row) {
       fTo = Math.round(parseFloat(row.factoryTurnover) || 0);
       fCont = Math.round(parseFloat(row.factoryContribution) || 0);
     }
-  } else if (row.factoryConfirmed && aTeu > 0) {
-    fTeu = aTeu;
-    fTo = aTo;
-    fCont = aCont;
   }
 
   const varTeu = Math.round((aTeu - bTeu) * 100) / 100;
@@ -222,6 +220,9 @@ export function calculateRowMetrics(row) {
     status = "variance";
   }
 
+  // Preserve and determine isSpill flag
+  const isSpill = !!row.isSpill || (typeof row.buyer === "string" && /\(Spill\)/i.test(row.buyer));
+
   return {
     ...row,
     department: row.department || getDepartmentForOfficer(row.salesOfficer),
@@ -233,10 +234,12 @@ export function calculateRowMetrics(row) {
     actualTurnover: aTo,
     actualContribution: aCont,
     actualMargin: Math.round(aMargin * 10000) / 10000,
-    factoryTeu: fTeu,
+    factoryTeu: hasFTeu ? fTeu : null,
     factoryTurnover: fTo,
     factoryContribution: fCont,
-    factoryConfirmed: !!row.factoryConfirmed,
+    factoryConfirmed: isConfirmed,
+    isSpill: isSpill,
+    spillFromMonth: row.spillFromMonth || null,
     varianceTeu: varTeu,
     varianceTurnover: varTo,
     varianceContribution: varCont,
@@ -320,9 +323,9 @@ export function generatePptExecutiveSummary(rows = []) {
     const aTo = parseFloat(r.actualTurnover) || 0;
     const aCont = parseFloat(r.actualContribution) || 0;
 
-    const fTeu = parseFloat(r.factoryTeu) || (r.factoryConfirmed ? aTeu : 0);
-    const fTo = parseFloat(r.factoryTurnover) || (r.factoryConfirmed ? aTo : 0);
-    const fCont = parseFloat(r.factoryContribution) || (r.factoryConfirmed ? aCont : 0);
+    const fTeu = parseFloat(r.factoryTeu) || 0;
+    const fTo = parseFloat(r.factoryTurnover) || 0;
+    const fCont = parseFloat(r.factoryContribution) || 0;
 
     target.bTeu += bTeu;
     target.bTo += bTo;

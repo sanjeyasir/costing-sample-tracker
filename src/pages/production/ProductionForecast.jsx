@@ -23,7 +23,8 @@ import {
   Segmented, 
   Upload, 
   Table,
-  Checkbox
+  Checkbox,
+  Dropdown
 } from "antd";
 import {
   PlusOutlined,
@@ -45,7 +46,8 @@ import {
   FileExcelOutlined,
   DeleteOutlined,
   LockOutlined,
-  SwapRightOutlined
+  SwapRightOutlined,
+  DownOutlined
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 
@@ -97,11 +99,7 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [saving, setSaving] = useState(false);
   const [exportingPpt, setExportingPpt] = useState(false);
-  const [autoSaveStatus, setAutoSaveStatus] = useState("idle"); // "idle" | "saving" | "saved" | "error"
   const [lastSavedTime, setLastSavedTime] = useState(null);
-
-  const autoSaveTimeoutRef = useRef(null);
-  const pendingSavesRef = useRef(new Map());
 
   // Role resolution & View access configuration
   const userRoles = currentUser?.roles || [];
@@ -151,6 +149,11 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [modalPreview, setModalPreview] = useState(null);
 
+  // Modal State for Spill Order
+  const [isSpillModalVisible, setIsSpillModalVisible] = useState(false);
+  const [spillSelectedRow, setSpillSelectedRow] = useState(null);
+  const [spillTargetMonthKey, setSpillTargetMonthKey] = useState(currentMonthKey);
+
   // Modal State for Excel Upload
   const [isUploadModalVisible, setIsUploadModalVisible] = useState(false);
   const [parsedImportData, setParsedImportData] = useState(null);
@@ -162,11 +165,6 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
 
   useEffect(() => {
     loadData();
-    return () => {
-      if (autoSaveTimeoutRef.current) {
-        clearTimeout(autoSaveTimeoutRef.current);
-      }
-    };
   }, []);
 
   const loadData = async () => {
@@ -175,42 +173,12 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
       const data = await getProductionForecasts();
       setAllData(data);
       setHasUnsavedChanges(false);
-      setAutoSaveStatus("idle");
     } catch (err) {
       console.error("Failed to load production forecasts:", err);
       message.error("Failed to load forecast data");
     } finally {
       setLoading(false);
     }
-  };
-
-  // Trigger Debounced Auto-Save to Firebase
-  const triggerAutoSave = (modifiedRows = []) => {
-    modifiedRows.forEach(row => {
-      pendingSavesRef.current.set(row.id, row);
-    });
-
-    setAutoSaveStatus("saving");
-
-    if (autoSaveTimeoutRef.current) {
-      clearTimeout(autoSaveTimeoutRef.current);
-    }
-
-    autoSaveTimeoutRef.current = setTimeout(async () => {
-      try {
-        const rowsToSave = Array.from(pendingSavesRef.current.values());
-        if (rowsToSave.length > 0) {
-          await batchSaveProductionForecasts(rowsToSave);
-          pendingSavesRef.current.clear();
-          setAutoSaveStatus("saved");
-          setLastSavedTime(dayjs().format("HH:mm:ss"));
-          setHasUnsavedChanges(false);
-        }
-      } catch (err) {
-        console.error("Auto-save to Firebase failed:", err);
-        setAutoSaveStatus("error");
-      }
-    }, 600);
   };
 
   // Compute active month keys based on viewMode
@@ -248,7 +216,12 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
       return `Rolling 4-Months (${default4Months.map(m => m.month).join(", ")})`;
     }
     if (viewMode === "all") {
-      return "Full Financial Year 2026-2027 (12 Months)";
+      const firstM = FINANCIAL_YEAR_MONTHS[0];
+      const lastM = FINANCIAL_YEAR_MONTHS[FINANCIAL_YEAR_MONTHS.length - 1];
+      const fyYears = firstM && lastM && firstM.defaultYear !== lastM.defaultYear 
+        ? `${firstM.defaultYear}-${lastM.defaultYear}` 
+        : (firstM?.defaultYear ? `${firstM.defaultYear}` : "");
+      return fyYears ? `Full Financial Year ${fyYears} (12 Months)` : "Full Financial Year (12 Months)";
     }
     return `Selected Months (${activeMonthKeys.length} Months)`;
   }, [viewMode, singleMonth, fromMonth, toMonth, default4Months, activeMonthKeys]);
@@ -261,8 +234,21 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
       list = list.filter(r => 
         activeMonthKeys.includes(r.monthKey) || 
         activeMonthKeys.includes(r.month) ||
-        activeMonthKeys.includes(r.monthName)
+        activeMonthKeys.includes(r.monthName) ||
+        (r.isSpill && r.spillFromMonth && activeMonthKeys.includes(r.spillFromMonth))
       );
+    }
+
+    // Factory Review Filter Rule:
+    // If capable TEU is zero, filter out (exclude). If null, undefined, or empty, do NOT filter (keep for review).
+    // For other views, all details are viewed without this filter.
+    if (activeRoleView === "factory_performance") {
+      list = list.filter(r => {
+        if (r.factoryTeu === 0 || r.factoryTeu === "0" || (typeof r.factoryTeu === "number" && r.factoryTeu === 0)) {
+          return false;
+        }
+        return true;
+      });
     }
 
     if (selectedOfficer !== "all") {
@@ -291,7 +277,7 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
     }
 
     return list;
-  }, [allData, viewMode, activeMonthKeys, selectedOfficer, selectedDepartment, selectedStatus, searchText]);
+  }, [allData, viewMode, activeMonthKeys, activeRoleView, selectedOfficer, selectedDepartment, selectedStatus, searchText]);
 
   // Aggregate summary metrics for current filtered view
   const summaryMetrics = useMemo(() => {
@@ -324,9 +310,13 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
       fTeu += parseFloat(r.factoryTeu) || 0;
       fCont += parseFloat(r.factoryContribution) || 0;
 
-      if (r.factoryConfirmed) {
+      const fTeuVal = parseFloat(r.factoryTeu) || 0;
+      const hasFTeu = r.factoryTeu !== null && r.factoryTeu !== undefined && r.factoryTeu !== "";
+      const isConfirmed = hasFTeu && fTeuVal > 0;
+
+      if (isConfirmed) {
         confirmedCount++;
-        confirmedTeu += parseFloat(r.factoryTeu) || 0;
+        confirmedTeu += fTeuVal;
         confirmedTo += parseFloat(r.factoryTurnover) || 0;
       }
 
@@ -368,27 +358,239 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
     };
   }, [filteredData]);
 
-  // Handsontable Change Handler: Live Recalculations & Instant Firebase Auto-Save
-  const handleHandsontableChange = (changes, source) => {
-    if (!changes || source === "loadData") return;
+  // Validator for numeric inputs (disallows negative numbers or non-numeric strings)
+  const nonNegativeNumberValidator = (value, callback) => {
+    if (value === null || value === undefined || value === "") {
+      callback(true);
+      return;
+    }
+    const cleanStr = String(value).replace(/,/g, "").trim();
+    const num = Number(cleanStr);
+    if (isNaN(num) || num < 0) {
+      callback(false);
+    } else {
+      callback(true);
+    }
+  };
+
+  // Intercept and sanitize/validate changes before they reach Handsontable data source
+  const handleBeforeChange = (changes, source) => {
+    if (!changes || source === "loadData" || source === "internal_spill") return;
 
     const hot = hotTableRef.current?.hotInstance;
     if (!hot) return;
 
+    const numericFields = [
+      "budgetTeu", "budgetTurnover", "budgetContribution",
+      "actualTeu", "actualTurnover", "actualContribution",
+      "factoryTeu"
+    ];
+
+    const pendingFactoryTeuUpdates = [];
     const sourceData = hot.getSourceData();
+
+    for (let i = 0; i < changes.length; i++) {
+      const [rowIdx, prop, oldVal, newVal] = changes[i];
+
+      // Numeric validation for all numeric fields
+      if (numericFields.includes(prop)) {
+        if (newVal === null || newVal === undefined || newVal === "") {
+          changes[i][3] = prop === "factoryTeu" ? null : 0;
+        } else {
+          const cleanStr = String(newVal).replace(/,/g, "").trim();
+          const parsed = Number(cleanStr);
+
+          if (isNaN(parsed) || parsed < 0) {
+            message.error(`Invalid numeric value for "${prop}": "${newVal}". Only non-negative numbers are allowed.`);
+            changes[i][3] = oldVal; // Revert to previous valid value
+            continue;
+          } else {
+            changes[i][3] = parsed;
+          }
+        }
+      }
+
+      // Collect Capable TEU changes for a single unified confirmation popup
+      if (prop === "factoryTeu" && source !== "internal_confirm") {
+        const sanitizedNewVal = changes[i][3];
+        if (oldVal !== sanitizedNewVal) {
+          // Revert in-flight edit so user must confirm popup first
+          changes[i][3] = oldVal;
+
+          const physRow = hot.toPhysicalRow ? hot.toPhysicalRow(rowIdx) : rowIdx;
+          const targetRow = (hot.getSourceDataAtRow ? hot.getSourceDataAtRow(physRow) : null) || sourceData[physRow] || sourceData[rowIdx];
+
+          if (targetRow) {
+            pendingFactoryTeuUpdates.push({
+              physRow,
+              rowIdx,
+              id: targetRow.id,
+              buyer: targetRow.buyer || "Customer",
+              monthName: targetRow.monthName || "",
+              oldVal: oldVal !== null && oldVal !== undefined && oldVal !== "" ? parseFloat(oldVal) : null,
+              newVal: sanitizedNewVal !== null && sanitizedNewVal !== undefined && sanitizedNewVal !== "" ? parseFloat(sanitizedNewVal) : null,
+              targetRow
+            });
+          }
+        }
+      }
+    }
+
+    // Showcase ONLY ONE MODAL for all Capable TEU updates (single or bulk)
+    if (pendingFactoryTeuUpdates.length > 0) {
+      const isSingle = pendingFactoryTeuUpdates.length === 1;
+      const firstUpdate = pendingFactoryTeuUpdates[0];
+
+      Modal.confirm({
+        title: isSingle
+          ? "Confirm Capable TEU Update"
+          : `Confirm Bulk Capable TEU Updates (${pendingFactoryTeuUpdates.length} Records)`,
+        icon: <WarningOutlined style={{ color: "#0f766e" }} />,
+        width: isSingle ? 520 : 640,
+        content: (
+          <div style={{ marginTop: 8 }}>
+            {isSingle ? (
+              <>
+                <p style={{ marginBottom: 8 }}>
+                  Update Capable TEU for <strong>{firstUpdate.buyer}</strong> ({firstUpdate.monthName})?
+                </p>
+                <div style={{ background: "#f0fdfa", padding: "10px 14px", borderRadius: 8, border: "1px solid #ccfbf1", marginBottom: 8 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                    <span style={{ color: "#64748b", fontSize: 13 }}>Current Capable TEU:</span>
+                    <strong style={{ color: "#334155" }}>
+                      {firstUpdate.oldVal !== null ? `${firstUpdate.oldVal.toFixed(2)} TEU` : "Empty (Unreviewed)"}
+                    </strong>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span style={{ color: "#0f766e", fontSize: 13, fontWeight: 600 }}>New Capable TEU:</span>
+                    <strong style={{ color: "#0f766e", fontSize: 14 }}>
+                      {firstUpdate.newVal !== null ? `${firstUpdate.newVal.toFixed(2)} TEU` : "Empty (Unreviewed)"}
+                    </strong>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <p style={{ marginBottom: 8 }}>
+                  You are making changes to <strong>{pendingFactoryTeuUpdates.length}</strong> record(s) in Capable TEU:
+                </p>
+                <div style={{ maxHeight: 220, overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: 8, marginBottom: 8, background: "#f8fafc" }}>
+                  <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr style={{ background: "#f1f5f9", borderBottom: "1px solid #cbd5e1", textAlign: "left" }}>
+                        <th style={{ padding: "6px 10px", color: "#475569" }}>Customer</th>
+                        <th style={{ padding: "6px 10px", color: "#475569" }}>Month</th>
+                        <th style={{ padding: "6px 10px", textAlign: "right", color: "#64748b" }}>Current TEU</th>
+                        <th style={{ padding: "6px 10px", textAlign: "right", color: "#0f766e" }}>New TEU</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pendingFactoryTeuUpdates.map((item, idx) => (
+                        <tr key={item.id || idx} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                          <td style={{ padding: "6px 10px", fontWeight: 600, color: "#1e293b" }}>{item.buyer}</td>
+                          <td style={{ padding: "6px 10px", color: "#64748b" }}>{item.monthName}</td>
+                          <td style={{ padding: "6px 10px", textAlign: "right", color: "#64748b" }}>
+                            {item.oldVal !== null ? `${item.oldVal.toFixed(2)}` : "-"}
+                          </td>
+                          <td style={{ padding: "6px 10px", textAlign: "right", color: "#0f766e", fontWeight: 700 }}>
+                            {item.newVal !== null ? `${item.newVal.toFixed(2)}` : "Empty"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+            <p style={{ fontSize: 12, color: "#64748b", margin: 0 }}>
+              This will recalculate Factory Turnover, Factory Contribution, and confirmation status for {isSingle ? "this order" : "these orders"}. Click <strong>"Save All Changes"</strong> when ready to commit to the database.
+            </p>
+          </div>
+        ),
+        okText: isSingle ? "Confirm & Update" : `Confirm & Update (${pendingFactoryTeuUpdates.length})`,
+        cancelText: "Cancel",
+        okButtonProps: {
+          style: { backgroundColor: "#0f766e", borderColor: "#0f766e", fontWeight: 600 }
+        },
+        onOk: () => {
+          const currentHot = hotTableRef.current?.hotInstance;
+          if (currentHot) {
+            const batchChanges = pendingFactoryTeuUpdates.map(u => [u.physRow, "factoryTeu", u.newVal]);
+            currentHot.setDataAtRowProp(batchChanges, "internal_confirm");
+          }
+          message.success(`Updated Capable TEU for ${pendingFactoryTeuUpdates.length} record(s). Click "Save All Changes" to persist.`);
+        },
+        onCancel: () => {
+          message.info("Capable TEU update(s) cancelled.");
+        }
+      });
+    }
+  };
+
+  const handleAfterValidate = (isValid, value, row, prop, source) => {
+    if (!isValid && source !== "loadData") {
+      message.error(`Validation error: "${value}" in column "${prop}" must be a valid non-negative number.`);
+    }
+  };
+
+  // Handsontable Change Handler: Live Recalculations & State Synchronization
+  const handleHandsontableChange = (changes, source) => {
+    if (!changes || source === "loadData" || source === "internal_spill") return;
+
+    const hot = hotTableRef.current?.hotInstance;
+    if (!hot) return;
+
     let hasChanges = false;
     const modifiedRows = [];
+    const cellsToUpdateInGrid = [];
 
     changes.forEach(([rowIdx, prop, oldVal, newVal]) => {
       if (oldVal !== newVal) {
         hasChanges = true;
-        const targetRow = sourceData[rowIdx];
+        const physRow = hot.toPhysicalRow ? hot.toPhysicalRow(rowIdx) : rowIdx;
+        const sourceData = hot.getSourceData();
+        const targetRow = (hot.getSourceDataAtRow ? hot.getSourceDataAtRow(physRow) : null) || sourceData[physRow] || sourceData[rowIdx];
         if (targetRow) {
           // If salesOfficer changed, update department
           if (prop === "salesOfficer") {
             targetRow.department = getDepartmentForOfficer(newVal);
           }
-          // Recalculate row (includes proportional factory ratios)
+          // If Month / Year changed, mark as SPILL and append (Spill) to Buyer name
+          if (prop === "monthName") {
+            const mObj = FINANCIAL_YEAR_MONTHS.find(m => 
+              `${m.name} ${m.defaultYear}` === newVal || m.monthKey === newVal || m.code === newVal
+            );
+            if (mObj) {
+              const prevMonthKey = targetRow.monthKey;
+              targetRow.year = mObj.defaultYear;
+              targetRow.month = mObj.code;
+              targetRow.monthName = `${mObj.name} ${mObj.defaultYear}`;
+              targetRow.monthKey = mObj.monthKey;
+              targetRow.monthOrder = mObj.order;
+              
+              targetRow.isSpill = true;
+              if (!targetRow.spillFromMonth) {
+                targetRow.spillFromMonth = prevMonthKey;
+              }
+              const currentBuyer = targetRow.buyer || "Customer";
+              if (!/\(Spill\)/i.test(currentBuyer)) {
+                const newBuyerName = `${currentBuyer.replace(/\s*\(Spill\)/gi, "").trim()} (Spill)`;
+                targetRow.buyer = newBuyerName;
+                cellsToUpdateInGrid.push([rowIdx, "buyer", newBuyerName]);
+              }
+              message.info(`Order updated to ${targetRow.monthName} (tagged as Spill in yellow)`);
+            }
+          }
+          // If Capable TEU changed to empty or null
+          if (prop === "factoryTeu") {
+            if (newVal === null || newVal === undefined || newVal === "") {
+              targetRow.factoryTeu = null;
+              targetRow.factoryConfirmed = false;
+              targetRow.factoryTurnover = 0;
+              targetRow.factoryContribution = 0;
+            }
+          }
+          // Recalculate row (includes proportional factory ratios and capable TEU confirmation)
           const recalculated = calculateRowMetrics(targetRow);
           Object.assign(targetRow, recalculated);
           modifiedRows.push(recalculated);
@@ -398,37 +600,120 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
 
     if (hasChanges) {
       setHasUnsavedChanges(true);
-      // Synchronize in-memory allData state
-      const updatedMap = new Map(sourceData.map(item => [item.id, item]));
-      setAllData(prev => prev.map(item => updatedMap.has(item.id) ? updatedMap.get(item.id) : item));
+      // Synchronize in-memory allData state safely by record ID
+      const modifiedMap = new Map(modifiedRows.map(item => [item.id, item]));
+      setAllData(prev => prev.map(item => modifiedMap.has(item.id) ? modifiedMap.get(item.id) : item));
 
-      // Trigger instant background auto-save to Firebase
-      triggerAutoSave(modifiedRows);
+      // Push updated buyer names to Handsontable grid cells immediately
+      if (cellsToUpdateInGrid.length > 0) {
+        setTimeout(() => {
+          const currentHot = hotTableRef.current?.hotInstance;
+          if (currentHot) {
+            cellsToUpdateInGrid.forEach(([r, p, v]) => {
+              currentHot.setDataAtRowProp(r, p, v, "internal_spill");
+            });
+            currentHot.render();
+          }
+        }, 0);
+      }
     }
   };
 
-  // Save All Changes to Firestore / Storage
-  const handleSaveAll = async () => {
-    try {
-      setSaving(true);
-      if (autoSaveTimeoutRef.current) {
-        clearTimeout(autoSaveTimeoutRef.current);
-      }
-      const hot = hotTableRef.current?.hotInstance;
-      const currentGridData = hot ? hot.getSourceData() : filteredData;
-
-      await batchSaveProductionForecasts(currentGridData);
-      setHasUnsavedChanges(false);
-      setAutoSaveStatus("saved");
-      setLastSavedTime(dayjs().format("HH:mm:ss"));
-      message.success("All production forecast changes saved successfully to Firebase!");
-      await loadData();
-    } catch (err) {
-      console.error("Save error:", err);
-      message.error("Failed to save changes.");
-    } finally {
-      setSaving(false);
+  // Open Spill Modal
+  const handleOpenSpillModal = (row = null) => {
+    let targetRow = row;
+    if (!targetRow && filteredData.length > 0) {
+      targetRow = filteredData[0];
     }
+    if (!targetRow) {
+      message.warning("No record available to spill.");
+      return;
+    }
+    setSpillSelectedRow(targetRow);
+    const curIdx = FINANCIAL_YEAR_MONTHS.findIndex(m => m.monthKey === targetRow.monthKey);
+    const nextIdx = curIdx >= 0 && curIdx + 1 < FINANCIAL_YEAR_MONTHS.length ? curIdx + 1 : (curIdx >= 0 ? curIdx : 0);
+    setSpillTargetMonthKey(FINANCIAL_YEAR_MONTHS[nextIdx].monthKey);
+    setIsSpillModalVisible(true);
+  };
+
+  // Commit Spill to target month
+  const handleCommitSpill = async () => {
+    if (!spillSelectedRow || !spillTargetMonthKey) {
+      message.warning("Please select a valid record and destination month.");
+      return;
+    }
+
+    const mObj = FINANCIAL_YEAR_MONTHS.find(m => m.monthKey === spillTargetMonthKey);
+    if (!mObj) return;
+
+    const prevMonthKey = spillSelectedRow.monthKey;
+    const cleanBuyer = (spillSelectedRow.buyer || "Customer").replace(/\s*\(Spill\)/gi, "").trim();
+    const newBuyer = `${cleanBuyer} (Spill)`;
+
+    const updatedRow = calculateRowMetrics({
+      ...spillSelectedRow,
+      year: mObj.defaultYear,
+      month: mObj.code,
+      monthName: `${mObj.name} ${mObj.defaultYear}`,
+      monthKey: mObj.monthKey,
+      monthOrder: mObj.order,
+      spillFromMonth: spillSelectedRow.spillFromMonth || prevMonthKey,
+      buyer: newBuyer,
+      isSpill: true
+    });
+
+    setAllData(prev => prev.map(r => r.id === updatedRow.id ? updatedRow : r));
+    setHasUnsavedChanges(true);
+
+    message.success(`Order "${cleanBuyer}" spilled to ${updatedRow.monthName}! Click "Save All Changes" to persist.`);
+    setIsSpillModalVisible(false);
+    setSpillSelectedRow(null);
+  };
+
+  // Save All Changes to Firestore / Storage with confirmation modal
+  const handleSaveAll = () => {
+    const hot = hotTableRef.current?.hotInstance;
+    let datasetToSave = [...allData];
+    if (hot) {
+      const gridRows = hot.getSourceData() || [];
+      const gridMap = new Map(gridRows.map(r => [r.id, r]));
+      datasetToSave = datasetToSave.map(r => gridMap.has(r.id) ? gridMap.get(r.id) : r);
+    }
+
+    Modal.confirm({
+      title: "Save All Production Forecast Changes?",
+      icon: <SaveOutlined style={{ color: "#2563eb" }} />,
+      content: (
+        <div style={{ marginTop: 8 }}>
+          <p style={{ marginBottom: 8 }}>
+            Are you sure you want to persist all changes to the database?
+          </p>
+          <p style={{ fontSize: 12, color: "#64748b", margin: 0 }}>
+            This will commit all edited TEUs, budgets, actuals, factory capabilities, and spill assignments in Firebase.
+          </p>
+        </div>
+      ),
+      okText: "Yes, Save All Changes",
+      cancelText: "Cancel",
+      okButtonProps: {
+        style: { backgroundColor: "#16a34a", borderColor: "#16a34a", fontWeight: 700 }
+      },
+      onOk: async () => {
+        try {
+          setSaving(true);
+          await batchSaveProductionForecasts(datasetToSave);
+          setAllData(datasetToSave);
+          setHasUnsavedChanges(false);
+          setLastSavedTime(dayjs().format("HH:mm:ss"));
+          message.success("All production forecast changes saved successfully to Firebase!");
+        } catch (err) {
+          console.error("Save error:", err);
+          message.error("Failed to save changes.");
+        } finally {
+          setSaving(false);
+        }
+      }
+    });
   };
 
   // Check if all filtered rows are confirmed for production
@@ -470,10 +755,9 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
 
     setAllData(updatedAllData);
     setHasUnsavedChanges(true);
-    triggerAutoSave(modifiedRows);
 
     if (shouldConfirm) {
-      message.success(`Successfully confirmed ${filteredData.length} records for production (${activePeriodLabel})!`);
+      message.success(`Confirmed ${filteredData.length} records for production (${activePeriodLabel})! Click "Save All Changes" to persist.`);
     } else {
       message.info(`Unconfirmed ${filteredData.length} records for production.`);
     }
@@ -610,8 +894,9 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
       actualTurnover: 0,
       actualContribution: 0,
       actualMargin: 0,
-      factoryTeu: 0,
+      factoryTeu: null, // by default when adding a row, leave capable TEU empty for factory review
       factoryTurnover: 0,
+      factoryContribution: 0,
       factoryConfirmed: false,
       notes: "Newly added forecast entry"
     });
@@ -636,7 +921,7 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
       actualTeu: 0,
       actualTurnover: 0,
       actualContribution: 0,
-      factoryTeu: 0,
+      factoryTeu: null, // by default empty
       notes: ""
     });
     calculateModalPreview();
@@ -646,7 +931,10 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
   // Calculate live preview in modal
   const calculateModalPreview = () => {
     const values = form.getFieldsValue();
-    const calculated = calculateRowMetrics(values);
+    const calculated = calculateRowMetrics({
+      ...values,
+      factoryTeu: values.factoryTeu !== undefined && values.factoryTeu !== null && values.factoryTeu !== "" ? parseFloat(values.factoryTeu) : null
+    });
     setModalPreview(calculated);
   };
 
@@ -661,6 +949,7 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
         monthKey: values.monthKey
       };
 
+      const hasFTeuVal = values.factoryTeu !== undefined && values.factoryTeu !== null && values.factoryTeu !== "";
       const entryToSave = calculateRowMetrics({
         ...values,
         id: `fc-user-${Date.now()}`,
@@ -668,7 +957,8 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
         month: mObj.code,
         monthName: `${mObj.name} ${mObj.defaultYear}`,
         monthKey: mObj.monthKey,
-        department: values.department || getDepartmentForOfficer(values.salesOfficer)
+        department: values.department || getDepartmentForOfficer(values.salesOfficer),
+        factoryTeu: hasFTeuVal ? parseFloat(values.factoryTeu) : null
       });
 
       await saveProductionForecast(entryToSave);
@@ -740,10 +1030,32 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
       {
         data: "buyer",
         title: "Buyer / Customer",
-        type: "text",
-        width: 210,
+        width: 230,
         readOnly: !planEditable,
-        className: "htLeft htMiddle " + (!planEditable ? "ht-locked-cell" : "")
+        renderer: (instance, td, row, col, prop, value) => {
+          let rowData = null;
+          try {
+            const physRow = instance.toPhysicalRow ? instance.toPhysicalRow(row) : row;
+            rowData = instance.getSourceDataAtRow(physRow);
+          } catch (e) {
+            rowData = null;
+          }
+          const isSpill = (rowData && !!rowData.isSpill) || (typeof value === "string" && /spill/i.test(value));
+
+          td.innerText = value || "";
+          if (isSpill) {
+            td.style.backgroundColor = "#fef08a";
+            td.style.color = "#713f12";
+            td.style.fontWeight = "700";
+            td.className = "htLeft htMiddle ht-spill-cell";
+          } else {
+            td.style.backgroundColor = !planEditable ? "#f8fafc" : "";
+            td.style.color = !planEditable ? "#64748b" : "#0f172a";
+            td.style.fontWeight = "normal";
+            td.className = "htLeft htMiddle" + (!planEditable ? " ht-locked-cell" : "");
+          }
+          return td;
+        }
       },
       {
         data: "department",
@@ -765,6 +1077,7 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
           title: "Actual TEU",
           type: "numeric",
           numericFormat: { pattern: "0,0.00" },
+          validator: nonNegativeNumberValidator,
           width: 100,
           readOnly: true,
           className: "htRight htMiddle ht-locked-cell"
@@ -774,6 +1087,7 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
           title: "Actual TO (LKR)",
           type: "numeric",
           numericFormat: { pattern: "0,0" },
+          validator: nonNegativeNumberValidator,
           width: 130,
           readOnly: true,
           className: "htRight htMiddle ht-locked-cell"
@@ -784,9 +1098,21 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
           title: "Capable TEU",
           type: "numeric",
           numericFormat: { pattern: "0,0.00" },
+          validator: nonNegativeNumberValidator,
           width: 110,
           readOnly: !factoryEditable,
-          className: "htRight htMiddle " + (!factoryEditable ? "ht-locked-cell" : "ht-factory-editable")
+          className: "htRight htMiddle " + (!factoryEditable ? "ht-locked-cell" : "ht-factory-editable"),
+          renderer: (instance, td, row, col, prop, value) => {
+            if (value === null || value === undefined || value === "") {
+              td.innerText = "";
+              td.className = "htRight htMiddle " + (!factoryEditable ? "ht-locked-cell" : "ht-factory-editable");
+              return td;
+            }
+            const val = parseFloat(value);
+            td.innerText = isNaN(val) ? "" : val.toFixed(2);
+            td.className = "htRight htMiddle " + (!factoryEditable ? "ht-locked-cell" : "ht-factory-editable");
+            return td;
+          }
         },
         {
           data: "factoryTurnover",
@@ -813,14 +1139,6 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
           width: 135
         },
         {
-          data: "factoryConfirmed",
-          title: "Confirmed",
-          type: "checkbox",
-          width: 95,
-          readOnly: !factoryEditable,
-          className: "htCenter htMiddle " + (!factoryEditable ? "ht-locked-cell" : "")
-        },
-        {
           data: "notes",
           title: "Notes / Remarks",
           type: "text",
@@ -840,6 +1158,7 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
           title: "TEU Qty",
           type: "numeric",
           numericFormat: { pattern: "0,0.00" },
+          validator: nonNegativeNumberValidator,
           width: 90,
           readOnly: true,
           className: "htRight htMiddle ht-locked-cell"
@@ -849,6 +1168,7 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
           title: "TO-FOB (LKR)",
           type: "numeric",
           numericFormat: { pattern: "0,0" },
+          validator: nonNegativeNumberValidator,
           width: 130,
           readOnly: true,
           className: "htRight htMiddle ht-locked-cell"
@@ -858,6 +1178,7 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
           title: "Total Contri",
           type: "numeric",
           numericFormat: { pattern: "0,0" },
+          validator: nonNegativeNumberValidator,
           width: 120,
           readOnly: true,
           className: "htRight htMiddle ht-locked-cell"
@@ -879,6 +1200,7 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
           title: "TEU Qty",
           type: "numeric",
           numericFormat: { pattern: "0,0.00" },
+          validator: nonNegativeNumberValidator,
           width: 90,
           readOnly: !actualEditable,
           className: "htRight htMiddle " + (!actualEditable ? "ht-locked-cell" : "ht-actual-editable")
@@ -888,6 +1210,7 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
           title: "TO-FOB (LKR)",
           type: "numeric",
           numericFormat: { pattern: "0,0" },
+          validator: nonNegativeNumberValidator,
           width: 130,
           readOnly: !actualEditable,
           className: "htRight htMiddle " + (!actualEditable ? "ht-locked-cell" : "ht-actual-editable")
@@ -897,6 +1220,7 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
           title: "Total Contri",
           type: "numeric",
           numericFormat: { pattern: "0,0" },
+          validator: nonNegativeNumberValidator,
           width: 120,
           readOnly: !actualEditable,
           className: "htRight htMiddle " + (!actualEditable ? "ht-locked-cell" : "ht-actual-editable")
@@ -988,6 +1312,7 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
         title: "TEU Qty",
         type: "numeric",
         numericFormat: { pattern: "0,0.00" },
+        validator: nonNegativeNumberValidator,
         width: 90,
         readOnly: !budgetEditable,
         className: "htRight htMiddle " + (!budgetEditable ? "ht-locked-cell" : "")
@@ -997,6 +1322,7 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
         title: "TO-FOB (LKR)",
         type: "numeric",
         numericFormat: { pattern: "0,0" },
+        validator: nonNegativeNumberValidator,
         width: 130,
         readOnly: !budgetEditable,
         className: "htRight htMiddle " + (!budgetEditable ? "ht-locked-cell" : "")
@@ -1006,6 +1332,7 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
         title: "Total Contri",
         type: "numeric",
         numericFormat: { pattern: "0,0" },
+        validator: nonNegativeNumberValidator,
         width: 120,
         readOnly: !budgetEditable,
         className: "htRight htMiddle " + (!budgetEditable ? "ht-locked-cell" : "")
@@ -1026,6 +1353,7 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
         title: "TEU Qty",
         type: "numeric",
         numericFormat: { pattern: "0,0.00" },
+        validator: nonNegativeNumberValidator,
         width: 90,
         readOnly: !actualEditable,
         className: "htRight htMiddle " + (!actualEditable ? "ht-locked-cell" : "ht-actual-editable")
@@ -1035,6 +1363,7 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
         title: "TO-FOB (LKR)",
         type: "numeric",
         numericFormat: { pattern: "0,0" },
+        validator: nonNegativeNumberValidator,
         width: 130,
         readOnly: !actualEditable,
         className: "htRight htMiddle " + (!actualEditable ? "ht-locked-cell" : "ht-actual-editable")
@@ -1044,6 +1373,7 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
         title: "Total Contri",
         type: "numeric",
         numericFormat: { pattern: "0,0" },
+        validator: nonNegativeNumberValidator,
         width: 120,
         readOnly: !actualEditable,
         className: "htRight htMiddle " + (!actualEditable ? "ht-locked-cell" : "ht-actual-editable")
@@ -1120,9 +1450,21 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
         title: "Capable TEU",
         type: "numeric",
         numericFormat: { pattern: "0,0.00" },
+        validator: nonNegativeNumberValidator,
         width: 105,
         readOnly: !factoryEditable,
-        className: "htRight htMiddle " + (!factoryEditable ? "ht-locked-cell" : "ht-factory-editable")
+        className: "htRight htMiddle " + (!factoryEditable ? "ht-locked-cell" : "ht-factory-editable"),
+        renderer: (instance, td, row, col, prop, value) => {
+          if (value === null || value === undefined || value === "") {
+            td.innerText = "";
+            td.className = "htRight htMiddle " + (!factoryEditable ? "ht-locked-cell" : "ht-factory-editable");
+            return td;
+          }
+          const val = parseFloat(value);
+          td.innerText = isNaN(val) ? "" : val.toFixed(2);
+          td.className = "htRight htMiddle " + (!factoryEditable ? "ht-locked-cell" : "ht-factory-editable");
+          return td;
+        }
       },
       {
         data: "factoryTurnover",
@@ -1135,14 +1477,6 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
           return td;
         },
         width: 130
-      },
-      {
-        data: "factoryConfirmed",
-        title: "Confirmed",
-        type: "checkbox",
-        width: 90,
-        readOnly: !factoryEditable,
-        className: "htCenter htMiddle " + (!factoryEditable ? "ht-locked-cell" : "")
       },
       {
         data: "notes",
@@ -1162,12 +1496,12 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
         [
           { label: "Plan & Customer Info (Frozen)", colspan: 4 },
           { label: "Actual Deliveries Reference", colspan: 2, className: "ht-header-actual" },
-          { label: "Factory Performance & Confirmation", colspan: 5, className: "ht-header-factory" }
+          { label: "Factory Performance & Confirmation", colspan: 4, className: "ht-header-factory" }
         ],
         [
           "Month / Year", "Officer", "Buyer / Customer", "Department",
           "Actual TEU", "Actual TO (LKR)",
-          "Capable TEU", "Factory TO (Ratio)", "Factory Contri", "Confirmed", "Notes / Remarks"
+          "Capable TEU", "Factory TO (Ratio)", "Factory Contri", "Notes / Remarks"
         ]
       ];
     }
@@ -1197,14 +1531,14 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
         { label: "Initial Budget Targets", colspan: 4, className: "ht-header-budget" },
         { label: "Actual Performance", colspan: 4, className: "ht-header-actual" },
         { label: "Variance & Target Achievement", colspan: 4, className: "ht-header-variance" },
-        { label: "Factory Performance & Confirmation", colspan: 4, className: "ht-header-factory" }
+        { label: "Factory Performance & Confirmation", colspan: 3, className: "ht-header-factory" }
       ],
       [
         "Month / Year", "Officer", "Buyer / Customer", "Department",
         "TEU Qty", "TO-FOB (LKR)", "Total Contri", "Margin %",
         "TEU Qty", "TO-FOB (LKR)", "Total Contri", "Margin %",
         "Diff TEU", "Diff TO-FOB", "% Achieved", "Status",
-        "Capable TEU", "Factory TO (Ratio)", "Confirmed", "Notes / Remarks"
+        "Capable TEU", "Factory TO (Ratio)", "Notes / Remarks"
       ]
     ];
   }, [activeRoleView]);
@@ -1240,24 +1574,16 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
           </Space>
         </div>
 
-        <Space size="middle" wrap align="center">
-          {autoSaveStatus === "saving" && (
-            <Tag icon={<SyncOutlined spin />} color="processing" style={{ borderRadius: 8, padding: "4px 10px", fontWeight: 600 }}>
-              Auto-saving...
+        <Space size="small" wrap align="center">
+          {hasUnsavedChanges ? (
+            <Tag icon={<WarningOutlined />} color="warning" style={{ borderRadius: 8, padding: "4px 10px", fontWeight: 700, fontSize: 12 }}>
+              Unsaved Changes
             </Tag>
-          )}
-
-          {autoSaveStatus === "saved" && (
-            <Tag icon={<CheckCircleOutlined />} color="success" style={{ borderRadius: 8, padding: "4px 10px", fontWeight: 600 }}>
-              Auto-saved ({lastSavedTime})
+          ) : lastSavedTime ? (
+            <Tag icon={<CheckCircleOutlined />} color="success" style={{ borderRadius: 8, padding: "4px 10px", fontWeight: 600, fontSize: 12 }}>
+              Saved ({lastSavedTime})
             </Tag>
-          )}
-
-          {autoSaveStatus === "error" && (
-            <Tag icon={<WarningOutlined />} color="error" style={{ borderRadius: 8, padding: "4px 10px", fontWeight: 600 }}>
-              Auto-save warning • Click Save All
-            </Tag>
-          )}
+          ) : null}
 
           {activeRoleView !== "read_only" && (
             <Button
@@ -1265,7 +1591,13 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
               icon={<SaveOutlined />}
               loading={saving}
               onClick={handleSaveAll}
-              style={{ backgroundColor: hasUnsavedChanges ? "#16a34a" : "#2563eb", borderColor: hasUnsavedChanges ? "#16a34a" : "#2563eb", fontWeight: 600, height: 38 }}
+              style={{ 
+                backgroundColor: hasUnsavedChanges ? "#16a34a" : "#2563eb", 
+                borderColor: hasUnsavedChanges ? "#16a34a" : "#2563eb", 
+                fontWeight: 700, 
+                height: 38,
+                boxShadow: hasUnsavedChanges ? "0 0 12px rgba(22, 163, 74, 0.4)" : "none"
+              }}
             >
               Save All Changes
             </Button>
@@ -1278,8 +1610,18 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
             onClick={handleExportPowerPoint}
             style={{ backgroundColor: "#d97706", borderColor: "#d97706", fontWeight: 600, height: 38 }}
           >
-            Export PowerPoint
+            Export PPT
           </Button>
+
+          {(isProdAdmin || activeRoleView === "marketing_actuals" || activeRoleView === "factory_performance") && (
+            <Button
+              icon={<SwapRightOutlined />}
+              onClick={() => handleOpenSpillModal()}
+              style={{ backgroundColor: "#fef08a", borderColor: "#eab308", color: "#713f12", fontWeight: 700, height: 38 }}
+            >
+              Spill Order
+            </Button>
+          )}
 
           {(isProdAdmin || activeRoleView === "marketing_actuals") && (
             <Button
@@ -1287,35 +1629,58 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
               onClick={handleOpenAddModal}
               style={{ fontWeight: 600, height: 38 }}
             >
-              Add New Entry
+              Add Entry
             </Button>
           )}
 
-          {(isProdAdmin || activeRoleView === "marketing_actuals") && (
-            <Button
-              icon={<CloudUploadOutlined />}
-              onClick={() => setIsUploadModalVisible(true)}
-              style={{ fontWeight: 600, height: 38 }}
-            >
-              Upload Excel
+          <Dropdown
+            menu={{
+              items: [
+                ...(isProdAdmin || activeRoleView === "marketing_actuals" ? [{
+                  key: "upload",
+                  icon: <CloudUploadOutlined style={{ color: "#10b981" }} />,
+                  label: "Upload Excel Spreadsheet",
+                  onClick: () => setIsUploadModalVisible(true)
+                }] : []),
+                {
+                  key: "template",
+                  icon: <FileExcelOutlined style={{ color: "#3b82f6" }} />,
+                  label: "Download Excel Template",
+                  onClick: handleDownloadTemplate
+                },
+                {
+                  key: "export",
+                  icon: <DownloadOutlined style={{ color: "#8b5cf6" }} />,
+                  label: "Export Grid to Excel",
+                  onClick: () => exportForecastToExcel(filteredData, `Production_Forecast_${activePeriodLabel.replace(/[^a-zA-Z0-9_-]/g, "_")}.xlsx`)
+                },
+                ...(isProdAdmin ? [
+                  { type: "divider" },
+                  {
+                    key: "reset",
+                    icon: <ReloadOutlined style={{ color: "#ef4444" }} />,
+                    danger: true,
+                    label: (
+                      <Popconfirm
+                        title="Reset to Excel Baseline?"
+                        description="Restore all standard records from ProductionPlan.xlsx baseline."
+                        onConfirm={handleResetBaseline}
+                        okText="Yes, Reset"
+                        cancelText="Cancel"
+                      >
+                        <span style={{ color: "#ef4444", fontWeight: 600 }}>Reset to Baseline</span>
+                      </Popconfirm>
+                    )
+                  }
+                ] : [])
+              ]
+            }}
+            placement="bottomRight"
+          >
+            <Button style={{ height: 38, fontWeight: 600 }}>
+              Data Tools <DownOutlined style={{ fontSize: 10 }} />
             </Button>
-          )}
-
-          <Button
-            icon={<FileExcelOutlined />}
-            onClick={handleDownloadTemplate}
-            style={{ height: 38 }}
-          >
-            Download Template
-          </Button>
-
-          <Button
-            icon={<DownloadOutlined />}
-            onClick={() => exportForecastToExcel(filteredData, `Production_Forecast_${activePeriodLabel.replace(/[^a-zA-Z0-9_-]/g, "_")}.xlsx`)}
-            style={{ height: 38 }}
-          >
-            Export Grid
-          </Button>
+          </Dropdown>
 
           <Button
             type="dashed"
@@ -1325,20 +1690,6 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
           >
             Dashboard
           </Button>
-
-          {isProdAdmin && (
-            <Popconfirm
-              title="Reset to Excel Baseline?"
-              description="Restore all standard records from ProductionPlan.xlsx baseline."
-              onConfirm={handleResetBaseline}
-              okText="Yes, Reset"
-              cancelText="Cancel"
-            >
-              <Tooltip title="Reset to ProductionPlan.xlsx baseline">
-                <Button icon={<ReloadOutlined />} style={{ height: 38 }} />
-              </Tooltip>
-            </Popconfirm>
-          )}
         </Space>
       </div>
 
@@ -1787,40 +2138,20 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
               </Text>
             </Space>
 
-            {/* Select All to Confirm for Production Control - STRICTLY FACTORY VIEW ONLY */}
+            {/* Factory Review Status Indicator - STRICTLY FACTORY VIEW ONLY */}
             {activeRoleView === "factory_performance" && (
-              <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#f0fdfa", padding: "3px 10px", borderRadius: 8, border: "1px solid #ccfbf1" }}>
-                <Checkbox
-                  indeterminate={someConfirmed}
-                  checked={isAllConfirmed}
-                  onChange={(e) => handleToggleConfirmAllProduction(e.target.checked)}
-                  style={{ fontWeight: 600, color: "#0f766e" }}
-                >
-                  Select All to Confirm for Production ({filteredData.filter(r => !!r.factoryConfirmed).length}/{filteredData.length} Confirmed)
-                </Checkbox>
-
-                <Button
-                  size="small"
-                  type={isAllConfirmed ? "default" : "primary"}
-                  icon={<CheckCircleOutlined />}
-                  onClick={() => handleToggleConfirmAllProduction(!isAllConfirmed)}
-                  style={{
-                    backgroundColor: isAllConfirmed ? "#f1f5f9" : "#0f766e",
-                    borderColor: isAllConfirmed ? "#cbd5e1" : "#0f766e",
-                    color: isAllConfirmed ? "#475569" : "#ffffff",
-                    fontWeight: 600,
-                    fontSize: 11,
-                    height: 24,
-                    padding: "0 8px"
-                  }}
-                >
-                  {isAllConfirmed ? "Unconfirm All" : "Confirm All Visible"}
-                </Button>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#f0fdfa", padding: "4px 12px", borderRadius: 8, border: "1px solid #ccfbf1" }}>
+                <Tag color="teal" style={{ fontWeight: 700, margin: 0, fontSize: 12 }}>
+                  🏭 Factory Confirmation: {filteredData.filter(r => (parseFloat(r.factoryTeu) || 0) > 0).length}/{filteredData.length} Confirmed ({summaryMetrics.confirmedTeu} TEUs)
+                </Tag>
+                <Tag color="cyan" style={{ margin: 0, fontSize: 11 }}>
+                  Zero (0) Capable TEU entries excluded • Null/Empty &amp; Capable (&gt;0) visible
+                </Tag>
               </div>
             )}
 
             <Tag color="blue" style={{ borderRadius: 6, fontSize: 11 }}>
-              First 4 columns (Plan & Customer Info) are frozen • Scroll horizontally for Budget, Actuals & Factory
+              First 4 columns (Plan &amp; Customer Info) are frozen • Scroll horizontally for Budget, Actuals &amp; Factory
             </Tag>
           </Space>
 
@@ -1850,7 +2181,7 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
           </Space>
         </div>
 
-        {/* Handsontable with fixedColumnsLeft: 4 for freezing Plan & Customer Info */}
+        {/* Handsontable with fixedColumnsLeft: 4 for freezing Plan & Customer Info and rowHeights: 38 for straight single-row scrolling */}
         <HotTable
           ref={hotTableRef}
           data={filteredData}
@@ -1861,46 +2192,39 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
           height={540}
           width="100%"
           stretchH="none"
-          fixedColumnsLeft={4}
+          fixedColumnsStart={4}
+          rowHeights={38}
+          autoRowSize={false}
           manualColumnResize={true}
-          manualRowResize={true}
+          manualRowResize={false}
           columnSorting={true}
-          contextMenu={isProdAdmin ? [
-            "row_above", 
-            "row_below", 
-            "remove_row", 
-            "---------", 
-            "undo", 
-            "redo", 
-            "make_read_only", 
-            "alignment", 
-            "copy", 
-            "cut"
-          ] : [
-            "copy",
-            "undo",
-            "redo",
-            "alignment"
-          ]}
-          afterChange={handleHandsontableChange}
-          afterRemoveRow={(index, amount, physicalRows) => {
-            if (physicalRows && physicalRows.length > 0) {
-              const removedIds = [];
-              physicalRows.forEach(rowIdx => {
-                const item = filteredData[rowIdx];
-                if (item && item.id) {
-                  removedIds.push(item.id);
-                  deleteProductionForecast(item.id);
+          contextMenu={{
+            items: {
+              spill_order: {
+                name: "🌊 Spill Order to Another Month...",
+                callback: function(key, selection) {
+                  const rowIdx = selection && selection[0] ? selection[0].start.row : 0;
+                  const rowData = filteredData[rowIdx];
+                  if (rowData) {
+                    handleOpenSpillModal(rowData);
+                  }
                 }
-              });
-              setAllData(prev => prev.filter(r => !removedIds.includes(r.id)));
-              message.info(`Deleted ${amount} entry/entries.`);
+              },
+              hsep1: "---------",
+              undo: {},
+              redo: {},
+              alignment: {},
+              copy: {},
+              cut: {}
             }
           }}
+          beforeChange={handleBeforeChange}
+          afterValidate={handleAfterValidate}
+          afterChange={handleHandsontableChange}
           licenseKey="non-commercial-and-evaluation"
           renderAllRows={false}
-          autoWrapRow={true}
-          autoWrapCol={true}
+          autoWrapRow={false}
+          autoWrapCol={false}
         />
       </div>
 
@@ -2192,7 +2516,7 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item name="factoryTeu" label="Factory Capable TEU">
-                <InputNumber min={0} step={0.25} style={{ width: "100%" }} />
+                <InputNumber min={0} step={0.25} placeholder="Leave empty for unreviewed" style={{ width: "100%" }} />
               </Form.Item>
             </Col>
             <Col span={12}>
@@ -2236,6 +2560,102 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
             </Card>
           )}
         </Form>
+      </Modal>
+
+      {/* Spill Order Management Modal */}
+      <Modal
+        title={
+          <Space>
+            <SwapRightOutlined style={{ color: "#d97706" }} />
+            <span>Spill Order to Another Month / Year</span>
+          </Space>
+        }
+        open={isSpillModalVisible}
+        onOk={handleCommitSpill}
+        onCancel={() => {
+          setIsSpillModalVisible(false);
+          setSpillSelectedRow(null);
+        }}
+        okText="Confirm & Spill Order"
+        cancelText="Cancel"
+        okButtonProps={{
+          style: { backgroundColor: "#eab308", borderColor: "#ca8a04", color: "#422006", fontWeight: 700 }
+        }}
+        width={640}
+      >
+        <div style={{ margin: "16px 0" }}>
+          <Text type="secondary" style={{ display: "block", marginBottom: 16 }}>
+            Spilling moves this order/line to another month and appends <b>(Spill)</b> to the customer name with yellow highlighting.
+          </Text>
+
+          <Form layout="vertical">
+            <Form.Item label="Select Order / Customer to Spill">
+              <Select
+                showSearch
+                optionFilterProp="children"
+                value={spillSelectedRow?.id}
+                onChange={(val) => {
+                  const row = allData.find(r => r.id === val);
+                  if (row) setSpillSelectedRow(row);
+                }}
+                style={{ width: "100%" }}
+                size="middle"
+              >
+                {filteredData.map(r => (
+                  <Option key={r.id} value={r.id}>
+                    {r.buyer} — {r.monthName} ({r.salesOfficer}, {r.department}) — {r.actualTeu || r.budgetTeu} TEU / {formatCompactCurrency(r.actualTurnover || r.budgetTurnover)} LKR
+                  </Option>
+                ))}
+              </Select>
+            </Form.Item>
+
+            <Row gutter={16}>
+              <Col span={12}>
+                <Form.Item label="Current Month / Year">
+                  <Input value={spillSelectedRow?.monthName || "-"} disabled />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item label="Destination Month / Year (Spill Target)">
+                  <Select
+                    value={spillTargetMonthKey}
+                    onChange={setSpillTargetMonthKey}
+                    style={{ width: "100%" }}
+                    size="middle"
+                  >
+                    {FINANCIAL_YEAR_MONTHS.map(m => (
+                      <Option key={m.monthKey} value={m.monthKey}>
+                        {m.name} {m.defaultYear} {m.monthKey === currentMonthKey ? "(Current)" : ""}
+                      </Option>
+                    ))}
+                  </Select>
+                </Form.Item>
+              </Col>
+            </Row>
+
+            {spillSelectedRow && (
+              <Card size="small" style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, marginTop: 8 }}>
+                <Text strong style={{ color: "#92400e", display: "block", marginBottom: 6 }}>
+                  🌊 Spill Preview:
+                </Text>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                  <div>
+                    <Text type="secondary" style={{ fontSize: 12 }}>New Customer Name: </Text>
+                    <span style={{ backgroundColor: "#fef08a", color: "#713f12", padding: "2px 8px", borderRadius: 4, fontWeight: 700, fontSize: 13, border: "1px solid #eab308" }}>
+                      {(spillSelectedRow.buyer || "Customer").replace(/\s*\(Spill\)/gi, "").trim()} (Spill)
+                    </span>
+                  </div>
+                  <div>
+                    <Text type="secondary" style={{ fontSize: 12 }}>Destination: </Text>
+                    <Tag color="gold" style={{ fontWeight: 700 }}>
+                      {FINANCIAL_YEAR_MONTHS.find(m => m.monthKey === spillTargetMonthKey)?.name} {FINANCIAL_YEAR_MONTHS.find(m => m.monthKey === spillTargetMonthKey)?.defaultYear}
+                    </Tag>
+                  </div>
+                </div>
+              </Card>
+            )}
+          </Form>
+        </div>
       </Modal>
     </div>
   );

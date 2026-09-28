@@ -6,6 +6,8 @@ import { Button, Card, Row, Col, Typography, Alert, Modal, Space, Tag, Spin, Upl
 import { LeftOutlined, PlusCircleOutlined, CheckCircleFilled, PlusOutlined, DeleteOutlined, DownloadOutlined, UploadOutlined } from "@ant-design/icons";
 import * as XLSX from "xlsx";
 
+import * as costingPacking from "../../utils/costingPackingConfig";
+
 // Handsontable imports
 import { HotTable } from "@handsontable/react";
 import { registerAllModules } from "handsontable/registry";
@@ -13,6 +15,14 @@ import { registerAllModules } from "handsontable/registry";
 registerAllModules();
 
 const { Title, Text } = Typography;
+
+const getTodayDateStr = () => {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
 
 export default function CreateRequest() {
   const { currentUser } = useAuth();
@@ -30,7 +40,8 @@ export default function CreateRequest() {
   // States for general info
   const [customerName, setCustomerName] = useState("");
   const [productUnit, setProductUnit] = useState(""); // Category ID
-  const [table1Data, setTable1Data] = useState([{ customerName: "", categoryName: "" }]);
+  const [requestDate, setRequestDate] = useState(getTodayDateStr());
+  const [table1Data, setTable1Data] = useState([{ customerName: "", categoryName: "", requestDate: getTodayDateStr() }]);
 
   // Table 2 (specifications) data
   const [table2Data, setTable2Data] = useState([]);
@@ -41,6 +52,75 @@ export default function CreateRequest() {
 
   const getMarketingFieldsForCat = (cat) => {
     let raw = cat ? (cat.fields || []).filter(f => f.owner === "marketing") : [];
+    
+    // Determine dynamic options for Packing Configuration based on category
+    const packingOptions = costingPacking.getPackingOptionsForCategory(cat?.id || cat?.name);
+    
+    // Check if packingConfiguration already exists in category fields
+    const hasPackingConfig = raw.some(f => f.key === "packingConfiguration");
+    if (hasPackingConfig) {
+      raw = raw.map(f => {
+        if (f.key === "packingConfiguration") {
+          return {
+            ...f,
+            label: "Packing Configuration",
+            type: "select",
+            options: packingOptions,
+            required: true,
+            owner: "marketing"
+          };
+        }
+        return f;
+      });
+    } else {
+      // Insert packingConfiguration right after the first field (usually description)
+      const insertIdx = raw.length > 0 ? 1 : 0;
+      raw.splice(insertIdx, 0, {
+        key: "packingConfiguration",
+        label: "Packing Configuration",
+        type: "select",
+        options: packingOptions,
+        required: true,
+        owner: "marketing"
+      });
+    }
+
+    // Ensure NC/RC Ratio, Density, and Latex Ratio are select dropdowns with standard presets
+    raw = raw.map(f => {
+      if (f.key === "ncRcRatio") {
+        return {
+          ...f,
+          type: "select",
+          options: f.options && f.options.length > 0 ? f.options : ["80:20", "70:30", "100:0", "60:40", "50:50", "90:10"],
+          required: true
+        };
+      }
+      if (f.key === "density") {
+        return {
+          ...f,
+          type: "select",
+          options: f.options && f.options.length > 0 ? f.options : ["80 kg/m3", "65 kg/m3", "70 kg/m3", "90 kg/m3", "100 kg/m3", "120 kg/m3"],
+          required: true
+        };
+      }
+      if (f.key === "latexRatio") {
+        return {
+          ...f,
+          type: "select",
+          options: f.options && f.options.length > 0 ? f.options : ["80:20", "70:30", "100:0", "60:40", "50:50"],
+          required: true
+        };
+      }
+      if (f.key === "specifications") {
+        return {
+          ...f,
+          label: "Product Specifications (L x W x H)",
+          required: true
+        };
+      }
+      return f;
+    });
+
     if (!raw.some(f => f.key === "marketingRemarks" || f.key === "remarks")) {
       raw = [
         ...raw,
@@ -61,10 +141,10 @@ export default function CreateRequest() {
           const defaultCat = bedding || cats[0];
           setProductUnit(defaultCat.id);
           
-          setTable1Data([{ customerName: "", categoryName: defaultCat.name }]);
+          setTable1Data([{ customerName: "", categoryName: defaultCat.name, requestDate: getTodayDateStr() }]);
           
           const defaultFields = getMarketingFieldsForCat(defaultCat);
-          const emptyRows = Array.from({ length: 1 }, () => createDefaultRow(defaultFields));
+          const emptyRows = Array.from({ length: 1 }, () => createDefaultRow(defaultFields, defaultCat));
           setTable2Data(emptyRows);
         }
       } catch (err) {
@@ -77,10 +157,15 @@ export default function CreateRequest() {
     loadCategories();
   }, []);
 
-  const createDefaultRow = (fields) => {
+  const createDefaultRow = (fields, cat) => {
     const rowObj = {};
+    const defaultPacking = costingPacking.getDefaultPackingOption(cat?.id || cat?.name);
     fields.forEach(f => {
-      rowObj[f.key] = f.type === "number" ? "" : f.type === "select" ? (f.options?.[0] || "") : "";
+      if (f.key === "packingConfiguration") {
+        rowObj[f.key] = defaultPacking;
+      } else {
+        rowObj[f.key] = "";
+      }
     });
     return rowObj;
   };
@@ -101,13 +186,17 @@ export default function CreateRequest() {
       setCustomerName(rowData.customerName || "");
     }
     
+    if (rowData.requestDate !== undefined && rowData.requestDate !== requestDate) {
+      setRequestDate(rowData.requestDate || getTodayDateStr());
+    }
+    
     const selectedCatName = rowData.categoryName;
     const matchedCat = categories.find(c => c.name === selectedCatName);
     if (matchedCat && matchedCat.id !== productUnit) {
       setProductUnit(matchedCat.id);
       
       const defaultFields = getMarketingFieldsForCat(matchedCat);
-      const emptyRows = Array.from({ length: 1 }, () => createDefaultRow(defaultFields));
+      const emptyRows = Array.from({ length: 1 }, () => createDefaultRow(defaultFields, matchedCat));
       setTable2Data(emptyRows);
     }
   };
@@ -120,7 +209,7 @@ export default function CreateRequest() {
       okText: "Yes, Add",
       cancelText: "Cancel",
       onOk() {
-        const newRow = createDefaultRow(marketingFields);
+        const newRow = createDefaultRow(marketingFields, activeCategory);
         setTable2Data(prev => [...prev, newRow]);
       }
     });
@@ -244,46 +333,130 @@ export default function CreateRequest() {
   const handleSubmitCostingRequest = async () => {
     setError("");
 
-    if (!customerName || customerName.trim() === "") {
-      setError("Please enter the Customer Name in the general details table.");
-      return;
-    }
+    const hot1 = hotTable1Ref.current?.hotInstance;
+    const t1Data = hot1 ? hot1.getSourceData()[0] : table1Data[0];
+    const finalCustomerName = (t1Data?.customerName || customerName || "").trim();
+    const finalRequestDate = t1Data?.requestDate || requestDate || getTodayDateStr();
 
     const hot2 = hotTable2Ref.current?.hotInstance;
     const currentTable2Data = hot2 ? hot2.getSourceData() : table2Data;
 
-    // Filter out completely empty rows (checking only actual marketing input fields)
-    const filledItems = currentTable2Data.filter(row => 
-      marketingFields.some(field => {
-        const val = row[field.key];
-        return val !== undefined && val !== null && val.toString().trim() !== "";
-      })
-    );
+    const validationErrors = [];
 
-    if (filledItems.length === 0) {
-      setError("Please add at least one line item with specifications.");
-      return;
+    if (!finalCustomerName) {
+      validationErrors.push("Customer Name is required in the General Information table (Table 1).");
     }
 
-    // Validate required fields
-    for (let i = 0; i < filledItems.length; i++) {
-      const item = filledItems[i];
-      for (const field of marketingFields) {
-        if (field.required) {
-          const val = item[field.key];
-          if (val === undefined || val === null || val === "") {
-            setError(`Item #${i + 1} is missing a required specification parameter: "${field.label}"`);
-            return;
+    // Filter out rows where the user actually entered data (not just default preset dropdown values)
+    const filledItems = (currentTable2Data || []).filter(row => {
+      if (!row) return false;
+      return (
+        (row.description && String(row.description).trim() !== "") ||
+        (row.specifications && String(row.specifications).trim() !== "") ||
+        (row.length !== undefined && row.length !== null && String(row.length).trim() !== "") ||
+        (row.width !== undefined && row.width !== null && String(row.width).trim() !== "") ||
+        (row.height !== undefined && row.height !== null && String(row.height).trim() !== "") ||
+        (row.marketingRemarks && String(row.marketingRemarks).trim() !== "") ||
+        (row.cartonSize && String(row.cartonSize).trim() !== "")
+      );
+    });
+
+    if (filledItems.length === 0) {
+      validationErrors.push("Please add at least one line item with specifications / dimensions in Table 2.");
+    } else {
+      for (let i = 0; i < filledItems.length; i++) {
+        const item = filledItems[i];
+        
+        // 1. Validate all required marketing fields
+        for (const field of marketingFields) {
+          if (field.required) {
+            const val = item[field.key];
+            if (val === undefined || val === null || String(val).trim() === "") {
+              validationErrors.push(`Item #${i + 1}: Required parameter "${field.label}" is missing.`);
+            }
+          }
+        }
+
+        // 2. Reinforce Product Specifications column to contain L x W x H sequence
+        const hasSpecField = marketingFields.some(f => f.key === "specifications");
+        if (hasSpecField) {
+          const specVal = item.specifications;
+          if (!specVal || String(specVal).trim() === "" || String(specVal).trim() === "-") {
+            validationErrors.push(`Item #${i + 1}: "Product Specifications" is required and must contain the L x W x H dimension sequence (e.g. 57X51X58 CM or 30x30x5 CM).`);
+          } else if (!costingPacking.containsLxWxHSequence(specVal)) {
+            validationErrors.push(`Item #${i + 1}: "Product Specifications" must contain the L x W x H dimension sequence (e.g. 57X51X58 CM or 30x30x5 CM).`);
+          }
+        }
+
+        // 3. Reinforce L x W x H configurations for items with separate Length, Width, Height (e.g. Bedding)
+        const hasLengthField = marketingFields.some(f => f.key === "length");
+        const hasWidthField = marketingFields.some(f => f.key === "width");
+        const hasHeightField = marketingFields.some(f => f.key === "height");
+
+        if (hasLengthField || hasWidthField || hasHeightField) {
+          const l = parseFloat(item.length);
+          const w = parseFloat(item.width);
+          const h = parseFloat(item.height);
+
+          if (isNaN(l) || l <= 0 || isNaN(w) || w <= 0 || isNaN(h) || h <= 0) {
+            validationErrors.push(`Item #${i + 1}: Complete L x W x H configurations (Length, Width, Height) are required and must be numerical values greater than 0.`);
+          }
+        }
+
+        // 4. Reinforce Carton / Bundle Size if present (must be complete 3D L x W x H dimensions)
+        if (item.cartonSize && String(item.cartonSize).trim() !== "" && String(item.cartonSize).trim() !== "0") {
+          if (!costingPacking.isValidDimensionString(item.cartonSize)) {
+            validationErrors.push(`Item #${i + 1}: "Carton / Bundle Size" must contain complete L x W x H numerical dimensions (e.g. 57X51X58 CM).`);
           }
         }
       }
     }
 
+    if (validationErrors.length > 0) {
+      setError(validationErrors.join(" | "));
+      Modal.error({
+        title: "Cannot Create Costing Request",
+        width: 540,
+        centered: true,
+        content: (
+          <div style={{ marginTop: 12 }}>
+            <p style={{ marginBottom: 12, color: "#334155", fontSize: "0.92rem", fontWeight: 500 }}>
+              The costing request cannot be submitted because required configurations or dimensions are missing:
+            </p>
+            <div 
+              style={{ 
+                background: "#fef2f2", 
+                border: "1px solid #fecaca", 
+                borderRadius: 10, 
+                padding: "12px 16px",
+                maxHeight: 240,
+                overflowY: "auto"
+              }}
+            >
+              <ul style={{ margin: 0, paddingLeft: 18, color: "#b91c1c", fontSize: "0.86rem", lineHeight: 1.6 }}>
+                {validationErrors.map((err, idx) => (
+                  <li key={idx} style={{ marginBottom: 4 }}>
+                    <strong>{err}</strong>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <p style={{ marginTop: 12, marginBottom: 0, fontSize: "0.82rem", color: "#64748b" }}>
+              💡 Tip: Make sure full L x W x H numerical configurations and required product specifications are specified.
+            </p>
+          </div>
+        ),
+        okText: "Review & Fix"
+      });
+      return;
+    }
+
     try {
       setSubmitting(true);
       const payload = {
-        customerName: customerName.trim(),
+        customerName: finalCustomerName,
         productUnit,
+        requestDate: finalRequestDate,
         specs: {
           items: filledItems
         }
@@ -296,7 +469,13 @@ export default function CreateRequest() {
       }
     } catch (err) {
       console.error("Error creating costing request:", err);
-      setError(err.message || "Failed to create costing request. Transaction failed.");
+      const errMsg = err.message || "Failed to create costing request. Transaction failed.";
+      setError(errMsg);
+      Modal.error({
+        title: "Submission Failed",
+        content: errMsg,
+        okText: "OK"
+      });
     } finally {
       setSubmitting(false);
     }
@@ -327,6 +506,13 @@ export default function CreateRequest() {
       type: "dropdown",
       source: categories.map(c => c.name),
       visibleRows: 10
+    },
+    {
+      data: "requestDate",
+      type: "date",
+      dateFormat: "YYYY-MM-DD",
+      correctFormat: true,
+      defaultDate: getTodayDateStr()
     }
   ];
 
@@ -337,12 +523,15 @@ export default function CreateRequest() {
     };
     if (f.type === "number") {
       colObj.type = "numeric";
+      colObj.width = 120;
     } else if (f.type === "select") {
       colObj.type = "dropdown";
       colObj.source = f.options || [];
       colObj.visibleRows = 10;
+      colObj.width = 160;
     } else {
       colObj.type = "text";
+      colObj.width = f.key === "specifications" ? 280 : (f.key === "description" ? 220 : 180);
     }
     return colObj;
   });
@@ -376,17 +565,17 @@ export default function CreateRequest() {
             style={{ borderLeft: "4px solid #6366f1", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 12 }}
             styles={{ body: { padding: 24 } }}
           >
-            <div className="hot-container" style={{ maxWidth: 600 }}>
+            <div className="hot-container" style={{ maxWidth: 800 }}>
               <HotTable
                 ref={hotTable1Ref}
                 data={table1Data}
                 columns={table1Columns}
-                colHeaders={["Customer Name *", "Product Category *"]}
+                colHeaders={["Customer Name *", "Product Category *", "Request Date *"]}
                 rowHeaders={false}
                 height="250"
                 licenseKey="non-commercial-and-evaluation"
                 afterChange={handleTable1Change}
-                colWidths={[320, 260]}
+                colWidths={[280, 240, 180]}
               />
             </div>
             <Text type="secondary">Double-click on cells to type or select from the dropdown options.</Text>
@@ -451,7 +640,7 @@ export default function CreateRequest() {
                   rowHeaders={true}
                   height="300"
                   licenseKey="non-commercial-and-evaluation"
-                  colWidths={180}
+                  colWidths={(index) => table2Columns[index]?.width || 180}
                   manualColumnResize={true}
                 />
               ) : (
