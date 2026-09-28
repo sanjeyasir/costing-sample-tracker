@@ -238,9 +238,11 @@ export default function RequestDetails() {
   const handleDetailsTableChange = (changes, source) => {
     if (source === "loadData" || !changes) return;
     
-    // Check if finance entered an irrelevant/non-numeric carton or bundle size
+    // Check if finance entered an invalid carton size or invalid numeric value
     changes.forEach(([row, prop, oldVal, newVal]) => {
-      if (prop === "cost_cartonSize" && newVal !== oldVal && newVal !== "" && newVal !== "0" && newVal !== undefined && newVal !== null) {
+      if (newVal === oldVal) return;
+
+      if (prop === "cost_cartonSize" && newVal !== "" && newVal !== "0" && newVal !== undefined && newVal !== null) {
         if (!costingPacking.isValidDimensionString(newVal)) {
           Modal.warning({
             title: "Numerical Dimension Required",
@@ -259,6 +261,34 @@ export default function RequestDetails() {
           });
         }
       }
+
+      // Check numeric fields in finance entries
+      if (prop && prop.startsWith("cost_")) {
+        const fieldKey = prop.replace("cost_", "");
+        const finField = financeFields.find(f => f.key === fieldKey);
+        if (finField && (finField.type === "number" || ["packing", "unitCost", "cartonsPerPallet", "palletsPer40ft", "palletsPer20ft"].includes(fieldKey))) {
+          if (newVal !== "" && newVal !== undefined && newVal !== null && String(newVal).trim() !== "" && String(newVal).trim() !== "-") {
+            const clean = costingPacking.parseCleanNumeric(newVal);
+            if (clean.isInvalid) {
+              Modal.warning({
+                title: "Invalid Numeric Value",
+                centered: true,
+                content: (
+                  <div style={{ marginTop: 8 }}>
+                    <p style={{ color: "#0f172a", fontWeight: 600, marginBottom: 8 }}>
+                      The value entered for <strong>{finField.label}</strong> (<code>"{newVal}"</code>) is not a valid number.
+                    </p>
+                    <p style={{ color: "#64748b", fontSize: "0.85rem", margin: 0 }}>
+                      Please enter numeric digits only (e.g. <strong>12.50</strong>). Avoid letters, irregular symbols, or extra spaces. Saving will be blocked until this is corrected.
+                    </p>
+                  </div>
+                ),
+                okText: "Got It"
+              });
+            }
+          }
+        }
+      }
     });
 
     const hot = hotTableRef.current?.hotInstance;
@@ -266,7 +296,7 @@ export default function RequestDetails() {
     
     const gridData = hot.getSourceData();
     
-    if (request.specs?.items) {
+    if (request.specs?.items || gridData.length > 1) {
       const updatedCostingItems = {};
       const updatedSpecsItems = [];
       
@@ -286,8 +316,9 @@ export default function RequestDetails() {
           if (rules.nonApplicable.includes(f.key)) {
             val = f.type === "number" ? 0 : "0";
             row[`cost_${f.key}`] = val;
-          } else if (f.type === "number" && val !== "" && val !== undefined && val !== null) {
-            val = Number(val);
+          } else if (f.type === "number" || ["packing", "unitCost", "cartonsPerPallet", "palletsPer40ft", "palletsPer20ft"].includes(f.key)) {
+            const clean = costingPacking.parseCleanNumeric(val);
+            val = clean.isInvalid ? val : (clean.isEmpty ? "" : clean.value);
           }
           costObj[f.key] = val !== undefined ? val : "";
         });
@@ -317,8 +348,9 @@ export default function RequestDetails() {
         if (rules.nonApplicable.includes(f.key)) {
           val = f.type === "number" ? 0 : "0";
           row[`cost_${f.key}`] = val;
-        } else if (f.type === "number" && val !== "" && val !== undefined && val !== null) {
-          val = Number(val);
+        } else if (f.type === "number" || ["packing", "unitCost", "cartonsPerPallet", "palletsPer40ft", "palletsPer20ft"].includes(f.key)) {
+          const clean = costingPacking.parseCleanNumeric(val);
+          val = clean.isInvalid ? val : (clean.isEmpty ? "" : clean.value);
         }
         costObj[f.key] = val !== undefined ? val : "";
       });
@@ -389,8 +421,97 @@ export default function RequestDetails() {
     try {
       setError("");
       setSaving(true);
-      const updated = await costingService.saveCostingDataDraft(id, costingDraft);
+
+      const hot = hotTableRef.current?.hotInstance;
+      let finalCostingDraft = costingDraft;
+      
+      if (hot) {
+        const gridData = hot.getSourceData();
+        const invalidErrors = [];
+
+        if (request.specs?.items || gridData.length > 1) {
+          const updatedCostingItems = {};
+          gridData.forEach((row, idx) => {
+            const packingConfig = row.spec_packingConfiguration || costingPacking.getDefaultPackingOption(request.productUnit);
+            const rules = costingPacking.getFinanceFieldRules(packingConfig);
+            const costObj = {};
+
+            financeFields.forEach(f => {
+              let val = row[`cost_${f.key}`];
+              if (rules.nonApplicable.includes(f.key)) {
+                val = f.type === "number" ? 0 : "0";
+              } else if (f.type === "number" || ["packing", "unitCost", "cartonsPerPallet", "palletsPer40ft", "palletsPer20ft"].includes(f.key)) {
+                if (val !== undefined && val !== null && val !== "" && String(val).trim() !== "" && String(val).trim() !== "-") {
+                  const clean = costingPacking.parseCleanNumeric(val);
+                  if (clean.isInvalid) {
+                    invalidErrors.push(`Item #${idx + 1}: "${f.label}" contains invalid non-numeric text ("${val}").`);
+                  } else {
+                    val = clean.value;
+                  }
+                } else {
+                  val = "";
+                }
+              }
+              costObj[f.key] = val !== undefined ? val : "";
+            });
+            updatedCostingItems[idx] = costingPacking.applyAutoZeroToCosting(costObj, packingConfig);
+          });
+          finalCostingDraft = { ...costingDraft, items: updatedCostingItems };
+        } else {
+          const row = gridData[0] || {};
+          const packingConfig = row.spec_packingConfiguration || costingPacking.getDefaultPackingOption(request.productUnit);
+          const rules = costingPacking.getFinanceFieldRules(packingConfig);
+          const costObj = {};
+
+          financeFields.forEach(f => {
+            let val = row[`cost_${f.key}`];
+            if (rules.nonApplicable.includes(f.key)) {
+              val = f.type === "number" ? 0 : "0";
+            } else if (f.type === "number" || ["packing", "unitCost", "cartonsPerPallet", "palletsPer40ft", "palletsPer20ft"].includes(f.key)) {
+              if (val !== undefined && val !== null && val !== "" && String(val).trim() !== "" && String(val).trim() !== "-") {
+                const clean = costingPacking.parseCleanNumeric(val);
+                if (clean.isInvalid) {
+                  invalidErrors.push(`Item #1: "${f.label}" contains invalid non-numeric text ("${val}").`);
+                } else {
+                  val = clean.value;
+                }
+              } else {
+                val = "";
+              }
+            }
+            costObj[f.key] = val !== undefined ? val : "";
+          });
+          finalCostingDraft = { ...costingDraft, ...costingPacking.applyAutoZeroToCosting(costObj, packingConfig) };
+        }
+
+        if (invalidErrors.length > 0) {
+          Modal.error({
+            title: "Cannot Save Draft: Invalid Values",
+            centered: true,
+            width: 520,
+            content: (
+              <div>
+                <p style={{ color: "#334155", fontWeight: 600 }}>The following row values cannot be saved as they are not valid numbers:</p>
+                <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "10px 14px", maxHeight: 200, overflowY: "auto" }}>
+                  <ul style={{ margin: 0, paddingLeft: 18, color: "#b91c1c", fontSize: "0.85rem" }}>
+                    {invalidErrors.map((err, i) => <li key={i}><strong>{err}</strong></li>)}
+                  </ul>
+                </div>
+                <p style={{ color: "#64748b", fontSize: "0.82rem", margin: "8px 0 0 0" }}>
+                  Please enter numeric digits only or leave optional fields empty.
+                </p>
+              </div>
+            ),
+            okText: "Review & Fix"
+          });
+          setSaving(false);
+          return;
+        }
+      }
+
+      const updated = await costingService.saveCostingDataDraft(id, finalCostingDraft);
       setRequest(updated);
+      setCostingDraft(finalCostingDraft);
       setSuccessMsg("Costing draft saved successfully.");
     } catch (err) {
       setError(err.message || "Failed to save draft.");
@@ -414,16 +535,41 @@ export default function RequestDetails() {
         return;
       }
     } else {
-      const itemsCount = request.specs?.items ? request.specs.items.length : 1;
-      const costingItems = request.specs?.items ? (costingDraft.items || {}) : costingDraft;
-      const specsItems = request.specs?.items || [request.specs || {}];
+      const hot = hotTableRef.current?.hotInstance;
+      const gridData = hot ? hot.getSourceData() : null;
+
+      const itemsCount = request.specs?.items ? request.specs.items.length : (gridData ? gridData.length : 1);
+      const specsItems = request.specs?.items || (gridData ? gridData.map(r => {
+        const obj = {};
+        marketingFields.forEach(f => obj[f.key] = r[`spec_${f.key}`]);
+        return obj;
+      }) : [request.specs || {}]);
+      
       const finalizedCostingItems = {};
       const errors = [];
 
       for (let i = 0; i < itemsCount; i++) {
-        const itemCosting = request.specs?.items ? (costingItems[i] || costingItems[String(i)]) : costingItems;
+        let itemCosting = {};
+        if (gridData && gridData[i]) {
+          const row = gridData[i];
+          const packingConfig = row.spec_packingConfiguration || specsItems[i]?.packingConfiguration || costingPacking.getDefaultPackingOption(request.productUnit);
+          const rules = costingPacking.getFinanceFieldRules(packingConfig);
+          financeFields.forEach(f => {
+            let val = row[`cost_${f.key}`];
+            if (rules.nonApplicable.includes(f.key)) {
+              val = f.type === "number" ? 0 : "0";
+            } else if (f.type === "number" || ["packing", "unitCost", "cartonsPerPallet", "palletsPer40ft", "palletsPer20ft"].includes(f.key)) {
+              const clean = costingPacking.parseCleanNumeric(val);
+              val = clean.isInvalid ? val : (clean.isEmpty ? "" : clean.value);
+            }
+            itemCosting[f.key] = val !== undefined ? val : "";
+          });
+        } else {
+          itemCosting = request.specs?.items ? (costingDraft.items?.[i] || costingDraft.items?.[String(i)]) : costingDraft;
+        }
+
         const itemSpec = specsItems[i] || {};
-        const packingConfig = itemSpec.packingConfiguration || tableData[i]?.spec_packingConfiguration || costingPacking.getDefaultPackingOption(request.productUnit);
+        const packingConfig = itemSpec.packingConfiguration || (gridData && gridData[i]?.spec_packingConfiguration) || costingPacking.getDefaultPackingOption(request.productUnit);
 
         if (!itemCosting) {
           errors.push(`Item #${i + 1}: Costing parameters have not been entered.`);
@@ -435,8 +581,15 @@ export default function RequestDetails() {
         if (!validation.valid) {
           errors.push(validation.error);
         } else {
-          // Ensure non-applicable fields are auto-zeroed
-          finalizedCostingItems[i] = costingPacking.applyAutoZeroToCosting(itemCosting, packingConfig);
+          // Clean & sanitize every numeric field
+          const sanitized = { ...itemCosting };
+          financeFields.forEach(f => {
+            if (f.type === "number" || ["packing", "unitCost", "cartonsPerPallet", "palletsPer40ft", "palletsPer20ft"].includes(f.key)) {
+              const clean = costingPacking.parseCleanNumeric(sanitized[f.key]);
+              sanitized[f.key] = clean.value;
+            }
+          });
+          finalizedCostingItems[i] = costingPacking.applyAutoZeroToCosting(sanitized, packingConfig);
         }
       }
 
@@ -444,12 +597,12 @@ export default function RequestDetails() {
         setError(errors.join(" | "));
         Modal.error({
           title: "Cannot Complete Costing",
-          width: 540,
+          width: 560,
           centered: true,
           content: (
             <div style={{ marginTop: 12 }}>
               <p style={{ marginBottom: 12, color: "#334155", fontSize: "0.92rem", fontWeight: 500 }}>
-                Costing submission cannot proceed because mandatory fields are missing or invalid for the selected packing configurations:
+                Costing submission cannot proceed because mandatory fields are missing or contain invalid non-numeric values:
               </p>
               <div 
                 style={{ 
@@ -470,7 +623,7 @@ export default function RequestDetails() {
                 </ul>
               </div>
               <p style={{ marginTop: 12, marginBottom: 0, fontSize: "0.82rem", color: "#64748b" }}>
-                💡 Tip: Review the highlighted columns in the grid for each item and ensure required values (e.g. Dimensions, Pallet size, Units per pallet, Unit cost) are provided.
+                💡 Tip: Ensure all required numbers (Unit Cost, Packing, Pallet quantities) contain only valid digits without extra spacing or text symbols.
               </p>
             </div>
           ),
@@ -482,7 +635,7 @@ export default function RequestDetails() {
         return;
       }
 
-      if (request.specs?.items) {
+      if (request.specs?.items || (gridData && gridData.length > 1)) {
         costingDraft.items = finalizedCostingItems;
       } else {
         Object.assign(costingDraft, finalizedCostingItems[0] || {});
@@ -570,6 +723,8 @@ export default function RequestDetails() {
       
       if (hot) {
         const gridData = hot.getSourceData();
+        const invalidNumericErrors = [];
+
         if (request.specs?.items || gridData.length > 1) {
           const updatedSpecsItems = [];
           const updatedCostingItems = {};
@@ -589,8 +744,17 @@ export default function RequestDetails() {
               let val = row[`cost_${f.key}`];
               if (rules.nonApplicable.includes(f.key)) {
                 val = f.type === "number" ? 0 : "0";
-              } else if (f.type === "number" && val !== "" && val !== undefined && val !== null) {
-                val = Number(val);
+              } else if (f.type === "number" || ["packing", "unitCost", "cartonsPerPallet", "palletsPer40ft", "palletsPer20ft"].includes(f.key)) {
+                if (val !== undefined && val !== null && val !== "" && String(val).trim() !== "" && String(val).trim() !== "-") {
+                  const clean = costingPacking.parseCleanNumeric(val);
+                  if (clean.isInvalid) {
+                    invalidNumericErrors.push(`Item #${idx + 1}: "${f.label}" contains invalid value ("${val}").`);
+                  } else {
+                    val = clean.value;
+                  }
+                } else {
+                  val = "";
+                }
               }
               costObj[f.key] = val !== undefined ? val : "";
             });
@@ -615,12 +779,39 @@ export default function RequestDetails() {
             let val = row[`cost_${f.key}`];
             if (rules.nonApplicable.includes(f.key)) {
               val = f.type === "number" ? 0 : "0";
-            } else if (f.type === "number" && val !== "" && val !== undefined && val !== null) {
-              val = Number(val);
+            } else if (f.type === "number" || ["packing", "unitCost", "cartonsPerPallet", "palletsPer40ft", "palletsPer20ft"].includes(f.key)) {
+              if (val !== undefined && val !== null && val !== "" && String(val).trim() !== "" && String(val).trim() !== "-") {
+                const clean = costingPacking.parseCleanNumeric(val);
+                if (clean.isInvalid) {
+                  invalidNumericErrors.push(`Item #1: "${f.label}" contains invalid value ("${val}").`);
+                } else {
+                  val = clean.value;
+                }
+              } else {
+                val = "";
+              }
             }
             costObj[f.key] = val !== undefined ? val : "";
           });
           finalCostingDraft = { ...costingDraft, ...costingPacking.applyAutoZeroToCosting(costObj, packingConfig) };
+        }
+
+        if (invalidNumericErrors.length > 0) {
+          Modal.error({
+            title: "Cannot Save Corrections",
+            centered: true,
+            content: (
+              <div>
+                <p style={{ color: "#334155", fontWeight: 600 }}>Please correct the following non-numeric values:</p>
+                <ul style={{ color: "#b91c1c" }}>
+                  {invalidNumericErrors.map((err, i) => <li key={i}><strong>{err}</strong></li>)}
+                </ul>
+              </div>
+            ),
+            okText: "Review & Fix"
+          });
+          setSaving(false);
+          return;
         }
       }
 
@@ -847,7 +1038,8 @@ export default function RequestDetails() {
         activeFinanceFields.forEach(f => {
           let val = itemCosting ? itemCosting[f.key] : "";
           if (f.key === "unitCost" && val !== undefined && val !== "" && val !== null) {
-            val = `$${Number(val).toFixed(2)}`;
+            const clean = costingPacking.parseCleanNumeric(val);
+            val = !clean.isInvalid && clean.value > 0 ? `$${clean.value.toFixed(2)}` : (val || "");
           }
           rowData.push(val !== undefined && val !== null ? val : "");
         });

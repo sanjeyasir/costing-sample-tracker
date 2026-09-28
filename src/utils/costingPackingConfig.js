@@ -240,7 +240,67 @@ export function containsLxWxHSequence(str) {
 }
 
 /**
- * Validate that an item has all mandatory Finance fields filled
+ * Safely parse and sanitize numerical values, stripping currency symbols, spacing, and formatting.
+ * Returns { value: number, isInvalid: boolean, isEmpty: boolean, raw: any }
+ */
+export function parseCleanNumeric(val) {
+  if (val === undefined || val === null || val === "") {
+    return { value: 0, isEmpty: true, isInvalid: false, raw: val };
+  }
+  if (typeof val === "number") {
+    if (isNaN(val) || !isFinite(val)) {
+      return { value: 0, isEmpty: false, isInvalid: true, raw: val };
+    }
+    return { value: val, isEmpty: false, isInvalid: false, raw: val };
+  }
+  let str = String(val).trim();
+  if (str === "" || str === "-" || str === "0") {
+    return { value: 0, isEmpty: str === "" || str === "-", isInvalid: false, raw: val };
+  }
+  if (/^nan$/i.test(str)) {
+    return { value: 0, isEmpty: false, isInvalid: true, raw: val };
+  }
+  // Remove currency symbols ($, €, £), common unit words, and extraneous spaces
+  str = str.replace(/[\$€£]/g, "")
+           .replace(/\b(usd|lkr|rs|pcs|pc|units?|items?|ctns?|cartons?|bdls?|bundles?|rolls?)\b/gi, "")
+           .replace(/\s+/g, "")
+           .trim();
+  if (str === "" || str === "-") {
+    return { value: 0, isEmpty: true, isInvalid: false, raw: val };
+  }
+
+  // Handle commas properly (both thousands separator and decimal separator)
+  if (str.includes(",") && str.includes(".")) {
+    if (str.indexOf(",") < str.indexOf(".")) {
+      // e.g. 1,250.50 -> remove thousands comma
+      str = str.replace(/,/g, "");
+    } else {
+      // e.g. 1.250,50 -> European format
+      str = str.replace(/\./g, "").replace(/,/g, ".");
+    }
+  } else if (str.includes(",")) {
+    // Single comma without dot
+    if (/,\d{1,2}$/.test(str)) {
+      // e.g. 12,5 or 12,50 -> treat comma as decimal point
+      str = str.replace(/,/g, ".");
+    } else {
+      str = str.replace(/,/g, "");
+    }
+  }
+
+  // Check if string contains only valid decimal digits
+  if (!/^-?\d+(\.\d+)?$/.test(str)) {
+    return { value: 0, isEmpty: false, isInvalid: true, raw: val };
+  }
+  const parsed = parseFloat(str);
+  if (isNaN(parsed) || !isFinite(parsed)) {
+    return { value: 0, isEmpty: false, isInvalid: true, raw: val };
+  }
+  return { value: parsed, isEmpty: false, isInvalid: false, raw: val };
+}
+
+/**
+ * Validate that an item has all mandatory Finance fields filled and numeric fields contain valid numbers
  * Returns { valid: boolean, error?: string }
  */
 export function validateFinanceCostingItem(itemCosting, packingConfig, itemIndex = 0) {
@@ -259,8 +319,14 @@ export function validateFinanceCostingItem(itemCosting, packingConfig, itemIndex
     }
 
     if (fieldKey === "packing") {
-      const numVal = Number(val);
-      if (isNaN(numVal) || numVal <= 0) {
+      const clean = parseCleanNumeric(val);
+      if (clean.isInvalid) {
+        return {
+          valid: false,
+          error: `Item #${itemIndex + 1} (${rules.configName}): "Packing (Pieces per carton/bundle/roll)" contains invalid non-numeric text or spacing ("${val}"). Please enter a valid number.`
+        };
+      }
+      if (clean.value <= 0) {
         return {
           valid: false,
           error: `Item #${itemIndex + 1} (${rules.configName}): "Packing (Pieces per carton/bundle/roll)" must be a numeric value greater than 0.`
@@ -269,8 +335,14 @@ export function validateFinanceCostingItem(itemCosting, packingConfig, itemIndex
     }
 
     if (fieldKey === "unitCost") {
-      const numVal = Number(val);
-      if (isNaN(numVal) || numVal <= 0) {
+      const clean = parseCleanNumeric(val);
+      if (clean.isInvalid) {
+        return {
+          valid: false,
+          error: `Item #${itemIndex + 1} (${rules.configName}): "Unit Cost" contains invalid non-numeric text or formatting errors ("${val}"). Please enter a valid positive number.`
+        };
+      }
+      if (clean.value <= 0) {
         return {
           valid: false,
           error: `Item #${itemIndex + 1} (${rules.configName}): "Unit Cost" must be a positive numeric value.`
@@ -279,8 +351,14 @@ export function validateFinanceCostingItem(itemCosting, packingConfig, itemIndex
     }
 
     if (fieldKey === "cartonsPerPallet") {
-      const numVal = Number(val);
-      if (isNaN(numVal) || numVal <= 0) {
+      const clean = parseCleanNumeric(val);
+      if (clean.isInvalid) {
+        return {
+          valid: false,
+          error: `Item #${itemIndex + 1} (${rules.configName}): "${fieldLabel}" contains invalid non-numeric text or spacing ("${val}"). Please enter a valid number.`
+        };
+      }
+      if (clean.value <= 0) {
         return {
           valid: false,
           error: `Item #${itemIndex + 1} (${rules.configName}): "${fieldLabel}" must be a numeric value greater than 0.`
@@ -300,6 +378,25 @@ export function validateFinanceCostingItem(itemCosting, packingConfig, itemIndex
           valid: false,
           error: `Item #${itemIndex + 1} (${rules.configName}): "${fieldLabel}" must contain complete L x W x H numerical dimensions (e.g. 57X51X58 CM).`
         };
+      }
+    }
+  }
+
+  // Validate applicable optional numeric fields if present to prevent any NaN from slipping in
+  for (const fieldKey of rules.applicable) {
+    if (!rules.required.includes(fieldKey)) {
+      const val = itemCosting ? itemCosting[fieldKey] : undefined;
+      const fieldLabel = rules.labels[fieldKey] || fieldKey;
+      if (val !== undefined && val !== null && val !== "" && String(val).trim() !== "" && String(val).trim() !== "-") {
+        if (fieldKey === "cartonsPerPallet" || fieldKey === "palletsPer40ft" || fieldKey === "palletsPer20ft") {
+          const clean = parseCleanNumeric(val);
+          if (clean.isInvalid) {
+            return {
+              valid: false,
+              error: `Item #${itemIndex + 1} (${rules.configName}): "${fieldLabel}" contains invalid non-numeric text or spacing ("${val}"). Please enter a valid number or leave blank.`
+            };
+          }
+        }
       }
     }
   }

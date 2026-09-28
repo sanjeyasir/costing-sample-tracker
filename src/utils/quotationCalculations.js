@@ -189,62 +189,69 @@ export function calculateBeddingItem(item, params = DEFAULT_FINANCIAL_PARAMS) {
   const effectiveMargin = getEffectiveMargin(item, margin);
 
   // FOB 40ft: (((Export Expense / Qty40 + UnitCost) / ExchangeRate)) / (1 - Margin)
-  const fobPrice40ft = (qtyPer40ft > 0 && exchangeRate > 0 && (1 - effectiveMargin) > 0)
+  let rawFob40 = (qtyPer40ft > 0 && exchangeRate > 0 && (1 - effectiveMargin) > 0)
     ? (((exportExpense / qtyPer40ft + unitCost) / exchangeRate) / (1 - effectiveMargin))
     : 0;
+  const fobPrice40ft = isFinite(rawFob40) && !isNaN(rawFob40) ? rawFob40 : 0;
 
   // FOB 20ft: (((Export Expense / Qty20 + UnitCost) / ExchangeRate)) / (1 - Margin)
-  const fobPrice20ft = (qtyPer20ft > 0 && exchangeRate > 0 && (1 - effectiveMargin) > 0)
+  let rawFob20 = (qtyPer20ft > 0 && exchangeRate > 0 && (1 - effectiveMargin) > 0)
     ? (((exportExpense / qtyPer20ft + unitCost) / exchangeRate) / (1 - effectiveMargin))
     : 0;
+  const fobPrice20ft = isFinite(rawFob20) && !isNaN(rawFob20) ? rawFob20 : 0;
 
   // CIF 40ft: FOB_40ft + (CIF Rate / Qty40)
-  const cifPrice40ft = (qtyPer40ft > 0)
+  let rawCif40 = (qtyPer40ft > 0)
     ? (fobPrice40ft + (cifRate / qtyPer40ft))
     : 0;
+  const cifPrice40ft = isFinite(rawCif40) && !isNaN(rawCif40) ? rawCif40 : 0;
 
   // CIF 20ft: FOB_20ft + (CIF Rate / Qty20)
-  const cifPrice20ft = (qtyPer20ft > 0)
+  let rawCif20 = (qtyPer20ft > 0)
     ? (fobPrice20ft + (cifRate / qtyPer20ft))
     : 0;
+  const cifPrice20ft = isFinite(rawCif20) && !isNaN(rawCif20) ? rawCif20 : 0;
 
   // Ex Works Price: (UnitCost / Margin) * (1 + VAT)
-  const exWorksPrice = (effectiveMargin > 0)
+  let rawExw = (effectiveMargin > 0)
     ? ((unitCost / effectiveMargin) * (1 + vat))
     : 0;
+  const exWorksPrice = isFinite(rawExw) && !isNaN(rawExw) ? rawExw : 0;
 
   // Customer Order Volume & Auto Calculations
   const orderVolume = parseFloat(item.orderVolume) || 0;
   const orderCartons = (qtyPerBundle > 0 && orderVolume > 0) ? Math.round(orderVolume / qtyPerBundle) : 0;
   const qtyPerPallet = (bundlesPerPallet > 0 && qtyPerBundle > 0) ? (bundlesPerPallet * qtyPerBundle) : 0;
-  const orderPallets = (qtyPerPallet > 0 && orderVolume > 0) ? Number((orderVolume / qtyPerPallet).toFixed(2)) : 0;
-  const orderTotalCbm = (pieceCbm > 0 && orderVolume > 0) ? Number((pieceCbm * orderVolume).toFixed(3)) : 0;
+  const rawPallets = (qtyPerPallet > 0 && orderVolume > 0) ? Number((orderVolume / qtyPerPallet).toFixed(2)) : 0;
+  const orderPallets = isFinite(rawPallets) && !isNaN(rawPallets) ? rawPallets : 0;
+  const rawTotalCbm = (pieceCbm > 0 && orderVolume > 0) ? Number((pieceCbm * orderVolume).toFixed(3)) : 0;
+  const orderTotalCbm = isFinite(rawTotalCbm) && !isNaN(rawTotalCbm) ? rawTotalCbm : 0;
 
   return {
     ...item,
-    length,
-    width,
-    height,
-    qtyPerBundle,
-    unitCost,
+    length: isFinite(length) ? length : 0,
+    width: isFinite(width) ? width : 0,
+    height: isFinite(height) ? height : 0,
+    qtyPerBundle: isFinite(qtyPerBundle) ? qtyPerBundle : 1,
+    unitCost: isFinite(unitCost) ? unitCost : 0,
     margin: item.margin !== undefined ? item.margin : "",
-    effectiveMargin,
-    palletsPer40ft,
-    palletsPer20ft,
-    bundlesPerPallet,
-    pieceCbm,
-    bundleCbm,
-    bundlesPer20ft: Math.round(bundlesPer20ft),
-    bundlesPer40ft: Math.round(bundlesPer40ft),
-    qtyPer40ft: Math.round(qtyPer40ft),
-    qtyPer20ft: Math.round(qtyPer20ft),
+    effectiveMargin: isFinite(effectiveMargin) ? effectiveMargin : 0.40,
+    palletsPer40ft: isFinite(palletsPer40ft) ? palletsPer40ft : 0,
+    palletsPer20ft: isFinite(palletsPer20ft) ? palletsPer20ft : 0,
+    bundlesPerPallet: isFinite(bundlesPerPallet) ? bundlesPerPallet : 0,
+    pieceCbm: isFinite(pieceCbm) ? pieceCbm : 0,
+    bundleCbm: isFinite(bundleCbm) ? bundleCbm : 0,
+    bundlesPer20ft: isFinite(bundlesPer20ft) ? Math.round(bundlesPer20ft) : 0,
+    bundlesPer40ft: isFinite(bundlesPer40ft) ? Math.round(bundlesPer40ft) : 0,
+    qtyPer40ft: isFinite(qtyPer40ft) ? Math.round(qtyPer40ft) : 0,
+    qtyPer20ft: isFinite(qtyPer20ft) ? Math.round(qtyPer20ft) : 0,
     fobPrice40ft,
     fobPrice20ft,
     cifPrice40ft,
     cifPrice20ft,
     exWorksPrice,
-    orderVolume,
-    orderCartons,
+    orderVolume: isFinite(orderVolume) ? orderVolume : 0,
+    orderCartons: isFinite(orderCartons) ? orderCartons : 0,
     orderPallets,
     orderTotalCbm
   };
@@ -345,66 +352,73 @@ export function calculateHorticultureItem(item, params = DEFAULT_FINANCIAL_PARAM
   const effectiveMargin = getEffectiveMargin(item, margin);
 
   // FOB 40ft: (((Export Expense / Qty40 + UnitCost) / ExchangeRate)) / (1 - Margin)
-  const fobPrice40ft = (qtyPer40ft > 0 && exchangeRate > 0 && (1 - effectiveMargin) > 0)
+  let rawFob40 = (qtyPer40ft > 0 && exchangeRate > 0 && (1 - effectiveMargin) > 0)
     ? (((exportExpense / qtyPer40ft + unitCost) / exchangeRate) / (1 - effectiveMargin))
     : 0;
+  const fobPrice40ft = isFinite(rawFob40) && !isNaN(rawFob40) ? rawFob40 : 0;
 
   // FOB 20ft: (((Export Expense / Qty20 + UnitCost) / ExchangeRate)) / (1 - Margin)
-  const fobPrice20ft = (qtyPer20ft > 0 && exchangeRate > 0 && (1 - effectiveMargin) > 0)
+  let rawFob20 = (qtyPer20ft > 0 && exchangeRate > 0 && (1 - effectiveMargin) > 0)
     ? (((exportExpense / qtyPer20ft + unitCost) / exchangeRate) / (1 - effectiveMargin))
     : 0;
+  const fobPrice20ft = isFinite(rawFob20) && !isNaN(rawFob20) ? rawFob20 : 0;
 
   // CIF 40ft: FOB_40ft + (CIF Rate / Qty40)
-  const cifPrice40ft = (qtyPer40ft > 0)
+  let rawCif40 = (qtyPer40ft > 0)
     ? (fobPrice40ft + (cifRate / qtyPer40ft))
     : 0;
+  const cifPrice40ft = isFinite(rawCif40) && !isNaN(rawCif40) ? rawCif40 : 0;
 
   // CIF 20ft: FOB_20ft + (CIF Rate / Qty20)
-  const cifPrice20ft = (qtyPer20ft > 0)
+  let rawCif20 = (qtyPer20ft > 0)
     ? (fobPrice20ft + (cifRate / qtyPer20ft))
     : 0;
+  const cifPrice20ft = isFinite(rawCif20) && !isNaN(rawCif20) ? rawCif20 : 0;
 
   // Ex Works Price: (UnitCost / Margin) * (1 + VAT)
-  const exWorksPrice = (effectiveMargin > 0)
+  let rawExw = (effectiveMargin > 0)
     ? ((unitCost / effectiveMargin) * (1 + vat))
     : 0;
+  const exWorksPrice = isFinite(rawExw) && !isNaN(rawExw) ? rawExw : 0;
 
   // Customer Order Volume & Auto Calculations
   const orderVolume = parseFloat(item.orderVolume) || 0;
   const orderCartons = (packing > 0 && orderVolume > 0) ? Math.round(orderVolume / packing) : 0;
   const qtyPerPallet = (cartonsPerPallet > 0 && packing > 0) ? (cartonsPerPallet * packing) : 0;
-  const orderPallets = (qtyPerPallet > 0 && orderVolume > 0) ? Number((orderVolume / qtyPerPallet).toFixed(2)) : 0;
-  const orderTotalCbm = (itemCbm > 0 && orderCartons > 0) ? Number((itemCbm * orderCartons).toFixed(3)) : 0;
+  const rawPallets = (qtyPerPallet > 0 && orderVolume > 0) ? Number((orderVolume / qtyPerPallet).toFixed(2)) : 0;
+  const orderPallets = isFinite(rawPallets) && !isNaN(rawPallets) ? rawPallets : 0;
+  const rawTotalCbm = (itemCbm > 0 && orderCartons > 0) ? Number((itemCbm * orderCartons).toFixed(3)) : 0;
+  const orderTotalCbm = isFinite(rawTotalCbm) && !isNaN(rawTotalCbm) ? rawTotalCbm : 0;
 
   return {
     ...item,
     dims,
     rollDims,
-    packing,
-    unitCost,
+    packing: isFinite(packing) ? packing : 1,
+    unitCost: isFinite(unitCost) ? unitCost : 0,
     margin: item.margin !== undefined ? item.margin : "",
-    effectiveMargin,
-    palletsPer40ft,
-    palletsPer20ft,
-    cartonsPerPallet,
-    cartonCbm,
-    rollCbm: rollDims.rollCbm,
-    itemCbm,
+    effectiveMargin: isFinite(effectiveMargin) ? effectiveMargin : 0.40,
+    palletsPer40ft: isFinite(palletsPer40ft) ? palletsPer40ft : 0,
+    palletsPer20ft: isFinite(palletsPer20ft) ? palletsPer20ft : 0,
+    cartonsPerPallet: isFinite(cartonsPerPallet) ? cartonsPerPallet : 0,
+    cartonCbm: isFinite(cartonCbm) ? cartonCbm : 0,
+    rollCbm: isFinite(rollDims.rollCbm) ? rollDims.rollCbm : 0,
+    itemCbm: isFinite(itemCbm) ? itemCbm : 0,
     loadingType,
     hasRollDiameter,
-    bundlesPer20ft: Math.round(bundlesPer20ft),
-    bundlesPer40ft: Math.round(bundlesPer40ft),
-    cartonsPer20ft: Math.round(cartonsPer20ft),
-    cartonsPer40ft: Math.round(cartonsPer40ft),
-    qtyPer40ft: Math.round(qtyPer40ft),
-    qtyPer20ft: Math.round(qtyPer20ft),
+    bundlesPer20ft: isFinite(bundlesPer20ft) ? Math.round(bundlesPer20ft) : 0,
+    bundlesPer40ft: isFinite(bundlesPer40ft) ? Math.round(bundlesPer40ft) : 0,
+    cartonsPer20ft: isFinite(cartonsPer20ft) ? Math.round(cartonsPer20ft) : 0,
+    cartonsPer40ft: isFinite(cartonsPer40ft) ? Math.round(cartonsPer40ft) : 0,
+    qtyPer40ft: isFinite(qtyPer40ft) ? Math.round(qtyPer40ft) : 0,
+    qtyPer20ft: isFinite(qtyPer20ft) ? Math.round(qtyPer20ft) : 0,
     fobPrice40ft,
     fobPrice20ft,
     cifPrice40ft,
     cifPrice20ft,
     exWorksPrice,
-    orderVolume,
-    orderCartons,
+    orderVolume: isFinite(orderVolume) ? orderVolume : 0,
+    orderCartons: isFinite(orderCartons) ? orderCartons : 0,
     orderPallets,
     orderTotalCbm
   };

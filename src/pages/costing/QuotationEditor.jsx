@@ -14,6 +14,7 @@ import {
 } from "../../utils/quotationCalculations";
 import { generateQuotationExcel } from "../../utils/quotationExcelEngine";
 import { downloadQuotationPDF } from "../../utils/quotationPdfGenerator";
+import * as costingPacking from "../../utils/costingPackingConfig";
 import SavedDetailsModal from "./SavedDetailsModal";
 import ParametersLogModal from "./ParametersLogModal";
 
@@ -290,42 +291,42 @@ export default function QuotationEditor() {
             const rawCostCartons = costItem.cartonsPerPallet !== undefined && costItem.cartonsPerPallet !== null && costItem.cartonsPerPallet !== "" 
               ? costItem.cartonsPerPallet 
               : costItem.bundlesPerPallet;
-            const financeCartonsPerPallet = (rawCostCartons !== undefined && rawCostCartons !== null && rawCostCartons !== "") 
-              ? (parseFloat(rawCostCartons) || 0) 
-              : 0;
+            const financeCartonsPerPallet = costingPacking.parseCleanNumeric(rawCostCartons).value;
 
             const rawCostBundles = costItem.bundlesPerPallet !== undefined && costItem.bundlesPerPallet !== null && costItem.bundlesPerPallet !== "" 
               ? costItem.bundlesPerPallet 
               : costItem.cartonsPerPallet;
-            const financeBundlesPerPallet = (rawCostBundles !== undefined && rawCostBundles !== null && rawCostBundles !== "") 
-              ? (parseFloat(rawCostBundles) || 0) 
-              : 0;
+            const financeBundlesPerPallet = costingPacking.parseCleanNumeric(rawCostBundles).value;
+
+            const unitCostVal = costingPacking.parseCleanNumeric(costItem.unitCost || specItem.unitCost).value;
+            const rawPacking = costItem.packing !== undefined && costItem.packing !== "" ? costItem.packing : (specItem.packing !== undefined && specItem.packing !== "" ? specItem.packing : 0);
+            const packingVal = costingPacking.parseCleanNumeric(rawPacking).value;
             
             return {
               id: `item-${idx + 1}`,
               description: mergedDescription,
               specifications: specItem.specifications || specItem.description || "",
               imageUrl: specItem.imageUrl || "",
-              length: parseFloat(specItem.length || specItem.l) || 0,
-              width: parseFloat(specItem.width || specItem.w) || 0,
-              height: parseFloat(specItem.height || specItem.h) || 0,
+              length: costingPacking.parseCleanNumeric(specItem.length || specItem.l).value,
+              width: costingPacking.parseCleanNumeric(specItem.width || specItem.w).value,
+              height: costingPacking.parseCleanNumeric(specItem.height || specItem.h).value,
               organic: specItem.organic || "",
               ncRcRatio: specItem.ncRcRatio || specItem.nc_rc || "",
               density: specItem.density || "",
-              qtyPerBundle: parseFloat(specItem.qtyPerBundle || costItem.qtyPerBundle) || 0,
+              qtyPerBundle: costingPacking.parseCleanNumeric(specItem.qtyPerBundle || costItem.qtyPerBundle).value,
               gsm: specItem.gsm || "",
               latexRatio: specItem.latexRatio || "",
               packingConfiguration: specItem.packingConfiguration || costItem.packingConfiguration || "",
-              packing: costItem.packing !== undefined && costItem.packing !== "" ? parseFloat(costItem.packing) || 0 : (specItem.packing !== undefined && specItem.packing !== "" ? parseFloat(specItem.packing) || 0 : 0),
+              packing: packingVal,
               cartonSize: costItem.cartonSize || specItem.cartonSize || "",
               palletSize: costItem.palletSize || specItem.palletSize || "",
               bundlesPerPallet: financeBundlesPerPallet,
               cartonsPerPallet: financeCartonsPerPallet,
               rollDiameter: costItem.rollDiameter || specItem.rollDiameter || "",
               rollLength: costItem.rollLength || specItem.rollLength || "",
-              unitCost: parseFloat(costItem.unitCost || specItem.unitCost) || 0,
-              palletsPer40ft: parseFloat(costItem.palletsPer40ft) || 0,
-              palletsPer20ft: parseFloat(costItem.palletsPer20ft) || 0
+              unitCost: unitCostVal,
+              palletsPer40ft: costingPacking.parseCleanNumeric(costItem.palletsPer40ft).value,
+              palletsPer20ft: costingPacking.parseCleanNumeric(costItem.palletsPer20ft).value
             };
           });
 
@@ -449,9 +450,10 @@ export default function QuotationEditor() {
           if (prop === "margin") {
             if (cleanVal === "" || cleanVal === null || cleanVal === undefined || cleanVal === "Default" || cleanVal === "default") {
               cleanVal = "";
-            } else if (typeof cleanVal === "string") {
-              const num = parseFloat(cleanVal.replace(/[^0-9.-]+/g, ""));
-              cleanVal = isNaN(num) ? "" : (num <= 1 && num > 0 ? Math.round(num * 100) : num);
+            } else {
+              const clean = costingPacking.parseCleanNumeric(cleanVal);
+              const num = clean.value;
+              cleanVal = clean.isInvalid || clean.isEmpty ? "" : (num <= 1 && num > 0 ? Math.round(num * 100) : num);
             }
           } else if ([
             "length", "width", "height", "qtyPerBundle", "bundlesPerPallet", 
@@ -459,9 +461,8 @@ export default function QuotationEditor() {
             "packing", "gsm", "qtyPer40ft", "qtyPer20ft", "cartonsPer20ft", 
             "cartonsPer40ft", "bundlesPer20ft", "bundlesPer40ft", "orderVolume"
           ].includes(prop)) {
-            if (typeof cleanVal === "string") {
-              cleanVal = parseFloat(cleanVal.replace(/[^0-9.-]+/g, "")) || 0;
-            }
+            const clean = costingPacking.parseCleanNumeric(cleanVal);
+            cleanVal = clean.value;
           }
           nextItems[row] = {
             ...nextItems[row],
@@ -561,6 +562,24 @@ export default function QuotationEditor() {
 
     try {
       setSaving(true);
+      
+      // Sanitize all items to ensure no NaN or unparsed strings can be saved
+      const sanitizedItems = items.map(it => ({
+        ...it,
+        length: costingPacking.parseCleanNumeric(it.length).value,
+        width: costingPacking.parseCleanNumeric(it.width).value,
+        height: costingPacking.parseCleanNumeric(it.height).value,
+        qtyPerBundle: costingPacking.parseCleanNumeric(it.qtyPerBundle).value,
+        bundlesPerPallet: costingPacking.parseCleanNumeric(it.bundlesPerPallet).value,
+        cartonsPerPallet: costingPacking.parseCleanNumeric(it.cartonsPerPallet).value,
+        unitCost: costingPacking.parseCleanNumeric(it.unitCost).value,
+        palletsPer40ft: costingPacking.parseCleanNumeric(it.palletsPer40ft).value,
+        palletsPer20ft: costingPacking.parseCleanNumeric(it.palletsPer20ft).value,
+        packing: costingPacking.parseCleanNumeric(it.packing).value,
+        orderVolume: costingPacking.parseCleanNumeric(it.orderVolume).value,
+        margin: it.margin !== undefined && it.margin !== null && it.margin !== "" ? (costingPacking.parseCleanNumeric(it.margin).value || it.margin) : ""
+      }));
+
       const payload = {
         quotationNo,
         quotationDate,
@@ -575,7 +594,7 @@ export default function QuotationEditor() {
         leadTime,
         validity,
         selectedColumns: category === "bedding" ? selectedBeddingColumns : selectedHortiColumns,
-        items,
+        items: sanitizedItems,
         costRequest: {
           id: request.id,
           costRequestNo: request.costRequestNo,
