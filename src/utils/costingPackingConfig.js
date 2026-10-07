@@ -77,12 +77,13 @@ export function normalizePackingConfig(config) {
 /**
  * Get required Finance fields and auto-zero fields based on packing configuration
  */
-export function getFinanceFieldRules(packingConfig) {
+export function getFinanceFieldRules(packingConfig, isHorticulture = false) {
   const norm = normalizePackingConfig(packingConfig);
 
+  let baseRules;
   switch (norm) {
     case PACKING_CONFIG_TYPES.CARTON_FLOOR:
-      return {
+      baseRules = {
         configName: PACKING_CONFIG_TYPES.CARTON_FLOOR,
         required: ["packing", "cartonSize", "unitCost"],
         applicable: ["packing", "cartonSize", "unitCost"],
@@ -93,9 +94,10 @@ export function getFinanceFieldRules(packingConfig) {
           unitCost: "Unit Cost"
         }
       };
+      break;
 
     case PACKING_CONFIG_TYPES.CARTON_PALLET:
-      return {
+      baseRules = {
         configName: PACKING_CONFIG_TYPES.CARTON_PALLET,
         required: ["packing", "cartonSize", "palletSize", "cartonsPerPallet", "unitCost"],
         applicable: ["packing", "cartonSize", "palletSize", "cartonsPerPallet", "unitCost"],
@@ -108,9 +110,10 @@ export function getFinanceFieldRules(packingConfig) {
           unitCost: "Unit Cost"
         }
       };
+      break;
 
     case PACKING_CONFIG_TYPES.BUNDLE_FLOOR:
-      return {
+      baseRules = {
         configName: PACKING_CONFIG_TYPES.BUNDLE_FLOOR,
         required: ["packing", "cartonSize", "unitCost"],
         applicable: ["packing", "cartonSize", "unitCost"],
@@ -121,9 +124,10 @@ export function getFinanceFieldRules(packingConfig) {
           unitCost: "Unit Cost"
         }
       };
+      break;
 
     case PACKING_CONFIG_TYPES.BUNDLE_PALLET:
-      return {
+      baseRules = {
         configName: PACKING_CONFIG_TYPES.BUNDLE_PALLET,
         required: ["packing", "cartonSize", "palletSize", "cartonsPerPallet", "unitCost"],
         applicable: ["packing", "cartonSize", "palletSize", "cartonsPerPallet", "unitCost"],
@@ -136,9 +140,10 @@ export function getFinanceFieldRules(packingConfig) {
           unitCost: "Unit Cost"
         }
       };
+      break;
 
     case PACKING_CONFIG_TYPES.ROLL_FLOOR:
-      return {
+      baseRules = {
         configName: PACKING_CONFIG_TYPES.ROLL_FLOOR,
         required: ["packing", "rollDiameter", "rollLength", "unitCost"],
         applicable: ["packing", "rollDiameter", "rollLength", "unitCost"],
@@ -150,9 +155,10 @@ export function getFinanceFieldRules(packingConfig) {
           unitCost: "Unit Cost"
         }
       };
+      break;
 
     case PACKING_CONFIG_TYPES.ROLL_PALLET:
-      return {
+      baseRules = {
         configName: PACKING_CONFIG_TYPES.ROLL_PALLET,
         required: ["packing", "rollDiameter", "rollLength", "palletSize", "unitCost"],
         applicable: ["packing", "rollDiameter", "rollLength", "palletSize", "unitCost"],
@@ -165,24 +171,40 @@ export function getFinanceFieldRules(packingConfig) {
           unitCost: "Unit Cost"
         }
       };
+      break;
 
     default:
       // Fallback if not specified or unrecognized
-      return {
+      baseRules = {
         configName: packingConfig || "Standard",
         required: ["packing", "unitCost"],
         applicable: ["packing", "cartonSize", "palletSize", "cartonsPerPallet", "rollDiameter", "rollLength", "unitCost"],
         nonApplicable: [],
         labels: { packing: "Packing (Pieces per Carton/Bundle/Roll)", unitCost: "Unit Cost" }
       };
+      break;
   }
+
+  // If Horticulture setting, specifications (L x W x H) is a compulsory field for Finance
+  if (isHorticulture) {
+    if (!baseRules.required.includes("specifications")) {
+      baseRules.required.unshift("specifications");
+    }
+    if (!baseRules.applicable.includes("specifications")) {
+      baseRules.applicable.unshift("specifications");
+    }
+    baseRules.nonApplicable = baseRules.nonApplicable.filter(k => k !== "specifications");
+    baseRules.labels.specifications = "Product Specifications (L x W x H)";
+  }
+
+  return baseRules;
 }
 
 /**
  * Apply auto-zero to non-applicable fields in a costing item
  */
-export function applyAutoZeroToCosting(costingItem, packingConfig) {
-  const rules = getFinanceFieldRules(packingConfig);
+export function applyAutoZeroToCosting(costingItem, packingConfig, isHorticulture = false) {
+  const rules = getFinanceFieldRules(packingConfig, isHorticulture);
   const updated = { ...(costingItem || {}) };
 
   rules.nonApplicable.forEach(fieldKey => {
@@ -303,9 +325,9 @@ export function parseCleanNumeric(val) {
  * Validate that an item has all mandatory Finance fields filled and numeric fields contain valid numbers
  * Returns { valid: boolean, error?: string }
  */
-export function validateFinanceCostingItem(itemCosting, packingConfig, itemIndex = 0) {
+export function validateFinanceCostingItem(itemCosting, packingConfig, itemIndex = 0, isHorticulture = false) {
   const normConfig = normalizePackingConfig(packingConfig);
-  const rules = getFinanceFieldRules(normConfig);
+  const rules = getFinanceFieldRules(normConfig, isHorticulture);
 
   for (const fieldKey of rules.required) {
     const val = itemCosting ? itemCosting[fieldKey] : undefined;
@@ -316,6 +338,16 @@ export function validateFinanceCostingItem(itemCosting, packingConfig, itemIndex
         valid: false,
         error: `Item #${itemIndex + 1} (${rules.configName}): Mandatory field "${fieldLabel}" must be filled before submission.`
       };
+    }
+
+    if (fieldKey === "specifications") {
+      const specStr = String(val).trim();
+      if (!containsLxWxHSequence(specStr) && !isValidDimensionString(specStr)) {
+        return {
+          valid: false,
+          error: `Item #${itemIndex + 1} (${rules.configName}): "Product Specifications (L x W x H)" is compulsory for Finance in Horticulture and must contain the L x W x H numerical dimensions (e.g. 57X51X58 CM or 30x30x5 CM).`
+        };
+      }
     }
 
     if (fieldKey === "packing") {

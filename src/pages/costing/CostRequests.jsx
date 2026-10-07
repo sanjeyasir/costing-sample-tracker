@@ -316,7 +316,8 @@ export default function CostRequests() {
 
         let hortiSpecs = "";
         if (r.productUnit === "horticulture") {
-          hortiSpecs = `GSM: ${r.specs?.gsm || "-"}, Latex Ratio: ${r.specs?.latexRatio || "-"}, Specs: ${r.specs?.specifications || "-"}`;
+          const hortiSpecVal = r.costing?.specifications || r.specs?.specifications || "-";
+          hortiSpecs = `GSM: ${r.specs?.gsm || "-"}, Latex Ratio: ${r.specs?.latexRatio || "-"}, Specs: ${hortiSpecVal}`;
         }
 
         let unitCostStr = r.costing?.unitCost ? `$${Number(r.costing.unitCost).toFixed(2)}` : "N/A";

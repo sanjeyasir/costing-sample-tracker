@@ -223,6 +223,9 @@ export default function Reports() {
         // Costing keys
         costingFinanceFields.forEach(f => {
           let val = itemCosting[f.key];
+          if (f.key === "specifications" && (val === undefined || val === "")) {
+            val = item.specifications || "";
+          }
           if (f.key === "unitCost" && val !== undefined && val !== "") {
             val = `$${Number(val).toFixed(2)}`;
           }

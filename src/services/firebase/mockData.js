@@ -127,11 +127,11 @@ export const DEFAULT_CATEGORIES = [
         required: true, 
         owner: "marketing" 
       },
-      { key: "specifications", label: "Product Specifications", type: "textarea", required: true, owner: "marketing" },
       { key: "gsm", label: "GSM", type: "number", required: true, owner: "marketing" },
       { key: "latexRatio", label: "Latex Ratio", type: "select", options: ["80:20", "70:30", "100:0", "60:40", "50:50"], required: true, owner: "marketing" },
       { key: "marketingRemarks", label: "Marketing Remarks", type: "text", required: false, owner: "marketing" },
       // Finance fields
+      { key: "specifications", label: "Product Specifications (L x W x H)", type: "text", required: true, owner: "finance" },
       { key: "packing", label: "Packing - Pieces per Carton/Bundle/Roll", type: "text", required: false, owner: "finance" },
       { key: "cartonSize", label: "Carton / Bundle Size (CM)", type: "text", required: false, owner: "finance" },
       { key: "palletSize", label: "Pallet Size (CM)", type: "text", required: false, owner: "finance" },
@@ -196,6 +196,45 @@ export function initializeLocalStorageState() {
   }
   if (!localStorage.getItem("productCategories")) {
     localStorage.setItem("productCategories", JSON.stringify(DEFAULT_CATEGORIES));
+  } else {
+    // Auto-migrate existing categories in localStorage if Horticulture specifications was owned by marketing
+    try {
+      const existingCats = JSON.parse(localStorage.getItem("productCategories") || "[]");
+      let migrated = false;
+      const updatedCats = existingCats.map(cat => {
+        if (cat.id === "horticulture" || cat.name?.toLowerCase().includes("horticulture")) {
+          const fields = (cat.fields || []).map(f => {
+            if (f.key === "specifications") {
+              migrated = true;
+              return {
+                ...f,
+                label: "Product Specifications (L x W x H)",
+                owner: "finance",
+                required: true
+              };
+            }
+            return f;
+          });
+          if (!fields.some(f => f.key === "specifications")) {
+            migrated = true;
+            fields.push({
+              key: "specifications",
+              label: "Product Specifications (L x W x H)",
+              type: "text",
+              required: true,
+              owner: "finance"
+            });
+          }
+          return { ...cat, fields };
+        }
+        return cat;
+      });
+      if (migrated) {
+        localStorage.setItem("productCategories", JSON.stringify(updatedCats));
+      }
+    } catch (e) {
+      console.warn("Category migration check failed:", e);
+    }
   }
   if (!localStorage.getItem("costRequests")) {
     localStorage.setItem("costRequests", JSON.stringify(DEFAULT_REQUESTS));

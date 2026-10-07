@@ -39,13 +39,42 @@ function getFinancialYearStr(date = new Date()) {
  * Fetch all product categories
  */
 export async function getProductCategories() {
+  let categories = [];
   if (isMockMode) {
-    return JSON.parse(localStorage.getItem("productCategories") || "[]");
+    categories = JSON.parse(localStorage.getItem("productCategories") || "[]");
   } else {
     const q = query(collection(db, "productCategories"), orderBy("name"));
     const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    categories = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
   }
+
+  // Ensure Horticulture category has specifications owned by Finance with required: true
+  return categories.map(cat => {
+    if (cat.id === "horticulture" || cat.name?.toLowerCase().includes("horticulture")) {
+      const fields = (cat.fields || []).map(f => {
+        if (f.key === "specifications") {
+          return {
+            ...f,
+            label: "Product Specifications (L x W x H)",
+            owner: "finance",
+            required: true
+          };
+        }
+        return f;
+      });
+      if (!fields.some(f => f.key === "specifications")) {
+        fields.push({
+          key: "specifications",
+          label: "Product Specifications (L x W x H)",
+          type: "text",
+          required: true,
+          owner: "finance"
+        });
+      }
+      return { ...cat, fields };
+    }
+    return cat;
+  });
 }
 
 /**

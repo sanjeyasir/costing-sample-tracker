@@ -305,7 +305,7 @@ export default function QuotationEditor() {
             return {
               id: `item-${idx + 1}`,
               description: mergedDescription,
-              specifications: specItem.specifications || specItem.description || "",
+              specifications: costItem.specifications || specItem.specifications || specItem.description || "",
               imageUrl: specItem.imageUrl || "",
               length: costingPacking.parseCleanNumeric(specItem.length || specItem.l).value,
               width: costingPacking.parseCleanNumeric(specItem.width || specItem.w).value,

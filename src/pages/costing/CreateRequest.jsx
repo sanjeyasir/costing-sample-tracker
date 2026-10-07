@@ -51,7 +51,8 @@ export default function CreateRequest() {
   const [createdRequestInfo, setCreatedRequestInfo] = useState(null);
 
   const getMarketingFieldsForCat = (cat) => {
-    let raw = cat ? (cat.fields || []).filter(f => f.owner === "marketing") : [];
+    const isHorticulture = cat?.id === "horticulture" || cat?.name?.toLowerCase().includes("horticulture");
+    let raw = cat ? (cat.fields || []).filter(f => f.owner === "marketing" && (!isHorticulture || f.key !== "specifications")) : [];
     
     // Determine dynamic options for Packing Configuration based on category
     const packingOptions = costingPacking.getPackingOptionsForCategory(cat?.id || cat?.name);
@@ -356,13 +357,15 @@ export default function CreateRequest() {
         (row.length !== undefined && row.length !== null && String(row.length).trim() !== "") ||
         (row.width !== undefined && row.width !== null && String(row.width).trim() !== "") ||
         (row.height !== undefined && row.height !== null && String(row.height).trim() !== "") ||
+        (row.gsm !== undefined && row.gsm !== null && String(row.gsm).trim() !== "") ||
+        (row.latexRatio && String(row.latexRatio).trim() !== "") ||
         (row.marketingRemarks && String(row.marketingRemarks).trim() !== "") ||
         (row.cartonSize && String(row.cartonSize).trim() !== "")
       );
     });
 
     if (filledItems.length === 0) {
-      validationErrors.push("Please add at least one line item with specifications / dimensions in Table 2.");
+      validationErrors.push("Please add at least one line item with details / specifications in Table 2.");
     } else {
       for (let i = 0; i < filledItems.length; i++) {
         const item = filledItems[i];

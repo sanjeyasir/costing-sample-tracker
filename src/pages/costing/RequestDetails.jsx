@@ -87,8 +87,11 @@ export default function RequestDetails() {
     requestFields = request?.categoryFields || activeCategory?.fields || [];
   }
 
-  // 1. Ensure Marketing Fields include packingConfiguration
-  let rawMarketingFields = requestFields.filter(f => f.owner === "marketing");
+  const isBedding = (request?.productUnit || "").toLowerCase().includes("bedding") || (activeCategory?.name || "").toLowerCase().includes("bedding");
+  const isHorticulture = !isBedding;
+
+  // 1. Ensure Marketing Fields include packingConfiguration and exclude specifications for horticulture
+  let rawMarketingFields = requestFields.filter(f => f.owner === "marketing" && (!isHorticulture || f.key !== "specifications"));
   const packingOptions = costingPacking.getPackingOptionsForCategory(request?.productUnit || activeCategory?.name);
   if (!rawMarketingFields.some(f => f.key === "packingConfiguration")) {
     const insertIdx = rawMarketingFields.length > 0 ? 1 : 0;
@@ -148,9 +151,11 @@ export default function RequestDetails() {
 
   // 2. Ensure Finance Fields have complete standardized packing & dimension fields
   let rawFinanceFields = requestFields.filter(f => f.owner === "finance");
-  const isBedding = (request?.productUnit || "").toLowerCase().includes("bedding") || (activeCategory?.name || "").toLowerCase().includes("bedding");
   
   const standardFinanceKeys = [
+    ...(isHorticulture ? [
+      { key: "specifications", label: "Product Specifications (L x W x H)", type: "text", required: true, owner: "finance" }
+    ] : []),
     { key: "packing", label: "Packing (Pcs / Ctn / Bdl / Roll)", type: "number", required: false, owner: "finance" },
     { key: "cartonSize", label: isBedding ? "Bundle Size (CM)" : "Carton / Bundle Size (CM)", type: "text", required: false, owner: "finance" },
     { key: "palletSize", label: "Pallet Size (CM)", type: "text", required: false, owner: "finance" },
@@ -170,7 +175,7 @@ export default function RequestDetails() {
     }
   });
   // Sort finance fields order
-  const orderMap = { packing: 1, cartonSize: 2, palletSize: 3, cartonsPerPallet: 4, rollDiameter: 5, rollLength: 6, unitCost: 7 };
+  const orderMap = { specifications: 0, packing: 1, cartonSize: 2, palletSize: 3, cartonsPerPallet: 4, rollDiameter: 5, rollLength: 6, unitCost: 7 };
   rawFinanceFields.sort((a, b) => (orderMap[a.key] || 99) - (orderMap[b.key] || 99));
 
   const financeFields = rawFinanceFields;
@@ -223,10 +228,14 @@ export default function RequestDetails() {
           : (costingDraft || request.costing || {});
         
         // Apply auto-zero to non-applicable fields
-        itemCosting = costingPacking.applyAutoZeroToCosting(itemCosting, packingConfig);
+        itemCosting = costingPacking.applyAutoZeroToCosting(itemCosting, packingConfig, isHorticulture);
 
         financeFields.forEach(f => {
-          rowObj[`cost_${f.key}`] = itemCosting && itemCosting[f.key] !== undefined ? itemCosting[f.key] : "";
+          let val = itemCosting && itemCosting[f.key] !== undefined ? itemCosting[f.key] : "";
+          if (f.key === "specifications" && (!val || val === "")) {
+            val = item && item.specifications ? item.specifications : "";
+          }
+          rowObj[`cost_${f.key}`] = val;
         });
         
         return rowObj;
@@ -305,10 +314,9 @@ export default function RequestDetails() {
         marketingFields.forEach(f => {
           specObj[f.key] = row[`spec_${f.key}`];
         });
-        updatedSpecsItems.push(specObj);
         
         const packingConfig = specObj.packingConfiguration || row.spec_packingConfiguration || costingPacking.getDefaultPackingOption(request.productUnit);
-        const rules = costingPacking.getFinanceFieldRules(packingConfig);
+        const rules = costingPacking.getFinanceFieldRules(packingConfig, isHorticulture);
 
         const costObj = {};
         financeFields.forEach(f => {
@@ -322,6 +330,10 @@ export default function RequestDetails() {
           }
           costObj[f.key] = val !== undefined ? val : "";
         });
+        if (costObj.specifications !== undefined) {
+          specObj.specifications = costObj.specifications;
+        }
+        updatedSpecsItems.push(specObj);
         updatedCostingItems[idx] = costObj;
       });
       
@@ -337,10 +349,9 @@ export default function RequestDetails() {
       marketingFields.forEach(f => {
         specObj[f.key] = row[`spec_${f.key}`];
       });
-      setSpecsDraft(specObj);
       
       const packingConfig = specObj.packingConfiguration || row.spec_packingConfiguration || costingPacking.getDefaultPackingOption(request.productUnit);
-      const rules = costingPacking.getFinanceFieldRules(packingConfig);
+      const rules = costingPacking.getFinanceFieldRules(packingConfig, isHorticulture);
 
       const costObj = {};
       financeFields.forEach(f => {
@@ -354,6 +365,10 @@ export default function RequestDetails() {
         }
         costObj[f.key] = val !== undefined ? val : "";
       });
+      if (costObj.specifications !== undefined) {
+        specObj.specifications = costObj.specifications;
+      }
+      setSpecsDraft(specObj);
       setCostingDraft(prev => ({
         ...prev,
         ...costObj
@@ -433,7 +448,7 @@ export default function RequestDetails() {
           const updatedCostingItems = {};
           gridData.forEach((row, idx) => {
             const packingConfig = row.spec_packingConfiguration || costingPacking.getDefaultPackingOption(request.productUnit);
-            const rules = costingPacking.getFinanceFieldRules(packingConfig);
+            const rules = costingPacking.getFinanceFieldRules(packingConfig, isHorticulture);
             const costObj = {};
 
             financeFields.forEach(f => {
@@ -454,13 +469,13 @@ export default function RequestDetails() {
               }
               costObj[f.key] = val !== undefined ? val : "";
             });
-            updatedCostingItems[idx] = costingPacking.applyAutoZeroToCosting(costObj, packingConfig);
+            updatedCostingItems[idx] = costingPacking.applyAutoZeroToCosting(costObj, packingConfig, isHorticulture);
           });
           finalCostingDraft = { ...costingDraft, items: updatedCostingItems };
         } else {
           const row = gridData[0] || {};
           const packingConfig = row.spec_packingConfiguration || costingPacking.getDefaultPackingOption(request.productUnit);
-          const rules = costingPacking.getFinanceFieldRules(packingConfig);
+          const rules = costingPacking.getFinanceFieldRules(packingConfig, isHorticulture);
           const costObj = {};
 
           financeFields.forEach(f => {
@@ -481,7 +496,7 @@ export default function RequestDetails() {
             }
             costObj[f.key] = val !== undefined ? val : "";
           });
-          finalCostingDraft = { ...costingDraft, ...costingPacking.applyAutoZeroToCosting(costObj, packingConfig) };
+          finalCostingDraft = { ...costingDraft, ...costingPacking.applyAutoZeroToCosting(costObj, packingConfig, isHorticulture) };
         }
 
         if (invalidErrors.length > 0) {
@@ -553,7 +568,7 @@ export default function RequestDetails() {
         if (gridData && gridData[i]) {
           const row = gridData[i];
           const packingConfig = row.spec_packingConfiguration || specsItems[i]?.packingConfiguration || costingPacking.getDefaultPackingOption(request.productUnit);
-          const rules = costingPacking.getFinanceFieldRules(packingConfig);
+          const rules = costingPacking.getFinanceFieldRules(packingConfig, isHorticulture);
           financeFields.forEach(f => {
             let val = row[`cost_${f.key}`];
             if (rules.nonApplicable.includes(f.key)) {
@@ -577,7 +592,7 @@ export default function RequestDetails() {
         }
 
         // Validate mandatory fields for the selected packing configuration
-        const validation = costingPacking.validateFinanceCostingItem(itemCosting, packingConfig, i);
+        const validation = costingPacking.validateFinanceCostingItem(itemCosting, packingConfig, i, isHorticulture);
         if (!validation.valid) {
           errors.push(validation.error);
         } else {
@@ -589,7 +604,7 @@ export default function RequestDetails() {
               sanitized[f.key] = clean.value;
             }
           });
-          finalizedCostingItems[i] = costingPacking.applyAutoZeroToCosting(sanitized, packingConfig);
+          finalizedCostingItems[i] = costingPacking.applyAutoZeroToCosting(sanitized, packingConfig, isHorticulture);
         }
       }
 
@@ -734,10 +749,9 @@ export default function RequestDetails() {
             marketingFields.forEach(f => {
               specObj[f.key] = row[`spec_${f.key}`] !== undefined ? row[`spec_${f.key}`] : "";
             });
-            updatedSpecsItems.push(specObj);
             
             const packingConfig = specObj.packingConfiguration || row.spec_packingConfiguration || costingPacking.getDefaultPackingOption(request.productUnit);
-            const rules = costingPacking.getFinanceFieldRules(packingConfig);
+            const rules = costingPacking.getFinanceFieldRules(packingConfig, isHorticulture);
 
             const costObj = {};
             financeFields.forEach(f => {
@@ -758,7 +772,11 @@ export default function RequestDetails() {
               }
               costObj[f.key] = val !== undefined ? val : "";
             });
-            updatedCostingItems[idx] = costingPacking.applyAutoZeroToCosting(costObj, packingConfig);
+            if (costObj.specifications !== undefined) {
+              specObj.specifications = costObj.specifications;
+            }
+            updatedSpecsItems.push(specObj);
+            updatedCostingItems[idx] = costingPacking.applyAutoZeroToCosting(costObj, packingConfig, isHorticulture);
           });
           
           finalSpecsDraft = { items: updatedSpecsItems };
@@ -769,10 +787,9 @@ export default function RequestDetails() {
           marketingFields.forEach(f => {
             specObj[f.key] = row[`spec_${f.key}`] !== undefined ? row[`spec_${f.key}`] : "";
           });
-          finalSpecsDraft = specObj;
           
           const packingConfig = specObj.packingConfiguration || row.spec_packingConfiguration || costingPacking.getDefaultPackingOption(request.productUnit);
-          const rules = costingPacking.getFinanceFieldRules(packingConfig);
+          const rules = costingPacking.getFinanceFieldRules(packingConfig, isHorticulture);
 
           const costObj = {};
           financeFields.forEach(f => {
@@ -793,7 +810,11 @@ export default function RequestDetails() {
             }
             costObj[f.key] = val !== undefined ? val : "";
           });
-          finalCostingDraft = { ...costingDraft, ...costingPacking.applyAutoZeroToCosting(costObj, packingConfig) };
+          if (costObj.specifications !== undefined) {
+            specObj.specifications = costObj.specifications;
+          }
+          finalSpecsDraft = specObj;
+          finalCostingDraft = { ...costingDraft, ...costingPacking.applyAutoZeroToCosting(costObj, packingConfig, isHorticulture) };
         }
 
         if (invalidNumericErrors.length > 0) {
@@ -819,7 +840,7 @@ export default function RequestDetails() {
       const correctionErrors = [];
       const specItemsToCheck = finalSpecsDraft.items || [finalSpecsDraft];
       specItemsToCheck.forEach((item, idx) => {
-        if (item.specifications && !costingPacking.containsLxWxHSequence(item.specifications)) {
+        if (item.specifications && !costingPacking.containsLxWxHSequence(item.specifications) && !costingPacking.isValidDimensionString(item.specifications)) {
           correctionErrors.push(`Item #${idx + 1}: "Product Specifications" must contain the L x W x H dimension sequence (e.g. 57X51X58 CM or 30x30x5 CM).`);
         }
       });
@@ -1162,7 +1183,7 @@ export default function RequestDetails() {
   financeFields.forEach(f => {
     const col = {
       data: `cost_${f.key}`,
-      title: `${f.label} (Fin)`,
+      title: f.required ? `${f.label} * (Fin)` : `${f.label} (Fin)`,
       readOnly: !isCostingActive && !isCorrectingDetails,
       className: "htCenter htMiddle"
     };
@@ -1176,7 +1197,7 @@ export default function RequestDetails() {
       col.width = 140;
     } else {
       col.type = "text";
-      col.width = 160;
+      col.width = f.key === "specifications" ? 250 : 160;
     }
     gridColumns.push(col);
   });
@@ -1513,6 +1534,11 @@ export default function RequestDetails() {
                     <div>
                       <div>Double-click on the Finance column cells to input required costing values. Non-applicable fields for each line's Packing Configuration are locked and automatically zeroed:</div>
                       <div style={{ marginTop: 6, fontSize: "0.82rem", color: "#475569" }}>
+                        {isHorticulture && (
+                          <div style={{ color: "#047857", fontWeight: 700, marginBottom: 4 }}>
+                            • <strong>Horticulture Setting:</strong> Product Specifications (L x W x H) is compulsory for Finance and must contain complete 3D dimensions (e.g. 57X51X58 CM or 30x30x5 CM).
+                          </div>
+                        )}
                         • <strong>Carton Floor Loaded:</strong> Carton Size & Unit Cost required.<br />
                         • <strong>Carton Pallet Loading:</strong> Carton Size, Pallet Size, Cartons per Pallet & Unit Cost required.<br />
                         • <strong>Bundle Floor Loaded:</strong> Bundle Size (in Carton/Bundle size column) & Unit Cost required.<br />
@@ -1560,7 +1586,7 @@ export default function RequestDetails() {
 
                     const rowItem = tableData[row];
                     const packingConfig = rowItem.spec_packingConfiguration || (request?.specs?.items ? request.specs.items[row]?.packingConfiguration : request?.specs?.packingConfiguration) || costingPacking.getDefaultPackingOption(request?.productUnit);
-                    const rules = costingPacking.getFinanceFieldRules(packingConfig);
+                    const rules = costingPacking.getFinanceFieldRules(packingConfig, isHorticulture);
 
                     if (prop && prop.startsWith("cost_")) {
                       const fieldKey = prop.replace("cost_", "");
