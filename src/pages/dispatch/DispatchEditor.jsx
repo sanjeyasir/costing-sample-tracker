@@ -1202,7 +1202,7 @@ export default function DispatchEditor() {
                             <strong>5. Means of conveyance:</strong> {formData.sender?.meansOfConveyance || "BY COURIER FROM COLOMBO, SRI LANKA"}
                           </td>
                           <td style={{ padding: "5px" }}>
-                            <strong>6. Point of entry / Use:</strong> {formData.receiver?.country} | {formData.logistics?.intendedUse || "As samples"}
+                            <strong>6. Point of entry / Use:</strong> Sri Lanka | {formData.logistics?.intendedUse || "As samples"}
                           </td>
                         </tr>
                       </tbody>
@@ -1307,7 +1307,7 @@ export default function DispatchEditor() {
                         1. DETAILS OF THE CONSIGNMENT
                       </div>
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
-                        <div>Exporting country: <strong>{formData.receiver?.country}</strong></div>
+                        <div>Exporting country: <strong>Sri Lanka</strong></div>
                         <div>Airway Bill No: <strong>{formData.waybillNo || "N/A"}</strong></div>
                         <div>Exporter Address: {formData.sender?.address}</div>
                         <div>Invoice No: <strong>{formData.dispatchNo || "N/A"}</strong></div>

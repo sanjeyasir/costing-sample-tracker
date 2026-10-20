@@ -71,7 +71,7 @@ const { Title, Text, Paragraph } = Typography;
 
 export const DEFAULT_SELECTED_HORTI_COLUMNS = [
   "idx", "imageUrl", "description", "packing", "cartonSize", "palletSize",
-  "cartonsPerPallet", "palletsPer20ft", "palletsPer40ft", "rollDiameter",
+  "cartonsPerPallet", "palletsPer20ft", "palletsPer40ft", "rollDiameter", "rollLength",
   "quotedPrice", "cartonsPer20ft", "qtyPer20ft", "cartonsPer40ft", "qtyPer40ft"
 ];
 
@@ -238,6 +238,18 @@ export default function QuotationEditor() {
               ? (parseFloat(rawCostBundles) || 0) 
               : (savedItem.bundlesPerPallet !== undefined && savedItem.bundlesPerPallet !== null && savedItem.bundlesPerPallet !== "" ? parseFloat(savedItem.bundlesPerPallet) || 0 : 0);
 
+            const itemNorm = costingPacking.normalizePackingConfig(costItem.packingConfiguration || savedItem.packingConfiguration);
+            const isPalletConfig = itemNorm.includes("pallet") || financeCartonsPerPallet > 0 || financeBundlesPerPallet > 0;
+            const p20 = (savedItem.palletsPer20ft !== undefined && savedItem.palletsPer20ft !== null && savedItem.palletsPer20ft !== "" && parseFloat(savedItem.palletsPer20ft) > 0)
+              ? parseFloat(savedItem.palletsPer20ft)
+              : (parseFloat(costItem.palletsPer20ft) || (isPalletConfig ? 10 : 0));
+            const p40 = (savedItem.palletsPer40ft !== undefined && savedItem.palletsPer40ft !== null && savedItem.palletsPer40ft !== "" && parseFloat(savedItem.palletsPer40ft) > 0)
+              ? parseFloat(savedItem.palletsPer40ft)
+              : (parseFloat(costItem.palletsPer40ft) || (isPalletConfig ? 20 : 0));
+            const isRollFloor = itemNorm === costingPacking.PACKING_CONFIG_TYPES.ROLL_FLOOR || (Boolean(savedItem.rollDiameter || costItem.rollDiameter) && !isPalletConfig);
+            const rawPack = costItem.packing !== undefined && costItem.packing !== null && costItem.packing !== "" ? parseFloat(costItem.packing) || 0 : (parseFloat(savedItem.packing) || 0);
+            const finalPacking = isRollFloor ? 1 : (rawPack > 0 ? rawPack : 1);
+
             return {
               ...savedItem,
               description: mergedDescription,
@@ -246,7 +258,11 @@ export default function QuotationEditor() {
               cartonSize: costItem.cartonSize !== undefined && costItem.cartonSize !== null && costItem.cartonSize !== "" ? costItem.cartonSize : (savedItem.cartonSize || ""),
               palletSize: costItem.palletSize !== undefined && costItem.palletSize !== null && costItem.palletSize !== "" ? costItem.palletSize : (savedItem.palletSize || ""),
               unitCost: costItem.unitCost !== undefined && costItem.unitCost !== null && costItem.unitCost !== "" ? parseFloat(costItem.unitCost) || 0 : (parseFloat(savedItem.unitCost) || 0),
-              packing: costItem.packing !== undefined && costItem.packing !== null && costItem.packing !== "" ? parseFloat(costItem.packing) || 0 : (parseFloat(savedItem.packing) || 0)
+              packing: finalPacking,
+              rollDiameter: costItem.rollDiameter || savedItem.rollDiameter || "",
+              rollLength: costItem.rollLength || savedItem.rollLength || "",
+              palletsPer20ft: p20,
+              palletsPer40ft: p40
             };
           });
 
@@ -302,6 +318,13 @@ export default function QuotationEditor() {
             const rawPacking = costItem.packing !== undefined && costItem.packing !== "" ? costItem.packing : (specItem.packing !== undefined && specItem.packing !== "" ? specItem.packing : 0);
             const packingVal = costingPacking.parseCleanNumeric(rawPacking).value;
             
+            const itemNorm = costingPacking.normalizePackingConfig(specItem.packingConfiguration || costItem.packingConfiguration);
+            const isPalletConfig = itemNorm.includes("pallet") || financeCartonsPerPallet > 0 || financeBundlesPerPallet > 0;
+            const p20 = costingPacking.parseCleanNumeric(costItem.palletsPer20ft).value || (isPalletConfig ? 10 : 0);
+            const p40 = costingPacking.parseCleanNumeric(costItem.palletsPer40ft).value || (isPalletConfig ? 20 : 0);
+            const isRollFloor = itemNorm === costingPacking.PACKING_CONFIG_TYPES.ROLL_FLOOR || (Boolean(costItem.rollDiameter || specItem.rollDiameter) && !isPalletConfig);
+            const finalPacking = isRollFloor ? 1 : (packingVal > 0 ? packingVal : 1);
+
             return {
               id: `item-${idx + 1}`,
               description: mergedDescription,
@@ -317,7 +340,7 @@ export default function QuotationEditor() {
               gsm: specItem.gsm || "",
               latexRatio: specItem.latexRatio || "",
               packingConfiguration: specItem.packingConfiguration || costItem.packingConfiguration || "",
-              packing: packingVal,
+              packing: finalPacking,
               cartonSize: costItem.cartonSize || specItem.cartonSize || "",
               palletSize: costItem.palletSize || specItem.palletSize || "",
               bundlesPerPallet: financeBundlesPerPallet,
@@ -325,8 +348,8 @@ export default function QuotationEditor() {
               rollDiameter: costItem.rollDiameter || specItem.rollDiameter || "",
               rollLength: costItem.rollLength || specItem.rollLength || "",
               unitCost: unitCostVal,
-              palletsPer40ft: costingPacking.parseCleanNumeric(costItem.palletsPer40ft).value,
-              palletsPer20ft: costingPacking.parseCleanNumeric(costItem.palletsPer20ft).value
+              palletsPer40ft: p40,
+              palletsPer20ft: p20
             };
           });
 
@@ -550,7 +573,16 @@ export default function QuotationEditor() {
         }
       }
 
-      // Pallet validation is completely optional — no blocking or requirement for pallet fields
+      // Mandatory validation for Pallet Loading: Cartons / Bundles per Pallet is required and must be filled
+      const itNorm = costingPacking.normalizePackingConfig(it.packingConfiguration);
+      const isPalletConfig = itNorm.includes("pallet") || it.loadingType === "pallet" || it.loadingType === "bundle_pallet" || it.loadingType === "roll_pallet";
+      if (isPalletConfig) {
+        const pltCount = isBedding ? it.bundlesPerPallet : (it.cartonsPerPallet || it.bundlesPerPallet);
+        if (!pltCount || parseFloat(pltCount) <= 0) {
+          message.error(`Item #${itemNum}: Cartons / Bundles per Pallet is mandatory and must be greater than 0 for Pallet Loading.`);
+          return false;
+        }
+      }
     }
 
     return true;
@@ -914,13 +946,13 @@ export default function QuotationEditor() {
       const effM = item.effectiveMargin !== undefined ? item.effectiveMargin : financialParams.margin;
       setActiveCellValue(`Line Margin: ${(effM * 100).toFixed(1)}% (Yellow cell: edit to set custom line margin or change global dropdown)`);
     } else if (colDef.data === "cartonsPer40ft" || colDef.data === "bundlesPer40ft") {
-      setActiveCellValue(item.cartonsPerPallet > 0 && item.palletsPer40ft > 0 ? `Pallets(${item.palletsPer40ft}) * Ctns/Plt(${item.cartonsPerPallet}) = ${item.cartonsPer40ft}` : `Floor load tolerance (66 CBM) = ${item.cartonsPer40ft}`);
+      setActiveCellValue(item.cartonsPerPallet > 0 && item.palletsPer40ft > 0 ? `Pallets(${item.palletsPer40ft}) * Ctns/Plt(${item.cartonsPerPallet}) = ${item.cartonsPer40ft}` : `Floor load: 67 / ((L*W*H)/1000000) = ${item.cartonsPer40ft}`);
     } else if (colDef.data === "cartonsPer20ft" || colDef.data === "bundlesPer20ft") {
-      setActiveCellValue(item.cartonsPerPallet > 0 && item.palletsPer20ft > 0 ? `Pallets(${item.palletsPer20ft}) * Ctns/Plt(${item.cartonsPerPallet}) = ${item.cartonsPer20ft}` : `Floor load tolerance (26 CBM) = ${item.cartonsPer20ft}`);
+      setActiveCellValue(item.cartonsPerPallet > 0 && item.palletsPer20ft > 0 ? `Pallets(${item.palletsPer20ft}) * Ctns/Plt(${item.cartonsPerPallet}) = ${item.cartonsPer20ft}` : `Floor load: 27 / ((L*W*H)/1000000) = ${item.cartonsPer20ft}`);
     } else if (colDef.data === "qtyPer40ft") {
-      setActiveCellValue(`Cartons/Bundles 40ft(${item.cartonsPer40ft}) * Packing(${item.packing || 1}) = ${item.qtyPer40ft.toLocaleString()}`);
+      setActiveCellValue(item.loadingType === "roll_floor" ? `Roll Floor: 67 / ((Roll L * Dia * Dia)/1000000) = ${item.qtyPer40ft.toLocaleString()}` : `Cartons/Bundles 40ft(${item.cartonsPer40ft}) * Packing(${item.packing || 1}) = ${item.qtyPer40ft.toLocaleString()}`);
     } else if (colDef.data === "qtyPer20ft") {
-      setActiveCellValue(`Cartons/Bundles 20ft(${item.cartonsPer20ft}) * Packing(${item.packing || 1}) = ${item.qtyPer20ft.toLocaleString()}`);
+      setActiveCellValue(item.loadingType === "roll_floor" ? `Roll Floor: 27 / ((Roll L * Dia * Dia)/1000000) = ${item.qtyPer20ft.toLocaleString()}` : `Cartons/Bundles 20ft(${item.cartonsPer20ft}) * Packing(${item.packing || 1}) = ${item.qtyPer20ft.toLocaleString()}`);
     } else if (colDef.data === "orderVolume") {
       setActiveCellValue(`Customer Order Volume (Manual Entry): ${Number(item.orderVolume || 0).toLocaleString()} pieces`);
     } else if (colDef.data === "orderCartons") {
@@ -1009,6 +1041,7 @@ export default function QuotationEditor() {
     { data: "palletsPer20ft", title: "Pallets per 20ft", subTitle: "Marketing to fill", type: "numeric", width: 110, className: "htCenter htMiddle" },
     { data: "palletsPer40ft", title: "Pallets per 40ft", subTitle: "Marketing to fill", type: "numeric", width: 110, className: "htCenter htMiddle" },
     { data: "rollDiameter", title: "Roll diameter (If Roll)", subTitle: "Roll mode", width: 110, className: "htCenter htMiddle" },
+    { data: "rollLength", title: "Roll length (If Roll)", subTitle: "Roll mode (CM/M)", width: 110, className: "htCenter htMiddle" },
     { data: "margin", title: "Margin % (Opt)", subTitle: "Override global %", type: "numeric", renderer: marginRenderer, width: 115, className: "htCenter htMiddle" },
     { data: "quotedPrice", title: "Price FOB /cif/Ex works", subTitle: "Auto calculated price", renderer: priceRenderer, readOnly: true, width: 140 },
     { data: "cartonsPer20ft", title: "Cartons / Bundles per 20ft", subTitle: "Auto / Manual", type: "numeric", width: 130, className: "htCenter htMiddle" },
@@ -1098,6 +1131,7 @@ export default function QuotationEditor() {
     { data: "palletSize", title: "Pallet size (Opt)", width: 95, className: "htCenter htMiddle" },
     { data: "cartonsPerPallet", title: "Cartons / Bundles per Pallet", type: "numeric", width: 125, className: "htCenter htMiddle" },
     { data: "rollDiameter", title: "Roll diameter (If Roll)", width: 110, className: "htCenter htMiddle" },
+    { data: "rollLength", title: "Roll length (If Roll)", width: 110, className: "htCenter htMiddle" },
     { data: "unitCost", title: "Unit Cost (Fin)", type: "numeric", numericFormat: { pattern: "$0,0.00" }, width: 110, className: "htCenter htMiddle" },
     { data: "margin", title: "Margin % (Opt)", type: "numeric", renderer: marginRenderer, width: 115, className: "htCenter htMiddle" },
     { data: "palletsPer20ft", title: "Pallets (20ft)", type: "numeric", width: 100, className: "htCenter htMiddle" },
@@ -1529,7 +1563,7 @@ export default function QuotationEditor() {
                       </Button>
                       <Button 
                         size="small" 
-                        onClick={() => setSelectedHortiColumns(["idx", "imageUrl", "description", "packing", "rollDiameter", "quotedPrice", "cartonsPer20ft", "qtyPer20ft", "cartonsPer40ft", "qtyPer40ft"])}
+                        onClick={() => setSelectedHortiColumns(["idx", "imageUrl", "description", "packing", "rollDiameter", "rollLength", "quotedPrice", "cartonsPer20ft", "qtyPer20ft", "cartonsPer40ft", "qtyPer40ft"])}
                         style={{ fontSize: "0.75rem", borderRadius: 4, background: "#f5f3ff", borderColor: "#ddd6fe", color: "#5b21b6" }}
                       >
                         🌀 Roll Form

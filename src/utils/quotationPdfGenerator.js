@@ -202,6 +202,7 @@ export async function downloadQuotationPDF(quotationData) {
       { key: "plts20", dataKey: "palletsPer20ft", title: "Plt 20ft", subTitle: "Marketing", baseWidth: 12, align: "center" },
       { key: "plts40", dataKey: "palletsPer40ft", title: "Plt 40ft", subTitle: "Marketing", baseWidth: 12, align: "center" },
       { key: "rollDiameter", dataKey: "rollDiameter", title: "Roll Dia", subTitle: "CM", baseWidth: 12, align: "center" },
+      { key: "rollLength", dataKey: "rollLength", title: "Roll Len", subTitle: "CM/M", baseWidth: 12, align: "center" },
       { key: "margin", dataKey: "margin", title: "Margin %", subTitle: "Override", baseWidth: 12, align: "center" },
       { key: "price", dataKey: "quotedPrice", title: `Price (${priceTerm})`, subTitle: "Auto cal", baseWidth: 20, align: "center" },
       { key: "ctn20", dataKey: "cartonsPer20ft", title: "Ctn/Bdl 20ft", subTitle: "Auto pick", baseWidth: 16, align: "center" },
@@ -365,6 +366,9 @@ export async function downloadQuotationPDF(quotationData) {
       } else if (col.key === "rollDiameter") {
         doc.setFontSize(7.5);
         doc.text(String(item.rollDiameter || "-"), curX + (col.width / 2), y + 9, { align: "center" });
+      } else if (col.key === "rollLength" || col.dataKey === "rollLength") {
+        doc.setFontSize(7.5);
+        doc.text(String(item.rollLength || "-"), curX + (col.width / 2), y + 9, { align: "center" });
       } else if (col.key === "margin" || col.dataKey === "margin") {
         doc.setFontSize(7.5);
         const mNum = item.margin ? parseFloat(String(item.margin).replace("%", "")) : Math.round((financialParams.margin || 0.4) * 100);

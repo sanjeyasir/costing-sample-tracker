@@ -102,8 +102,14 @@ function getColumnLetter(colIndex) {
 /**
  * Determine Data Entry column letter for active price term and container size
  */
-function getQuotedPriceFormulaCol(priceTerm, containerSize) {
+function getQuotedPriceFormulaCol(priceTerm, containerSize, isHorti = false) {
   const is20 = containerSize === "20ft";
+  if (isHorti) {
+    if (priceTerm === "FOB") return is20 ? "U" : "T";
+    if (priceTerm === "CIF" || priceTerm === "FOB_SEPARATE_CIF" || priceTerm === "FOB with separate CIF") return is20 ? "W" : "V";
+    if (priceTerm === "EX_WORKS" || priceTerm === "EX works") return "X";
+    return is20 ? "U" : "T";
+  }
   if (priceTerm === "FOB") return is20 ? "T" : "S";
   if (priceTerm === "CIF" || priceTerm === "FOB_SEPARATE_CIF" || priceTerm === "FOB with separate CIF") return is20 ? "V" : "U";
   if (priceTerm === "EX_WORKS" || priceTerm === "EX works") return "W";
@@ -520,8 +526,8 @@ function buildBeddingDataEntrySheet(workbook, data) {
       dRow.getCell(17).value = { formula: `M${rIdx}*J${rIdx}*H${rIdx}`, result: Math.round(item.qtyPer40ft || 0) };
       dRow.getCell(18).value = { formula: `N${rIdx}*J${rIdx}*H${rIdx}`, result: Math.round(item.qtyPer20ft || 0) };
     } else {
-      dRow.getCell(15).value = { formula: `ROUND(26/((B${rIdx}*C${rIdx}*D${rIdx})/1000000)/H${rIdx}, 0)`, result: Math.round(item.bundlesPer20ft || 0) };
-      dRow.getCell(16).value = { formula: `ROUND(66/((B${rIdx}*C${rIdx}*D${rIdx})/1000000)/H${rIdx}, 0)`, result: Math.round(item.bundlesPer40ft || 0) };
+      dRow.getCell(15).value = { formula: `ROUND(27/((B${rIdx}*C${rIdx}*D${rIdx})/1000000)/H${rIdx}, 0)`, result: Math.round(item.bundlesPer20ft || 0) };
+      dRow.getCell(16).value = { formula: `ROUND(67/((B${rIdx}*C${rIdx}*D${rIdx})/1000000)/H${rIdx}, 0)`, result: Math.round(item.bundlesPer40ft || 0) };
       dRow.getCell(17).value = { formula: `P${rIdx}*H${rIdx}`, result: Math.round(item.qtyPer40ft || 0) };
       dRow.getCell(18).value = { formula: `O${rIdx}*H${rIdx}`, result: Math.round(item.qtyPer20ft || 0) };
     }
@@ -584,7 +590,7 @@ function buildHortiQuotationSheet(workbook, data, itemImagesBase64 = []) {
   ws.views = [{ state: "frozen", xSplit: 3, ySplit: 10, showGridLines: true }];
   ws.pageSetup = { orientation: "landscape", paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
 
-  const priceCol = getQuotedPriceFormulaCol(data.priceTerm, data.containerSize);
+  const priceCol = getQuotedPriceFormulaCol(data.priceTerm, data.containerSize, true);
 
   const MASTER_HORTI_COLS = [
     { key: "idx", dataKey: "idx", header1: "#", header2: "#", width: 5, align: "center", getVal: (item, idx) => idx + 1 },
@@ -597,16 +603,17 @@ function buildHortiQuotationSheet(workbook, data, itemImagesBase64 = []) {
     { key: "palletsPer20ft", dataKey: "palletsPer20ft", header1: "Pallets per 20ft", header2: "Marketing to fill", width: 16, align: "center", getVal: (item) => item.palletsPer20ft || 0 },
     { key: "palletsPer40ft", dataKey: "palletsPer40ft", header1: "Pallets per 40ft", header2: "Marketing to fill", width: 16, align: "center", getVal: (item) => item.palletsPer40ft || 0 },
     { key: "rollDiameter", dataKey: "rollDiameter", header1: "Roll diameter (If Roll)", header2: "If applicable", width: 16, align: "center", getVal: (item) => item.rollDiameter || "" },
+    { key: "rollLength", dataKey: "rollLength", header1: "Roll length (If Roll)", header2: "CM / M", width: 16, align: "center", getVal: (item) => item.rollLength || "" },
     { key: "margin", dataKey: "margin", header1: "Margin %", header2: "Override global %", width: 14, align: "center", getVal: (item) => item.margin ? (parseFloat(item.margin) > 1 ? `${parseFloat(item.margin)}%` : `${(parseFloat(item.margin) * 100).toFixed(1)}%`) : "" },
     { key: "quotedPrice", dataKey: "quotedPrice", header1: "Price FOB /cif/Ex works", header2: "Auto calculated price", width: 22, align: "center", isPrice: true, getFormula: (rIdx) => `'Data Entry'!${priceCol}${rIdx}`, getVal: (item, idx, dispPrice) => dispPrice.label },
-    { key: "cartonsPer20ft", dataKey: "cartonsPer20ft", header1: "Cartons / Bundles per 20ft", header2: "Auto pick", width: 16, align: "center", getFormula: (rIdx) => `'Data Entry'!O${rIdx}`, getVal: (item) => item.cartonsPer20ft || 0 },
-    { key: "qtyPer20ft", dataKey: "qtyPer20ft", header1: "Qty per 20ft", header2: "Auto pick", width: 16, align: "center", getFormula: (rIdx) => `'Data Entry'!R${rIdx}`, getVal: (item) => item.qtyPer20ft || 0 },
-    { key: "cartonsPer40ft", dataKey: "cartonsPer40ft", header1: "Cartons / Bundles per 40ft", header2: "Auto pick", width: 16, align: "center", getFormula: (rIdx) => `'Data Entry'!P${rIdx}`, getVal: (item) => item.cartonsPer40ft || 0 },
-    { key: "qtyPer40ft", dataKey: "qtyPer40ft", header1: "Qty per 40ft", header2: "Auto pick", width: 16, align: "center", getFormula: (rIdx) => `'Data Entry'!Q${rIdx}`, getVal: (item) => item.qtyPer40ft || 0 },
+    { key: "cartonsPer20ft", dataKey: "cartonsPer20ft", header1: "Cartons / Bundles per 20ft", header2: "Auto pick", width: 16, align: "center", getFormula: (rIdx) => `'Data Entry'!P${rIdx}`, getVal: (item) => item.cartonsPer20ft || 0 },
+    { key: "qtyPer20ft", dataKey: "qtyPer20ft", header1: "Qty per 20ft", header2: "Auto pick", width: 16, align: "center", getFormula: (rIdx) => `'Data Entry'!S${rIdx}`, getVal: (item) => item.qtyPer20ft || 0 },
+    { key: "cartonsPer40ft", dataKey: "cartonsPer40ft", header1: "Cartons / Bundles per 40ft", header2: "Auto pick", width: 16, align: "center", getFormula: (rIdx) => `'Data Entry'!Q${rIdx}`, getVal: (item) => item.cartonsPer40ft || 0 },
+    { key: "qtyPer40ft", dataKey: "qtyPer40ft", header1: "Qty per 40ft", header2: "Auto pick", width: 16, align: "center", getFormula: (rIdx) => `'Data Entry'!R${rIdx}`, getVal: (item) => item.qtyPer40ft || 0 },
     { key: "orderVolume", dataKey: "orderVolume", header1: "Order Volume", header2: "Manual Entry (Pcs)", width: 16, align: "center", getVal: (item) => item.orderVolume || 0 },
-    { key: "orderCartons", dataKey: "orderCartons", header1: "Order Ctns/Bdls/Rolls", header2: "Auto cal", width: 18, align: "center", getFormula: (rIdx) => `'Data Entry'!Y${rIdx}`, getVal: (item) => item.orderCartons || 0 },
-    { key: "orderPallets", dataKey: "orderPallets", header1: "Order Pallets", header2: "Auto cal", width: 16, align: "center", getFormula: (rIdx) => `'Data Entry'!Z${rIdx}`, getVal: (item) => item.orderPallets || 0 },
-    { key: "orderTotalCbm", dataKey: "orderTotalCbm", header1: "Total CBM", header2: "Auto cal", width: 16, align: "center", getFormula: (rIdx) => `'Data Entry'!AA${rIdx}`, getVal: (item) => item.orderTotalCbm || 0 }
+    { key: "orderCartons", dataKey: "orderCartons", header1: "Order Ctns/Bdls/Rolls", header2: "Auto cal", width: 18, align: "center", getFormula: (rIdx) => `'Data Entry'!Z${rIdx}`, getVal: (item) => item.orderCartons || 0 },
+    { key: "orderPallets", dataKey: "orderPallets", header1: "Order Pallets", header2: "Auto cal", width: 16, align: "center", getFormula: (rIdx) => `'Data Entry'!AA${rIdx}`, getVal: (item) => item.orderPallets || 0 },
+    { key: "orderTotalCbm", dataKey: "orderTotalCbm", header1: "Total CBM", header2: "Auto cal", width: 16, align: "center", getFormula: (rIdx) => `'Data Entry'!AB${rIdx}`, getVal: (item) => item.orderTotalCbm || 0 }
   ];
 
   // Filter columns based strictly on unchecked / selected columns
@@ -908,6 +915,7 @@ function buildHortiDataEntrySheet(workbook, data) {
     "Pallet size-Optional",
     "Cartons / Bundles per Pallet-Optional",
     "Roll diameter-Optional",
+    "Roll length-Optional",
     "Unit Cost (Fin)",
     "Margin % (Opt)",
     "No of pallets per 40ft",
@@ -938,8 +946,8 @@ function buildHortiDataEntrySheet(workbook, data) {
 
   (data.items || []).forEach((item, idx) => {
     const rIdx = headerRow.number + 1 + idx;
-    const isPallet = item.loadingType === "pallet" && item.cartonsPerPallet > 0;
-    const isRoll = item.loadingType === "roll" || Boolean(item.rollDiameter && item.rollDiameter !== "TBA" && item.rollDiameter !== "-" && String(item.rollDiameter).trim() !== "");
+    const isPallet = (item.loadingType === "pallet" || item.loadingType === "bundle_pallet" || item.loadingType === "roll_pallet") || item.cartonsPerPallet > 0;
+    const isRoll = item.loadingType === "roll" || item.loadingType === "roll_floor" || item.loadingType === "roll_pallet" || Boolean(item.rollDiameter && item.rollDiameter !== "TBA" && item.rollDiameter !== "-" && String(item.rollDiameter).trim() !== "");
     const dims = item.dims || (item.cartonSize ? parseDimensions(item.cartonSize) : { length: 0, width: 0, height: 0 });
     const lineMarginVal = item.margin !== undefined && item.margin !== null && item.margin !== "" 
       ? (parseFloat(item.margin) > 1 ? parseFloat(item.margin) / 100 : parseFloat(item.margin)) 
@@ -956,6 +964,7 @@ function buildHortiDataEntrySheet(workbook, data) {
       item.palletSize || "",
       item.cartonsPerPallet || "",
       item.rollDiameter || "",
+      item.rollLength || "",
       item.unitCost || 0,
       lineMarginVal,
       item.palletsPer40ft || 0,
@@ -965,64 +974,62 @@ function buildHortiDataEntrySheet(workbook, data) {
     dRow.height = 22;
 
     if (isPallet) {
-      dRow.getCell(15).value = { formula: `N${rIdx}*I${rIdx}`, result: Math.round(item.cartonsPer20ft || 0) };
-      dRow.getCell(16).value = { formula: `M${rIdx}*I${rIdx}`, result: Math.round(item.cartonsPer40ft || 0) };
-      dRow.getCell(17).value = { formula: `M${rIdx}*I${rIdx}*F${rIdx}`, result: Math.round(item.qtyPer40ft || 0) };
-      dRow.getCell(18).value = { formula: `N${rIdx}*I${rIdx}*F${rIdx}`, result: Math.round(item.qtyPer20ft || 0) };
+      dRow.getCell(16).value = { formula: `O${rIdx}*I${rIdx}`, result: Math.round(item.cartonsPer20ft || 0) };
+      dRow.getCell(17).value = { formula: `N${rIdx}*I${rIdx}`, result: Math.round(item.cartonsPer40ft || 0) };
+      dRow.getCell(18).value = { formula: `N${rIdx}*I${rIdx}*F${rIdx}`, result: Math.round(item.qtyPer40ft || 0) };
+      dRow.getCell(19).value = { formula: `O${rIdx}*I${rIdx}*F${rIdx}`, result: Math.round(item.qtyPer20ft || 0) };
     } else if (isRoll) {
+      dRow.getCell(16).value = 0;
+      dRow.getCell(17).value = 0;
       if (item.rollCbm > 0) {
-        dRow.getCell(15).value = { formula: `ROUND(26/${item.rollCbm}, 0)`, result: Math.round(item.cartonsPer20ft || 0) };
-        dRow.getCell(16).value = { formula: `ROUND(66/${item.rollCbm}, 0)`, result: Math.round(item.cartonsPer40ft || 0) };
-        dRow.getCell(17).value = { formula: `+P${rIdx}*F${rIdx}`, result: Math.round(item.qtyPer40ft || 0) };
-        dRow.getCell(18).value = { formula: `+O${rIdx}*F${rIdx}`, result: Math.round(item.qtyPer20ft || 0) };
+        dRow.getCell(18).value = { formula: `ROUND(67/${item.rollCbm}, 0)`, result: Math.round(item.qtyPer40ft || 0) };
+        dRow.getCell(19).value = { formula: `ROUND(27/${item.rollCbm}, 0)`, result: Math.round(item.qtyPer20ft || 0) };
       } else {
-        dRow.getCell(15).value = Math.round(item.cartonsPer20ft || item.bundlesPer20ft || 0);
-        dRow.getCell(16).value = Math.round(item.cartonsPer40ft || item.bundlesPer40ft || 0);
-        dRow.getCell(17).value = Math.round(item.qtyPer40ft || 0);
-        dRow.getCell(18).value = Math.round(item.qtyPer20ft || 0);
+        dRow.getCell(18).value = Math.round(item.qtyPer40ft || 0);
+        dRow.getCell(19).value = Math.round(item.qtyPer20ft || 0);
       }
     } else {
       const volFormula = (dims.length > 0 && dims.width > 0 && dims.height > 0)
         ? `(${dims.length}*${dims.width}*${dims.height})/1000000`
         : `(0)/1000000`;
-      dRow.getCell(15).value = { formula: `ROUND(26/(${volFormula}), 0)`, result: Math.round(item.cartonsPer20ft || 0) };
-      dRow.getCell(16).value = { formula: `ROUND(MAX(0, (66/(${volFormula}))-7), 0)`, result: Math.round(item.cartonsPer40ft || 0) };
-      dRow.getCell(17).value = { formula: `+P${rIdx}*F${rIdx}`, result: Math.round(item.qtyPer40ft || 0) };
-      dRow.getCell(18).value = { formula: `+O${rIdx}*F${rIdx}`, result: Math.round(item.qtyPer20ft || 0) };
+      dRow.getCell(16).value = { formula: `ROUND(27/(${volFormula}), 0)`, result: Math.round(item.cartonsPer20ft || 0) };
+      dRow.getCell(17).value = { formula: `ROUND(67/(${volFormula}), 0)`, result: Math.round(item.cartonsPer40ft || 0) };
+      dRow.getCell(18).value = { formula: `+Q${rIdx}*F${rIdx}`, result: Math.round(item.qtyPer40ft || 0) };
+      dRow.getCell(19).value = { formula: `+P${rIdx}*F${rIdx}`, result: Math.round(item.qtyPer20ft || 0) };
     }
 
-    // Pricing formulas with Line Margin Override (IF(L{rIdx}>0, IF(L{rIdx}>1, L{rIdx}/100, L{rIdx}), $S$4))
-    dRow.getCell(19).value = { formula: `((($S$2/Q${rIdx}+K${rIdx})/$S$3))/(1-IF(L${rIdx}>0, IF(L${rIdx}>1, L${rIdx}/100, L${rIdx}), $S$4))`, result: item.fobPrice40ft };
-    dRow.getCell(20).value = { formula: `((($S$2/R${rIdx}+K${rIdx})/$S$3))/(1-IF(L${rIdx}>0, IF(L${rIdx}>1, L${rIdx}/100, L${rIdx}), $S$4))`, result: item.fobPrice20ft };
-    dRow.getCell(21).value = { formula: `S${rIdx}+($S$5/Q${rIdx})`, result: item.cifPrice40ft };
-    dRow.getCell(22).value = { formula: `T${rIdx}+($S$5/R${rIdx})`, result: item.cifPrice20ft };
-    dRow.getCell(23).value = { formula: `((K${rIdx}/IF(L${rIdx}>0, IF(L${rIdx}>1, L${rIdx}/100, L${rIdx}), $S$4))*(1+$S$6))`, result: item.exWorksPrice };
+    // Pricing formulas with Line Margin Override (IF(M{rIdx}>0, IF(M{rIdx}>1, M{rIdx}/100, M{rIdx}), $S$4))
+    dRow.getCell(20).value = { formula: `((($S$2/R${rIdx}+L${rIdx})/$S$3))/(1-IF(M${rIdx}>0, IF(M${rIdx}>1, M${rIdx}/100, M${rIdx}), $S$4))`, result: item.fobPrice40ft };
+    dRow.getCell(21).value = { formula: `((($S$2/S${rIdx}+L${rIdx})/$S$3))/(1-IF(M${rIdx}>0, IF(M${rIdx}>1, M${rIdx}/100, M${rIdx}), $S$4))`, result: item.fobPrice20ft };
+    dRow.getCell(22).value = { formula: `T${rIdx}+($S$5/R${rIdx})`, result: item.cifPrice40ft };
+    dRow.getCell(23).value = { formula: `U${rIdx}+($S$5/S${rIdx})`, result: item.cifPrice20ft };
+    dRow.getCell(24).value = { formula: `((L${rIdx}/IF(M${rIdx}>0, IF(M${rIdx}>1, M${rIdx}/100, M${rIdx}), $S$4))*(1+$S$6))`, result: item.exWorksPrice };
 
     // Optional Order Plan formulas
     const unitCbmVal = item.itemCbm || item.rollCbm || item.cartonCbm || 0;
-    dRow.getCell(24).value = item.orderVolume || 0;
-    dRow.getCell(25).value = { formula: `IF(F${rIdx}>0, ROUND(X${rIdx}/F${rIdx}, 0), 0)`, result: item.orderCartons || 0 };
-    dRow.getCell(26).value = { formula: `IF(I${rIdx}*F${rIdx}>0, ROUND(X${rIdx}/(I${rIdx}*F${rIdx}), 2), 0)`, result: item.orderPallets || 0 };
-    dRow.getCell(27).value = { formula: `ROUND(${unitCbmVal}*Y${rIdx}, 3)`, result: item.orderTotalCbm || 0 };
+    dRow.getCell(25).value = item.orderVolume || 0;
+    dRow.getCell(26).value = { formula: `IF(F${rIdx}>0, ROUND(Y${rIdx}/F${rIdx}, 0), 0)`, result: item.orderCartons || 0 };
+    dRow.getCell(27).value = { formula: `IF(I${rIdx}*F${rIdx}>0, ROUND(Y${rIdx}/(I${rIdx}*F${rIdx}), 2), 0)`, result: item.orderPallets || 0 };
+    dRow.getCell(28).value = { formula: `ROUND(${unitCbmVal}*Y${rIdx}, 3)`, result: item.orderTotalCbm || 0 };
 
     dRow.eachCell((cell, colIdx) => {
       cell.font = { name: "Arial", size: 9 };
       cell.alignment = { vertical: "middle", horizontal: colIdx === 2 || colIdx === 3 ? "left" : "center" };
       cell.border = { top: { style: "thin", color: { argb: "FFE2E8F0" } }, bottom: { style: "thin", color: { argb: "FFE2E8F0" } } };
 
-      if (colIdx === 12) {
+      if (colIdx === 13) {
         cell.numFmt = "0.0%";
         cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFEF08A" } };
         cell.font = { name: "Arial", size: 9, bold: true, color: { argb: "FF854D0E" } };
-      } else if ([19, 20, 21, 22].includes(colIdx)) {
+      } else if ([20, 21, 22, 23].includes(colIdx)) {
         cell.numFmt = "$#,##0.0000";
-      } else if (colIdx === 23) {
+      } else if (colIdx === 24) {
         cell.numFmt = "#,##0.00";
-      } else if ([15, 16, 17, 18, 24, 25].includes(colIdx)) {
+      } else if ([16, 17, 18, 19, 25, 26].includes(colIdx)) {
         cell.numFmt = "#,##0";
-      } else if (colIdx === 26) {
-        cell.numFmt = "#,##0.00";
       } else if (colIdx === 27) {
+        cell.numFmt = "#,##0.00";
+      } else if (colIdx === 28) {
         cell.numFmt = "#,##0.000";
       }
     });

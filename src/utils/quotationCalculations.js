@@ -79,8 +79,7 @@ export function parseRollDimensions(rollLengthStr, rollDiameterStr) {
     const lMatch = cleanL.match(/(\d+(\.\d+)?)/);
     if (lMatch) {
       const num = parseFloat(lMatch[1]) || 0;
-      // If specified with 'm' or small number (< 200), treat as meters
-      if (isMeter || (num > 0 && num < 200)) {
+      if (isMeter) {
         lengthCm = num * 100;
       } else {
         lengthCm = num;
@@ -142,8 +141,8 @@ export function calculateBeddingItem(item, params = DEFAULT_FINANCIAL_PARAMS) {
   const qtyPerBundle = parseFloat(item.qtyPerBundle || item.qty_bundle || item.packing) || 1;
   const unitCost = parseFloat(item.unitCost || item.unit_cost) || 0;
   
-  const palletsPer40ft = parseFloat(item.palletsPer40ft || item.pallets_40ft) || 0;
-  const palletsPer20ft = parseFloat(item.palletsPer20ft || item.pallets_20ft) || 0;
+  let palletsPer40ft = parseFloat(item.palletsPer40ft || item.pallets_40ft) || 0;
+  let palletsPer20ft = parseFloat(item.palletsPer20ft || item.pallets_20ft) || 0;
   const bundlesPerPallet = parseFloat(item.bundlesPerPallet || item.bundles_per_pallet) || 0;
   const palletSize = item.palletSize || item.pallet_size || "";
 
@@ -159,23 +158,25 @@ export function calculateBeddingItem(item, params = DEFAULT_FINANCIAL_PARAMS) {
   // Check if Pallet loading is present
   const isPalletLoaded = (palletSize && palletSize !== "TBA" && palletSize !== "-") || (bundlesPerPallet > 0);
 
-  if (isPalletLoaded && bundlesPerPallet > 0 && (palletsPer40ft > 0 || palletsPer20ft > 0)) {
+  if (isPalletLoaded && bundlesPerPallet > 0) {
+    // Pallet per 20ft defaults to 10, pallet per 40ft defaults to 20
+    if (!palletsPer20ft || palletsPer20ft <= 0) palletsPer20ft = 10;
+    if (!palletsPer40ft || palletsPer40ft <= 0) palletsPer40ft = 20;
+
     // Pallet Calculation:
     // Bundles = Pallets * BundlesPerPallet
-    // Qty = Pallets * BundlesPerPallet * QtyPerBundle (Formula: L * J * H and M * J * H)
-    bundlesPer40ft = Math.round(palletsPer40ft * bundlesPerPallet);
+    // Qty = pcs per carton/bundle * Pallets * BundlesPerPallet
     bundlesPer20ft = Math.round(palletsPer20ft * bundlesPerPallet);
-    qtyPer40ft = bundlesPer40ft * qtyPerBundle;
-    qtyPer20ft = bundlesPer20ft * qtyPerBundle;
+    bundlesPer40ft = Math.round(palletsPer40ft * bundlesPerPallet);
+    qtyPer20ft = Math.round(qtyPerBundle * palletsPer20ft * bundlesPerPallet);
+    qtyPer40ft = Math.round(qtyPerBundle * palletsPer40ft * bundlesPerPallet);
   } else {
-    // Floor loading formula with practical CBM tolerance:
-    // 20ft (26 CBM tolerance) => 26 / (vol) / qtyPerBundle
-    // 40ft (66 CBM tolerance) => 66 / (vol) / qtyPerBundle
-    if (pieceCbm > 0 && qtyPerBundle > 0) {
-      bundlesPer20ft = Math.round(26 / pieceCbm / qtyPerBundle);
-      bundlesPer40ft = Math.round(66 / pieceCbm / qtyPerBundle);
-      qtyPer40ft = bundlesPer40ft * qtyPerBundle;
-      qtyPer20ft = bundlesPer20ft * qtyPerBundle;
+    // Bundle Floor Loaded calculation: 27 / ((L x W x H)/1000000) and 67 / ((L x W x H)/1000000)
+    if (bundleCbm > 0 && qtyPerBundle > 0) {
+      bundlesPer20ft = Math.round(27 / bundleCbm);
+      bundlesPer40ft = Math.round(67 / bundleCbm);
+      qtyPer20ft = Math.round(bundlesPer20ft * qtyPerBundle);
+      qtyPer40ft = Math.round(bundlesPer40ft * qtyPerBundle);
     } else {
       bundlesPer20ft = Math.round(parseFloat(item.bundlesPer20ft) || 0);
       bundlesPer40ft = Math.round(parseFloat(item.bundlesPer40ft) || 0);
@@ -262,11 +263,11 @@ export function calculateBeddingItem(item, params = DEFAULT_FINANCIAL_PARAMS) {
  */
 export function calculateHorticultureItem(item, params = DEFAULT_FINANCIAL_PARAMS) {
   const dims = parseDimensions(item.cartonSize || item.carton_size);
-  const packing = parseFloat(item.packing || item.piecesPerCarton || item.pieces_per_carton) || 1;
+  let packing = parseFloat(item.packing || item.piecesPerCarton || item.pieces_per_carton) || 1;
   const unitCost = parseFloat(item.unitCost || item.unit_cost) || 0;
   
-  const palletsPer40ft = parseFloat(item.palletsPer40ft || item.pallets_40ft) || 0;
-  const palletsPer20ft = parseFloat(item.palletsPer20ft || item.pallets_20ft) || 0;
+  let palletsPer40ft = parseFloat(item.palletsPer40ft || item.pallets_40ft) || 0;
+  let palletsPer20ft = parseFloat(item.palletsPer20ft || item.pallets_20ft) || 0;
   const cartonsPerPallet = parseFloat(item.cartonsPerPallet || item.cartons_per_pallet) || 0;
   const palletSize = item.palletSize || item.pallet_size || "";
   
@@ -278,8 +279,30 @@ export function calculateHorticultureItem(item, params = DEFAULT_FINANCIAL_PARAM
   );
 
   const rollDims = parseRollDimensions(item.rollLength || item.roll_length, item.rollDiameter || item.roll_diameter);
-  const isRoll = hasRollDiameter || item.loadingType === "roll" || rollDims.rollCbm > 0;
-  const loadingType = item.loadingType || (isRoll ? "roll" : (cartonsPerPallet > 0 ? "pallet" : "carton_floor"));
+  const isRoll = hasRollDiameter || item.loadingType === "roll" || item.loadingType === "roll_floor" || item.loadingType === "roll_pallet" || rollDims.rollCbm > 0 || Boolean(item.rollLength);
+
+  // Normalize packing configuration if specified
+  const normConfig = String(item.packingConfiguration || "").trim().toLowerCase();
+  const isPalletConfig = normConfig.includes("pallet") || (cartonsPerPallet > 0) || (palletSize && palletSize !== "TBA" && palletSize !== "-");
+
+  let loadingType = item.loadingType;
+  if (!loadingType) {
+    if (isRoll) {
+      loadingType = isPalletConfig ? "roll_pallet" : "roll_floor";
+    } else if (isPalletConfig) {
+      loadingType = normConfig.includes("bundle") ? "bundle_pallet" : "pallet";
+    } else if (normConfig.includes("bundle")) {
+      loadingType = "bundle_floor";
+    } else {
+      loadingType = "carton_floor";
+    }
+  }
+
+  // Pallet loading defaults: 10 for 20ft, 20 for 40ft
+  if (isPalletConfig || loadingType === "pallet" || loadingType === "bundle_pallet" || loadingType === "roll_pallet") {
+    if (!palletsPer20ft || palletsPer20ft <= 0) palletsPer20ft = 10;
+    if (!palletsPer40ft || palletsPer40ft <= 0) palletsPer40ft = 20;
+  }
 
   const cartonCbm = (dims.length * dims.width * dims.height) / 1000000;
   const itemCbm = isRoll && rollDims.rollCbm > 0 ? rollDims.rollCbm : cartonCbm;
@@ -291,59 +314,68 @@ export function calculateHorticultureItem(item, params = DEFAULT_FINANCIAL_PARAM
   let qtyPer40ft = 0;
   let qtyPer20ft = 0;
 
-  if (loadingType === "roll" || isRoll) {
+  if (loadingType === "roll_floor" || (isRoll && !isPalletConfig)) {
+    // 3. Roll Floor Loaded case:
+    // Keep packing/pcs column as always 1, packing pieces (cartons/bundles) as 0 always
+    packing = 1;
+    cartonsPer20ft = 0;
+    cartonsPer40ft = 0;
+    bundlesPer20ft = 0;
+    bundlesPer40ft = 0;
+
+    // qty per 20ft = 27 / ((roll length * roll diameter * roll diameter) / 1000000)
+    // qty per 40ft = 67 / ((roll length * roll diameter * roll diameter) / 1000000)
     if (rollDims.rollCbm > 0) {
-      // Auto cal roll loadability based on Roll CBM:
-      // Rolls 20ft: 26 / Roll_CBM
-      // Rolls 40ft: 66 / Roll_CBM
-      cartonsPer20ft = Math.round(26 / rollDims.rollCbm);
-      cartonsPer40ft = Math.round(66 / rollDims.rollCbm);
-      bundlesPer20ft = cartonsPer20ft;
-      bundlesPer40ft = cartonsPer40ft;
-      qtyPer40ft = cartonsPer40ft * packing;
-      qtyPer20ft = cartonsPer20ft * packing;
+      qtyPer20ft = Math.round(27 / rollDims.rollCbm);
+      qtyPer40ft = Math.round(67 / rollDims.rollCbm);
     } else {
-      qtyPer40ft = parseFloat(item.qtyPer40ft) || 0;
       qtyPer20ft = parseFloat(item.qtyPer20ft) || 0;
-      bundlesPer20ft = Math.round(parseFloat(item.bundlesPer20ft) || 0);
-      bundlesPer40ft = Math.round(parseFloat(item.bundlesPer40ft) || 0);
-      cartonsPer20ft = Math.round(parseFloat(item.cartonsPer20ft || item.bundlesPer20ft) || 0);
-      cartonsPer40ft = Math.round(parseFloat(item.cartonsPer40ft || item.bundlesPer40ft) || 0);
+      qtyPer40ft = parseFloat(item.qtyPer40ft) || 0;
     }
-  } else if (loadingType === "pallet" && cartonsPerPallet > 0 && (palletsPer40ft > 0 || palletsPer20ft > 0)) {
-    // Pallet loading situation: Auto cal = (L x I x F) and (M x I x F)
-    cartonsPer40ft = Math.round(palletsPer40ft * cartonsPerPallet);
-    cartonsPer20ft = Math.round(palletsPer20ft * cartonsPerPallet);
-    bundlesPer40ft = cartonsPer40ft;
+  } else if (loadingType === "roll_pallet" || (isRoll && isPalletConfig)) {
+    // 6. Roll Pallet Loading:
+    // pallets per 20ft is 10, pallets per 40ft is 20
+    // qty per 20ft = cartons/bundles per pallet * pallets per 20ft
+    // qty per 40ft = cartons/bundles per pallet * pallets per 40ft
+    packing = 1;
+    cartonsPer20ft = Math.round(cartonsPerPallet * palletsPer20ft);
+    cartonsPer40ft = Math.round(cartonsPerPallet * palletsPer40ft);
     bundlesPer20ft = cartonsPer20ft;
-    qtyPer40ft = cartonsPer40ft * packing;
-    qtyPer20ft = cartonsPer20ft * packing;
-  } else if (loadingType === "bundle_floor") {
-    // No cartons, bundle pack floor loaded: Auto cal (O x F) and (N x F)
-    bundlesPer20ft = Math.round(parseFloat(item.bundlesPer20ft || item.cartonsPer20ft) || 0);
-    bundlesPer40ft = Math.round(parseFloat(item.bundlesPer40ft || item.cartonsPer40ft) || 0);
-    cartonsPer20ft = bundlesPer20ft;
-    cartonsPer40ft = bundlesPer40ft;
-    qtyPer40ft = cartonsPer40ft * packing;
-    qtyPer20ft = cartonsPer20ft * packing;
+    bundlesPer40ft = cartonsPer40ft;
+    qtyPer20ft = cartonsPer20ft;
+    qtyPer40ft = cartonsPer40ft;
+  } else if ((loadingType === "pallet" || loadingType === "bundle_pallet" || isPalletConfig) && cartonsPerPallet > 0) {
+    // 4 & 5. Carton Pallet Loading & Bundle Pallet Loading:
+    // Pallet per 20ft default is 10, pallet per 40ft default is 20
+    // Cartons/bundles per pallet is filled and mandatory
+    // qty per 20ft = pcs per carton * pallet 20ft * cartons/bundles per pallet
+    // qty per 40ft = pcs per carton * pallet 40ft * cartons/bundles per pallet
+    cartonsPer20ft = Math.round(palletsPer20ft * cartonsPerPallet);
+    cartonsPer40ft = Math.round(palletsPer40ft * cartonsPerPallet);
+    bundlesPer20ft = cartonsPer20ft;
+    bundlesPer40ft = cartonsPer40ft;
+    qtyPer20ft = Math.round(packing * cartonsPer20ft);
+    qtyPer40ft = Math.round(packing * cartonsPer40ft);
   } else {
-    // Standard Carton / Bundle floor loaded situation with CBM tolerance:
-    // 20ft: 26 / Carton_CBM
-    // 40ft: 66 / Carton_CBM - 7
+    // 1 & 2. Carton Floor Loaded & Bundle Floor Loaded:
+    // cartons/bundles per 20ft = 27 / ((L * W * H) / 1000000)
+    // qty per 20ft = cartons/bundles per 20ft * packing pcs
+    // cartons/bundles per 40ft = 67 / ((L * W * H) / 1000000)
+    // qty per 40ft = cartons/bundles per 40ft * packing pcs
     if (cartonCbm > 0) {
-      cartonsPer20ft = Math.round(26 / cartonCbm);
-      cartonsPer40ft = Math.max(0, Math.round((66 / cartonCbm) - 7));
+      cartonsPer20ft = Math.round(27 / cartonCbm);
+      cartonsPer40ft = Math.round(67 / cartonCbm);
       bundlesPer20ft = cartonsPer20ft;
       bundlesPer40ft = cartonsPer40ft;
-      qtyPer40ft = cartonsPer40ft * packing;
-      qtyPer20ft = cartonsPer20ft * packing;
+      qtyPer20ft = Math.round(cartonsPer20ft * packing);
+      qtyPer40ft = Math.round(cartonsPer40ft * packing);
     } else {
       cartonsPer20ft = Math.round(parseFloat(item.cartonsPer20ft || item.bundlesPer20ft) || 0);
       cartonsPer40ft = Math.round(parseFloat(item.cartonsPer40ft || item.bundlesPer40ft) || 0);
-      bundlesPer20ft = Math.round(parseFloat(item.bundlesPer20ft || item.cartonsPer20ft) || 0);
-      bundlesPer40ft = Math.round(parseFloat(item.bundlesPer40ft || item.cartonsPer40ft) || 0);
-      qtyPer40ft = parseFloat(item.qtyPer40ft) || (cartonsPer40ft * packing);
-      qtyPer20ft = parseFloat(item.qtyPer20ft) || (cartonsPer20ft * packing);
+      bundlesPer20ft = cartonsPer20ft;
+      bundlesPer40ft = cartonsPer40ft;
+      qtyPer20ft = parseFloat(item.qtyPer20ft) || Math.round(cartonsPer20ft * packing);
+      qtyPer40ft = parseFloat(item.qtyPer40ft) || Math.round(cartonsPer40ft * packing);
     }
   }
 

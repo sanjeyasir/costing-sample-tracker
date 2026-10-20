@@ -399,7 +399,7 @@ export async function generatePhytoApplicationPDF(dispatchData, docInstance = nu
   doc.setFont("helvetica", "bold");
   doc.text("6. Point of entry / Use:", colRightX + 2, y + 14);
   doc.setFont("helvetica", "normal");
-  doc.text(`${dispatchData.receiver?.country || ""}  |  ${dispatchData.logistics?.intendedUse || "As samples"}`, colRightX + 38, y + 14);
+  doc.text(`Sri Lanka  |  ${dispatchData.logistics?.intendedUse || "As samples"}`, colRightX + 38, y + 14);
 
   // Commodity Section
   y += metaH + 2;
@@ -559,7 +559,7 @@ export async function generatePackingListPDF(dispatchData, docInstance = null) {
   doc.setFontSize(7.5);
   doc.text("Exporting Country:", margin + 2, y + 4);
   doc.setFont("helvetica", "normal");
-  doc.text(dispatchData.receiver?.country || "", margin + 30, y + 4);
+  doc.text("Sri Lanka", margin + 30, y + 4);
 
   doc.setFont("helvetica", "bold");
   doc.text("Airway Bill No:", colRightX + 2, y + 4);
