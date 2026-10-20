@@ -238,7 +238,8 @@ export default function QuotationEditor() {
               ? (parseFloat(rawCostBundles) || 0) 
               : (savedItem.bundlesPerPallet !== undefined && savedItem.bundlesPerPallet !== null && savedItem.bundlesPerPallet !== "" ? parseFloat(savedItem.bundlesPerPallet) || 0 : 0);
 
-            const itemNorm = costingPacking.normalizePackingConfig(costItem.packingConfiguration || savedItem.packingConfiguration);
+            const rawConfig = costItem.packingConfiguration || specItem.packingConfiguration || savedItem?.packingConfiguration || "";
+            const itemNorm = costingPacking.normalizePackingConfig(rawConfig);
             const isPalletConfig = itemNorm.includes("pallet") || financeCartonsPerPallet > 0 || financeBundlesPerPallet > 0;
             const p20 = (savedItem.palletsPer20ft !== undefined && savedItem.palletsPer20ft !== null && savedItem.palletsPer20ft !== "" && parseFloat(savedItem.palletsPer20ft) > 0)
               ? parseFloat(savedItem.palletsPer20ft)
@@ -246,23 +247,49 @@ export default function QuotationEditor() {
             const p40 = (savedItem.palletsPer40ft !== undefined && savedItem.palletsPer40ft !== null && savedItem.palletsPer40ft !== "" && parseFloat(savedItem.palletsPer40ft) > 0)
               ? parseFloat(savedItem.palletsPer40ft)
               : (parseFloat(costItem.palletsPer40ft) || (isPalletConfig ? 20 : 0));
-            const isRollFloor = itemNorm === costingPacking.PACKING_CONFIG_TYPES.ROLL_FLOOR || (Boolean(savedItem.rollDiameter || costItem.rollDiameter) && !isPalletConfig);
-            const rawPack = costItem.packing !== undefined && costItem.packing !== null && costItem.packing !== "" ? parseFloat(costItem.packing) || 0 : (parseFloat(savedItem.packing) || 0);
-            const finalPacking = isRollFloor ? 1 : (rawPack > 0 ? rawPack : 1);
+
+            const rollDiaNum = parseFloat(costItem.rollDiameter || savedItem?.rollDiameter || specItem?.rollDiameter) || 0;
+            const rollLenNum = parseFloat(costItem.rollLength || savedItem?.rollLength || specItem?.rollLength) || 0;
+            const isRollConfig = itemNorm.includes("roll") || (!itemNorm.includes("carton") && !itemNorm.includes("bundle") && (rollDiaNum > 0 || rollLenNum > 0));
+
+            const rawFinancePack = costingPacking.parseCleanNumeric(costItem.packing).value;
+            const rawSpecPack = costingPacking.parseCleanNumeric(specItem.packing).value;
+            const rawSavedPack = costingPacking.parseCleanNumeric(savedItem?.packing).value;
+            
+            // Strictly 1 for roll floor and roll pallet; pick from finance costing request for carton floor, bundle floor, and pallet cases
+            const finalPacking = isRollConfig 
+              ? 1 
+              : (rawFinancePack > 0 ? rawFinancePack : (rawSpecPack > 0 ? rawSpecPack : (rawSavedPack > 0 ? rawSavedPack : 1)));
+
+            const resolvedCartonSize = (costItem.cartonSize && costItem.cartonSize !== "0") 
+              ? costItem.cartonSize 
+              : (savedItem.cartonSize && savedItem.cartonSize !== "0" ? savedItem.cartonSize : (specItem.cartonSize || ""));
+
+            const resolvedPalletSize = (costItem.palletSize && costItem.palletSize !== "0")
+              ? costItem.palletSize
+              : (savedItem.palletSize && savedItem.palletSize !== "0" ? savedItem.palletSize : (specItem.palletSize || ""));
 
             return {
               ...savedItem,
               description: mergedDescription,
+              packingConfiguration: rawConfig,
               bundlesPerPallet: financeBundlesPerPallet,
               cartonsPerPallet: financeCartonsPerPallet,
-              cartonSize: costItem.cartonSize !== undefined && costItem.cartonSize !== null && costItem.cartonSize !== "" ? costItem.cartonSize : (savedItem.cartonSize || ""),
-              palletSize: costItem.palletSize !== undefined && costItem.palletSize !== null && costItem.palletSize !== "" ? costItem.palletSize : (savedItem.palletSize || ""),
+              cartonSize: resolvedCartonSize,
+              palletSize: resolvedPalletSize,
               unitCost: costItem.unitCost !== undefined && costItem.unitCost !== null && costItem.unitCost !== "" ? parseFloat(costItem.unitCost) || 0 : (parseFloat(savedItem.unitCost) || 0),
               packing: finalPacking,
-              rollDiameter: costItem.rollDiameter || savedItem.rollDiameter || "",
-              rollLength: costItem.rollLength || savedItem.rollLength || "",
+              rollDiameter: isRollConfig && rollDiaNum > 0 ? (costItem.rollDiameter || savedItem.rollDiameter || "") : "",
+              rollLength: isRollConfig && rollLenNum > 0 ? (costItem.rollLength || savedItem.rollLength || "") : "",
               palletsPer20ft: p20,
-              palletsPer40ft: p40
+              palletsPer40ft: p40,
+              // If not roll and not pallet, reset cartonsPer20ft/40ft so calculateHorticultureItem computes them fresh from 27/67 formulas!
+              ...((!isRollConfig && !isPalletConfig) ? {
+                cartonsPer20ft: 0,
+                cartonsPer40ft: 0,
+                qtyPer20ft: 0,
+                qtyPer40ft: 0
+              } : {})
             };
           });
 
@@ -315,15 +342,20 @@ export default function QuotationEditor() {
             const financeBundlesPerPallet = costingPacking.parseCleanNumeric(rawCostBundles).value;
 
             const unitCostVal = costingPacking.parseCleanNumeric(costItem.unitCost || specItem.unitCost).value;
-            const rawPacking = costItem.packing !== undefined && costItem.packing !== "" ? costItem.packing : (specItem.packing !== undefined && specItem.packing !== "" ? specItem.packing : 0);
-            const packingVal = costingPacking.parseCleanNumeric(rawPacking).value;
-            
-            const itemNorm = costingPacking.normalizePackingConfig(specItem.packingConfiguration || costItem.packingConfiguration);
+
+            const rawConfig = costItem.packingConfiguration || specItem.packingConfiguration || "";
+            const itemNorm = costingPacking.normalizePackingConfig(rawConfig);
             const isPalletConfig = itemNorm.includes("pallet") || financeCartonsPerPallet > 0 || financeBundlesPerPallet > 0;
             const p20 = costingPacking.parseCleanNumeric(costItem.palletsPer20ft).value || (isPalletConfig ? 10 : 0);
             const p40 = costingPacking.parseCleanNumeric(costItem.palletsPer40ft).value || (isPalletConfig ? 20 : 0);
-            const isRollFloor = itemNorm === costingPacking.PACKING_CONFIG_TYPES.ROLL_FLOOR || (Boolean(costItem.rollDiameter || specItem.rollDiameter) && !isPalletConfig);
-            const finalPacking = isRollFloor ? 1 : (packingVal > 0 ? packingVal : 1);
+
+            const rollDiaNum = parseFloat(costItem.rollDiameter || specItem.rollDiameter) || 0;
+            const rollLenNum = parseFloat(costItem.rollLength || specItem.rollLength) || 0;
+            const isRollConfig = itemNorm.includes("roll") || (!itemNorm.includes("carton") && !itemNorm.includes("bundle") && (rollDiaNum > 0 || rollLenNum > 0));
+
+            const rawFinancePack = costingPacking.parseCleanNumeric(costItem.packing).value;
+            const rawSpecPack = costingPacking.parseCleanNumeric(specItem.packing).value;
+            const finalPacking = isRollConfig ? 1 : (rawFinancePack > 0 ? rawFinancePack : (rawSpecPack > 0 ? rawSpecPack : 1));
 
             return {
               id: `item-${idx + 1}`,
@@ -339,14 +371,14 @@ export default function QuotationEditor() {
               qtyPerBundle: costingPacking.parseCleanNumeric(specItem.qtyPerBundle || costItem.qtyPerBundle).value,
               gsm: specItem.gsm || "",
               latexRatio: specItem.latexRatio || "",
-              packingConfiguration: specItem.packingConfiguration || costItem.packingConfiguration || "",
+              packingConfiguration: rawConfig,
               packing: finalPacking,
-              cartonSize: costItem.cartonSize || specItem.cartonSize || "",
-              palletSize: costItem.palletSize || specItem.palletSize || "",
+              cartonSize: (costItem.cartonSize && costItem.cartonSize !== "0") ? costItem.cartonSize : (specItem.cartonSize || ""),
+              palletSize: (costItem.palletSize && costItem.palletSize !== "0") ? costItem.palletSize : (specItem.palletSize || ""),
               bundlesPerPallet: financeBundlesPerPallet,
               cartonsPerPallet: financeCartonsPerPallet,
-              rollDiameter: costItem.rollDiameter || specItem.rollDiameter || "",
-              rollLength: costItem.rollLength || specItem.rollLength || "",
+              rollDiameter: isRollConfig && rollDiaNum > 0 ? (costItem.rollDiameter || specItem.rollDiameter || "") : "",
+              rollLength: isRollConfig && rollLenNum > 0 ? (costItem.rollLength || specItem.rollLength || "") : "",
               unitCost: unitCostVal,
               palletsPer40ft: p40,
               palletsPer20ft: p20
@@ -548,10 +580,10 @@ export default function QuotationEditor() {
     for (let i = 0; i < items.length; i++) {
       const it = items[i];
       const itemNum = i + 1;
-      const hasRoll = Boolean(
-        (it.rollDiameter && it.rollDiameter !== "TBA" && it.rollDiameter !== "-" && String(it.rollDiameter).trim() !== "") ||
-        it.loadingType === "roll"
-      );
+      const itNorm = costingPacking.normalizePackingConfig(it.packingConfiguration);
+      const diaNum = parseFloat(it.rollDiameter) || 0;
+      const lenNum = parseFloat(it.rollLength) || 0;
+      const hasRoll = itNorm.includes("roll") || it.loadingType === "roll" || it.loadingType === "roll_floor" || it.loadingType === "roll_pallet" || ((diaNum > 0 || lenNum > 0) && !itNorm.includes("carton") && !itNorm.includes("bundle"));
 
       if (!it.description && !it.specifications) {
         message.error(`Item #${itemNum}: Product description or specification is required.`);
@@ -560,7 +592,7 @@ export default function QuotationEditor() {
 
       // Check carton/bundle size only when cartonSize column is selected and item is not roll
       if (category === "horticulture" && !hasRoll && activeCols.includes("cartonSize")) {
-        if (!it.cartonSize || it.cartonSize.trim() === "" || it.cartonSize === "-") {
+        if (!it.cartonSize || it.cartonSize.trim() === "" || it.cartonSize === "-" || it.cartonSize === "0") {
           message.warning(`Item #${itemNum}: Carton / Bundle Size is missing (e.g. 57X51X58CM).`);
         }
       }
@@ -574,7 +606,6 @@ export default function QuotationEditor() {
       }
 
       // Mandatory validation for Pallet Loading: Cartons / Bundles per Pallet is required and must be filled
-      const itNorm = costingPacking.normalizePackingConfig(it.packingConfiguration);
       const isPalletConfig = itNorm.includes("pallet") || it.loadingType === "pallet" || it.loadingType === "bundle_pallet" || it.loadingType === "roll_pallet";
       if (isPalletConfig) {
         const pltCount = isBedding ? it.bundlesPerPallet : (it.cartonsPerPallet || it.bundlesPerPallet);
@@ -595,22 +626,31 @@ export default function QuotationEditor() {
     try {
       setSaving(true);
       
-      // Sanitize all items to ensure no NaN or unparsed strings can be saved
-      const sanitizedItems = items.map(it => ({
-        ...it,
-        length: costingPacking.parseCleanNumeric(it.length).value,
-        width: costingPacking.parseCleanNumeric(it.width).value,
-        height: costingPacking.parseCleanNumeric(it.height).value,
-        qtyPerBundle: costingPacking.parseCleanNumeric(it.qtyPerBundle).value,
-        bundlesPerPallet: costingPacking.parseCleanNumeric(it.bundlesPerPallet).value,
-        cartonsPerPallet: costingPacking.parseCleanNumeric(it.cartonsPerPallet).value,
-        unitCost: costingPacking.parseCleanNumeric(it.unitCost).value,
-        palletsPer40ft: costingPacking.parseCleanNumeric(it.palletsPer40ft).value,
-        palletsPer20ft: costingPacking.parseCleanNumeric(it.palletsPer20ft).value,
-        packing: costingPacking.parseCleanNumeric(it.packing).value,
-        orderVolume: costingPacking.parseCleanNumeric(it.orderVolume).value,
-        margin: it.margin !== undefined && it.margin !== null && it.margin !== "" ? (costingPacking.parseCleanNumeric(it.margin).value || it.margin) : ""
-      }));
+      // Sanitize all items to ensure no NaN or unparsed strings can be saved, including computed container loads and packing
+      const sanitizedItems = items.map((it, idx) => {
+        const calc = calculatedItems[idx] || {};
+        return {
+          ...it,
+          length: costingPacking.parseCleanNumeric(it.length).value,
+          width: costingPacking.parseCleanNumeric(it.width).value,
+          height: costingPacking.parseCleanNumeric(it.height).value,
+          qtyPerBundle: costingPacking.parseCleanNumeric(it.qtyPerBundle).value,
+          bundlesPerPallet: costingPacking.parseCleanNumeric(it.bundlesPerPallet).value,
+          cartonsPerPallet: costingPacking.parseCleanNumeric(it.cartonsPerPallet).value,
+          unitCost: costingPacking.parseCleanNumeric(it.unitCost).value,
+          palletsPer40ft: costingPacking.parseCleanNumeric(it.palletsPer40ft).value,
+          palletsPer20ft: costingPacking.parseCleanNumeric(it.palletsPer20ft).value,
+          packing: costingPacking.parseCleanNumeric(calc.packing !== undefined ? calc.packing : it.packing).value,
+          cartonsPer20ft: costingPacking.parseCleanNumeric(calc.cartonsPer20ft !== undefined ? calc.cartonsPer20ft : it.cartonsPer20ft).value,
+          cartonsPer40ft: costingPacking.parseCleanNumeric(calc.cartonsPer40ft !== undefined ? calc.cartonsPer40ft : it.cartonsPer40ft).value,
+          bundlesPer20ft: costingPacking.parseCleanNumeric(calc.bundlesPer20ft !== undefined ? calc.bundlesPer20ft : it.bundlesPer20ft).value,
+          bundlesPer40ft: costingPacking.parseCleanNumeric(calc.bundlesPer40ft !== undefined ? calc.bundlesPer40ft : it.bundlesPer40ft).value,
+          qtyPer20ft: costingPacking.parseCleanNumeric(calc.qtyPer20ft !== undefined ? calc.qtyPer20ft : it.qtyPer20ft).value,
+          qtyPer40ft: costingPacking.parseCleanNumeric(calc.qtyPer40ft !== undefined ? calc.qtyPer40ft : it.qtyPer40ft).value,
+          orderVolume: costingPacking.parseCleanNumeric(it.orderVolume).value,
+          margin: it.margin !== undefined && it.margin !== null && it.margin !== "" ? (costingPacking.parseCleanNumeric(it.margin).value || it.margin) : ""
+        };
+      });
 
       const payload = {
         quotationNo,
@@ -1074,10 +1114,10 @@ export default function QuotationEditor() {
     const item = calculatedItems[row];
     if (!item) return cellProperties;
 
-    const hasRoll = Boolean(
-      (item.rollDiameter && item.rollDiameter !== "TBA" && item.rollDiameter !== "-" && String(item.rollDiameter).trim() !== "") ||
-      item.loadingType === "roll"
-    );
+    const itNorm = costingPacking.normalizePackingConfig(item.packingConfiguration);
+    const diaNum = parseFloat(item.rollDiameter) || 0;
+    const lenNum = parseFloat(item.rollLength) || 0;
+    const hasRoll = itNorm.includes("roll") || item.loadingType === "roll" || item.loadingType === "roll_floor" || item.loadingType === "roll_pallet" || ((diaNum > 0 || lenNum > 0) && !itNorm.includes("carton") && !itNorm.includes("bundle"));
 
     if (hasRoll) {
       if (prop !== "idx") {

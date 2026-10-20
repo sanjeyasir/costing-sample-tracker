@@ -45,7 +45,7 @@ export function parseDimensions(dimStr) {
     };
   }
   const clean = dimStr.toString().replace(/cm|mm|m/gi, "").trim();
-  const match = clean.match(/(\d+(\.\d+)?)\s*[*xX×]\s*(\d+(\.\d+)?)\s*[*xX×]\s*(\d+(\.\d+)?)/);
+  const match = clean.match(/(\d+(\.\d+)?)\s*[*xX×,\/\-:\s]\s*(\d+(\.\d+)?)\s*[*xX×,\/\-:\s]\s*(\d+(\.\d+)?)/);
   if (match) {
     return {
       length: parseFloat(match[1]) || 0,
@@ -262,28 +262,40 @@ export function calculateBeddingItem(item, params = DEFAULT_FINANCIAL_PARAMS) {
  * Calculate Horticulture Item quantities and prices
  */
 export function calculateHorticultureItem(item, params = DEFAULT_FINANCIAL_PARAMS) {
-  const dims = parseDimensions(item.cartonSize || item.carton_size);
+  const dims = parseDimensions(
+    item.cartonSize || item.carton_size || item.bundleSize || item.bundle_size || item.specifications || (item.length && item.width && item.height ? `${item.length}x${item.width}x${item.height}` : "")
+  );
   let packing = parseFloat(item.packing || item.piecesPerCarton || item.pieces_per_carton) || 1;
   const unitCost = parseFloat(item.unitCost || item.unit_cost) || 0;
   
   let palletsPer40ft = parseFloat(item.palletsPer40ft || item.pallets_40ft) || 0;
   let palletsPer20ft = parseFloat(item.palletsPer20ft || item.pallets_20ft) || 0;
-  const cartonsPerPallet = parseFloat(item.cartonsPerPallet || item.cartons_per_pallet) || 0;
+  const cartonsPerPallet = parseFloat(item.cartonsPerPallet || item.cartons_per_pallet || item.bundlesPerPallet || item.bundles_per_pallet) || 0;
   const palletSize = item.palletSize || item.pallet_size || "";
   
-  const hasRollDiameter = Boolean(
-    item.rollDiameter && 
-    item.rollDiameter !== "TBA" && 
-    item.rollDiameter !== "-" && 
-    String(item.rollDiameter).trim() !== ""
-  );
-
-  const rollDims = parseRollDimensions(item.rollLength || item.roll_length, item.rollDiameter || item.roll_diameter);
-  const isRoll = hasRollDiameter || item.loadingType === "roll" || item.loadingType === "roll_floor" || item.loadingType === "roll_pallet" || rollDims.rollCbm > 0 || Boolean(item.rollLength);
-
   // Normalize packing configuration if specified
   const normConfig = String(item.packingConfiguration || "").trim().toLowerCase();
-  const isPalletConfig = normConfig.includes("pallet") || (cartonsPerPallet > 0) || (palletSize && palletSize !== "TBA" && palletSize !== "-");
+  const rollDiaNum = parseFloat(item.rollDiameter || item.roll_diameter) || 0;
+  const rollLenNum = parseFloat(item.rollLength || item.roll_length) || 0;
+  const rollDims = parseRollDimensions(item.rollLength || item.roll_length, item.rollDiameter || item.roll_diameter);
+
+  // An item is a roll ONLY if its config is roll, or if loadingType is roll, or if it has positive roll diameter/length and is NOT carton or bundle
+  const isRoll = (
+    normConfig.includes("roll") ||
+    item.loadingType === "roll" ||
+    item.loadingType === "roll_floor" ||
+    item.loadingType === "roll_pallet" ||
+    ((rollDiaNum > 0 || rollLenNum > 0 || rollDims.rollCbm > 0) && !normConfig.includes("carton") && !normConfig.includes("bundle"))
+  );
+
+  const isPalletConfig = (
+    normConfig.includes("pallet") ||
+    item.loadingType === "pallet" ||
+    item.loadingType === "bundle_pallet" ||
+    item.loadingType === "roll_pallet" ||
+    (cartonsPerPallet > 0) ||
+    (palletSize && palletSize !== "TBA" && palletSize !== "-" && palletSize !== "0" && String(palletSize).trim() !== "")
+  );
 
   let loadingType = item.loadingType;
   if (!loadingType) {
@@ -316,7 +328,7 @@ export function calculateHorticultureItem(item, params = DEFAULT_FINANCIAL_PARAM
 
   if (loadingType === "roll_floor" || (isRoll && !isPalletConfig)) {
     // 3. Roll Floor Loaded case:
-    // Keep packing/pcs column as always 1, packing pieces (cartons/bundles) as 0 always
+    // packing is ALWAYS 1 pc per roll
     packing = 1;
     cartonsPer20ft = 0;
     cartonsPer40ft = 0;
@@ -334,6 +346,7 @@ export function calculateHorticultureItem(item, params = DEFAULT_FINANCIAL_PARAM
     }
   } else if (loadingType === "roll_pallet" || (isRoll && isPalletConfig)) {
     // 6. Roll Pallet Loading:
+    // packing is ALWAYS 1 pc per roll
     // pallets per 20ft is 10, pallets per 40ft is 20
     // qty per 20ft = cartons/bundles per pallet * pallets per 20ft
     // qty per 40ft = cartons/bundles per pallet * pallets per 40ft
@@ -344,10 +357,11 @@ export function calculateHorticultureItem(item, params = DEFAULT_FINANCIAL_PARAM
     bundlesPer40ft = cartonsPer40ft;
     qtyPer20ft = cartonsPer20ft;
     qtyPer40ft = cartonsPer40ft;
-  } else if ((loadingType === "pallet" || loadingType === "bundle_pallet" || isPalletConfig) && cartonsPerPallet > 0) {
+  } else if (isPalletConfig && cartonsPerPallet > 0) {
     // 4 & 5. Carton Pallet Loading & Bundle Pallet Loading:
     // Pallet per 20ft default is 10, pallet per 40ft default is 20
     // Cartons/bundles per pallet is filled and mandatory
+    // packing is picked from Finance costing request
     // qty per 20ft = pcs per carton * pallet 20ft * cartons/bundles per pallet
     // qty per 40ft = pcs per carton * pallet 40ft * cartons/bundles per pallet
     cartonsPer20ft = Math.round(palletsPer20ft * cartonsPerPallet);
@@ -362,6 +376,7 @@ export function calculateHorticultureItem(item, params = DEFAULT_FINANCIAL_PARAM
     // qty per 20ft = cartons/bundles per 20ft * packing pcs
     // cartons/bundles per 40ft = 67 / ((L * W * H) / 1000000)
     // qty per 40ft = cartons/bundles per 40ft * packing pcs
+    // packing is picked from Finance costing request
     if (cartonCbm > 0) {
       cartonsPer20ft = Math.round(27 / cartonCbm);
       cartonsPer40ft = Math.round(67 / cartonCbm);
@@ -437,7 +452,8 @@ export function calculateHorticultureItem(item, params = DEFAULT_FINANCIAL_PARAM
     rollCbm: isFinite(rollDims.rollCbm) ? rollDims.rollCbm : 0,
     itemCbm: isFinite(itemCbm) ? itemCbm : 0,
     loadingType,
-    hasRollDiameter,
+    isRoll,
+    hasRollDiameter: isRoll,
     bundlesPer20ft: isFinite(bundlesPer20ft) ? Math.round(bundlesPer20ft) : 0,
     bundlesPer40ft: isFinite(bundlesPer40ft) ? Math.round(bundlesPer40ft) : 0,
     cartonsPer20ft: isFinite(cartonsPer20ft) ? Math.round(cartonsPer20ft) : 0,

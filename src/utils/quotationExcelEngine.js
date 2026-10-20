@@ -946,9 +946,18 @@ function buildHortiDataEntrySheet(workbook, data) {
 
   (data.items || []).forEach((item, idx) => {
     const rIdx = headerRow.number + 1 + idx;
-    const isPallet = (item.loadingType === "pallet" || item.loadingType === "bundle_pallet" || item.loadingType === "roll_pallet") || item.cartonsPerPallet > 0;
-    const isRoll = item.loadingType === "roll" || item.loadingType === "roll_floor" || item.loadingType === "roll_pallet" || Boolean(item.rollDiameter && item.rollDiameter !== "TBA" && item.rollDiameter !== "-" && String(item.rollDiameter).trim() !== "");
-    const dims = item.dims || (item.cartonSize ? parseDimensions(item.cartonSize) : { length: 0, width: 0, height: 0 });
+    const normConfig = String(item.packingConfiguration || "").trim().toLowerCase();
+    const rollDiaNum = parseFloat(item.rollDiameter) || 0;
+    const rollLenNum = parseFloat(item.rollLength) || 0;
+    const isPallet = (item.loadingType === "pallet" || item.loadingType === "bundle_pallet" || item.loadingType === "roll_pallet") || item.cartonsPerPallet > 0 || normConfig.includes("pallet");
+    const isRoll = (
+      normConfig.includes("roll") ||
+      item.loadingType === "roll" ||
+      item.loadingType === "roll_floor" ||
+      item.loadingType === "roll_pallet" ||
+      ((rollDiaNum > 0 || rollLenNum > 0 || (item.rollCbm || 0) > 0) && !normConfig.includes("carton") && !normConfig.includes("bundle"))
+    );
+    const dims = item.dims || parseDimensions(item.cartonSize || item.carton_size || item.bundleSize || item.bundle_size || item.specifications || "");
     const lineMarginVal = item.margin !== undefined && item.margin !== null && item.margin !== "" 
       ? (parseFloat(item.margin) > 1 ? parseFloat(item.margin) / 100 : parseFloat(item.margin)) 
       : "";
