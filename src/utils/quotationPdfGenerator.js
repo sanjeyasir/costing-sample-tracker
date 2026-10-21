@@ -202,7 +202,7 @@ export async function downloadQuotationPDF(quotationData) {
       { key: "plts20", dataKey: "palletsPer20ft", title: "Plt 20ft", subTitle: "Marketing", baseWidth: 12, align: "center" },
       { key: "plts40", dataKey: "palletsPer40ft", title: "Plt 40ft", subTitle: "Marketing", baseWidth: 12, align: "center" },
       { key: "rollDiameter", dataKey: "rollDiameter", title: "Roll Dia", subTitle: "CM", baseWidth: 12, align: "center" },
-      { key: "rollLength", dataKey: "rollLength", title: "Roll Len", subTitle: "CM/M", baseWidth: 12, align: "center" },
+      { key: "rollLength", dataKey: "rollLength", title: "Roll Len", subTitle: "CM", baseWidth: 12, align: "center" },
       { key: "margin", dataKey: "margin", title: "Margin %", subTitle: "Override", baseWidth: 12, align: "center" },
       { key: "price", dataKey: "quotedPrice", title: `Price (${priceTerm})`, subTitle: "Auto cal", baseWidth: 20, align: "center" },
       { key: "ctn20", dataKey: "cartonsPer20ft", title: "Ctn/Bdl 20ft", subTitle: "Auto pick", baseWidth: 16, align: "center" },

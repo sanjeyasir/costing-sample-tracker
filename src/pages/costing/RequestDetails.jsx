@@ -138,6 +138,12 @@ export default function RequestDetails() {
         required: true
       };
     }
+    if (f.key === "rollLength") {
+      return {
+        ...f,
+        label: "Roll Length (CM)"
+      };
+    }
     return f;
   });
 
@@ -147,6 +153,22 @@ export default function RequestDetails() {
       { key: "marketingRemarks", label: "Marketing Remarks", type: "text", required: false, owner: "marketing" }
     ];
   }
+
+  const hasRollMarketing = !isBedding || (request?.specs?.items || []).some(it => 
+    String(it.packingConfiguration || "").toLowerCase().includes("roll") || it.rollLength
+  );
+  if (hasRollMarketing && !rawMarketingFields.some(f => f.key === "rollLength")) {
+    const pIdx = rawMarketingFields.findIndex(f => f.key === "packingConfiguration");
+    const insertIdx = pIdx !== -1 ? pIdx + 1 : 1;
+    rawMarketingFields.splice(insertIdx, 0, {
+      key: "rollLength",
+      label: "Roll Length (CM)",
+      type: "text",
+      required: false,
+      owner: "marketing"
+    });
+  }
+
   const marketingFields = rawMarketingFields;
 
   // 2. Ensure Finance Fields have complete standardized packing & dimension fields
@@ -162,7 +184,7 @@ export default function RequestDetails() {
     { key: "cartonsPerPallet", label: isBedding ? "Bundles per Pallet" : "Cartons / Bundles per Pallet", type: "number", required: false, owner: "finance" },
     ...(!isBedding ? [
       { key: "rollDiameter", label: "Roll Diameter (CM)", type: "text", required: false, owner: "finance" },
-      { key: "rollLength", label: "Roll Length (CM / M)", type: "text", required: false, owner: "finance" },
+      { key: "rollLength", label: "Roll Length (CM)", type: "text", required: false, owner: "finance" },
     ] : []),
     { key: "unitCost", label: "Unit Cost ($)", type: "number", required: true, owner: "finance" }
   ];
@@ -234,6 +256,9 @@ export default function RequestDetails() {
           let val = itemCosting && itemCosting[f.key] !== undefined ? itemCosting[f.key] : "";
           if (f.key === "specifications" && (!val || val === "")) {
             val = item && item.specifications ? item.specifications : "";
+          }
+          if (f.key === "rollLength" && (!val || val === "")) {
+            val = item && item.rollLength ? item.rollLength : "";
           }
           rowObj[`cost_${f.key}`] = val;
         });

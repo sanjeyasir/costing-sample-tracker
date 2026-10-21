@@ -127,6 +127,7 @@ export const DEFAULT_CATEGORIES = [
         required: true, 
         owner: "marketing" 
       },
+      { key: "rollLength", label: "Roll Length (CM)", type: "number", required: false, owner: "marketing" },
       { key: "gsm", label: "GSM", type: "number", required: true, owner: "marketing" },
       { key: "latexRatio", label: "Latex Ratio", type: "select", options: ["80:20", "70:30", "100:0", "60:40", "50:50"], required: true, owner: "marketing" },
       { key: "marketingRemarks", label: "Marketing Remarks", type: "text", required: false, owner: "marketing" },
@@ -137,7 +138,7 @@ export const DEFAULT_CATEGORIES = [
       { key: "palletSize", label: "Pallet Size (CM)", type: "text", required: false, owner: "finance" },
       { key: "cartonsPerPallet", label: "Cartons / Bundles per Pallet", type: "number", required: false, owner: "finance" },
       { key: "rollDiameter", label: "Roll Diameter (CM)", type: "text", required: false, owner: "finance" },
-      { key: "rollLength", label: "Roll Length (CM / M)", type: "text", required: false, owner: "finance" },
+      { key: "rollLength", label: "Roll Length (CM)", type: "number", required: false, owner: "finance" },
       { key: "unitCost", label: "Unit Cost", type: "number", required: true, owner: "finance" }
     ]
   }

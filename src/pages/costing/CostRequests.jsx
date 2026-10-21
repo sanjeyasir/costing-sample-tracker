@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import * as costingService from "../../services/firebase/costingService";
 import ExcelJS from "exceljs";
-import { Table, Input, Select, Button, Tag, Space, Tooltip, DatePicker, Row, Col, Card, Alert, Typography, Tabs, Empty } from "antd";
+import { Table, Input, Select, Button, Tag, Space, Tooltip, DatePicker, Row, Col, Card, Alert, Typography, Tabs, Empty, message, Popconfirm } from "antd";
 import {
   SearchOutlined,
   FilterOutlined,
@@ -11,6 +11,8 @@ import {
   EyeOutlined,
   PlayCircleOutlined,
   CheckCircleOutlined,
+  CheckCircleFilled,
+  CheckOutlined,
   UnorderedListOutlined,
   UserOutlined,
   FileDoneOutlined
@@ -43,6 +45,7 @@ export default function CostRequests() {
   // Pagination States
   const [pageSize, setPageSize] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
+  const [completingId, setCompletingId] = useState(null);
 
   // Sync status filter from search parameters (e.g. from Dashboard click redirects)
   useEffect(() => {
@@ -94,6 +97,22 @@ export default function CostRequests() {
     }
     setSearchParams(newParams);
     setCurrentPage(1);
+  };
+
+  const handleMarkCompleted = async (record) => {
+    try {
+      setCompletingId(record.id);
+      await costingService.markCostingRequestAsCompleted(record.id, currentUser);
+      setRequests(prev => prev.map(r => 
+        r.id === record.id ? { ...r, status: "Costing Completed", completionDate: new Date().toISOString() } : r
+      ));
+      message.success(`Costing Request #${record.costRequestNo} status updated to Completed.`);
+    } catch (err) {
+      console.error("Error marking request as completed:", err);
+      message.error(err.message || "Failed to mark request as completed.");
+    } finally {
+      setCompletingId(null);
+    }
   };
 
   const isMyRequest = (r) => {
@@ -328,7 +347,7 @@ export default function CostRequests() {
           packagingStr = r.costing?.qtyPerBundleFinance ? `Qty/Bundle: ${r.costing.qtyPerBundleFinance}` : `Qty/Bundle: ${r.specs?.qtyPerBundle || "N/A"}`;
         } else if (r.productUnit === "horticulture") {
           packagingStr = r.costing?.packing ? `Packing: ${r.costing.packing}` : "N/A";
-          loadabilityStr = `Carton: ${r.costing?.cartonSize || ""}, Pallet Size: ${r.costing?.palletSize || ""}, Cartons/Pallet: ${r.costing?.cartonsPerPallet || ""}, Roll Diam: ${r.costing?.rollDiameter || ""}`;
+          loadabilityStr = `Carton: ${r.costing?.cartonSize || ""}, Pallet Size: ${r.costing?.palletSize || ""}, Cartons/Pallet: ${r.costing?.cartonsPerPallet || ""}, Roll Diam: ${r.costing?.rollDiameter || ""}, Roll Len: ${r.costing?.rollLength || r.specs?.items?.[0]?.rollLength || ""}`;
         }
 
         let remarksStr = r.marketingRemarks || "";
@@ -480,6 +499,7 @@ export default function CostRequests() {
       title: "Actions",
       key: "actions",
       align: "center",
+      width: 170,
       render: (_, record) => (
         <Space size="small">
           <Tooltip title="View Details">
@@ -490,6 +510,37 @@ export default function CostRequests() {
               style={{ background: "#ffffff", borderColor: "#cbd5e1" }}
             />
           </Tooltip>
+
+          {(view === "all" || view === "my") && !isCompletedStatus(record.status) && (
+            <Popconfirm
+              title="Update Status to Completed"
+              description={`Mark Costing Request #${record.costRequestNo} as Completed?`}
+              okText="Yes, Complete"
+              cancelText="Cancel"
+              okButtonProps={{ loading: completingId === record.id }}
+              onConfirm={() => handleMarkCompleted(record)}
+            >
+              <Tooltip title="Update Status to Completed">
+                <Button
+                  size="small"
+                  type="primary"
+                  icon={<CheckCircleFilled />}
+                  loading={completingId === record.id}
+                  style={{
+                    background: "#10b981",
+                    borderColor: "#059669",
+                    color: "#ffffff",
+                    borderRadius: 6,
+                    fontWeight: 600,
+                    fontSize: "0.8rem",
+                    paddingInline: 8
+                  }}
+                >
+                  Complete
+                </Button>
+              </Tooltip>
+            </Popconfirm>
+          )}
           
           {(currentUser?.costingRoles?.includes("costing_finance") || currentUser?.roles?.includes("admin") || currentUser?.costingRoles?.includes("admin")) && record.status === "Submitted" && (
             <Tooltip title="Receive Request">
@@ -517,7 +568,7 @@ export default function CostRequests() {
           )}
 
           {(currentUser?.costingRoles?.includes("costing_finance") || currentUser?.roles?.includes("admin") || currentUser?.costingRoles?.includes("admin")) && (record.status === "Costing in Progress" || record.status === "Overdue") && (
-            <Tooltip title="Complete Costing">
+            <Tooltip title="Complete Costing in Form">
               <Button
                 shape="circle"
                 type="primary"

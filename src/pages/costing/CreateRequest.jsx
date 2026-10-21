@@ -86,6 +86,34 @@ export default function CreateRequest() {
       });
     }
 
+    // Include Roll Length column for categories supporting roll loading scenarios
+    const hasRollOptions = packingOptions.some(opt => opt.toLowerCase().includes("roll")) || isHorticulture;
+    if (hasRollOptions) {
+      if (!raw.some(f => f.key === "rollLength")) {
+        const pIdx = raw.findIndex(f => f.key === "packingConfiguration");
+        const insertIdx = pIdx !== -1 ? pIdx + 1 : 1;
+        raw.splice(insertIdx, 0, {
+          key: "rollLength",
+          label: "Roll Length (CM)",
+          type: "number",
+          required: false,
+          owner: "marketing"
+        });
+      } else {
+        raw = raw.map(f => {
+          if (f.key === "rollLength") {
+            return {
+              ...f,
+              label: "Roll Length (CM)",
+              type: "number",
+              owner: "marketing"
+            };
+          }
+          return f;
+        });
+      }
+    }
+
     // Ensure NC/RC Ratio, Density, and Latex Ratio are select dropdowns with standard presets
     raw = raw.map(f => {
       if (f.key === "ncRcRatio") {
@@ -200,6 +228,14 @@ export default function CreateRequest() {
       const emptyRows = Array.from({ length: 1 }, () => createDefaultRow(defaultFields, matchedCat));
       setTable2Data(emptyRows);
     }
+  };
+
+  const handleTable2Change = (changes, source) => {
+    if (!changes || source === "loadData") return;
+    const hot2 = hotTable2Ref.current?.hotInstance;
+    if (!hot2) return;
+    const currentData = hot2.getSourceData();
+    setTable2Data(currentData.map(row => ({ ...row })));
   };
 
   // Row operations
@@ -354,6 +390,7 @@ export default function CreateRequest() {
       return (
         (row.description && String(row.description).trim() !== "") ||
         (row.specifications && String(row.specifications).trim() !== "") ||
+        (row.rollLength !== undefined && row.rollLength !== null && String(row.rollLength).trim() !== "") ||
         (row.length !== undefined && row.length !== null && String(row.length).trim() !== "") ||
         (row.width !== undefined && row.width !== null && String(row.width).trim() !== "") ||
         (row.height !== undefined && row.height !== null && String(row.height).trim() !== "") ||
@@ -410,6 +447,21 @@ export default function CreateRequest() {
         if (item.cartonSize && String(item.cartonSize).trim() !== "" && String(item.cartonSize).trim() !== "0") {
           if (!costingPacking.isValidDimensionString(item.cartonSize)) {
             validationErrors.push(`Item #${i + 1}: "Carton / Bundle Size" must contain complete L x W x H numerical dimensions (e.g. 57X51X58 CM).`);
+          }
+        }
+
+        // 5. Reinforce Roll Length for Roll loading scenarios (Roll Floor Loaded & Roll Pallet Loading)
+        const packConfigNorm = costingPacking.normalizePackingConfig(item.packingConfiguration);
+        const isRollScenario = packConfigNorm === costingPacking.PACKING_CONFIG_TYPES.ROLL_FLOOR || 
+                               packConfigNorm === costingPacking.PACKING_CONFIG_TYPES.ROLL_PALLET ||
+                               String(item.packingConfiguration || "").toLowerCase().includes("roll");
+
+        if (isRollScenario) {
+          const cleanLen = costingPacking.parseCleanNumeric(item.rollLength);
+          if (cleanLen.isEmpty || cleanLen.isInvalid || cleanLen.value <= 0) {
+            validationErrors.push(`Item #${i + 1} (${item.packingConfiguration || "Roll Loading"}): "Roll Length (CM)" is required and must be a valid positive number in centimeters.`);
+          } else {
+            item.rollLength = cleanLen.value;
           }
         }
       }
@@ -519,14 +571,28 @@ export default function CreateRequest() {
     }
   ];
 
-  const table2Columns = marketingFields.map(f => {
+  // Dynamically check if any row in Table 2 has selected a roll loading configuration
+  const isRollSelectedInTable = (table2Data || []).some(row => {
+    const pack = String(row?.packingConfiguration || "").trim().toLowerCase();
+    return pack.includes("roll");
+  });
+
+  const visibleMarketingFields = marketingFields.filter(f => {
+    if (f.key === "rollLength") {
+      return isRollSelectedInTable;
+    }
+    return true;
+  });
+
+  const table2Columns = visibleMarketingFields.map(f => {
+    const isRollField = f.key === "rollLength";
     const colObj = {
       data: f.key,
-      title: f.required ? `${f.label} *` : f.label
+      title: (f.required || isRollField) ? `${f.label} *` : f.label
     };
-    if (f.type === "number") {
+    if (f.type === "number" || isRollField) {
       colObj.type = "numeric";
-      colObj.width = 120;
+      colObj.width = isRollField ? 170 : 120;
     } else if (f.type === "select") {
       colObj.type = "dropdown";
       colObj.source = f.options || [];
@@ -636,6 +702,7 @@ export default function CreateRequest() {
             <div className="hot-container">
               {table2Columns.length > 0 ? (
                 <HotTable
+                  key={`${productUnit}_${table2Columns.map(c => c.data).join("_")}`}
                   ref={hotTable2Ref}
                   data={table2Data}
                   columns={table2Columns}
@@ -645,6 +712,7 @@ export default function CreateRequest() {
                   licenseKey="non-commercial-and-evaluation"
                   colWidths={(index) => table2Columns[index]?.width || 180}
                   manualColumnResize={true}
+                  afterChange={handleTable2Change}
                 />
               ) : (
                 <div style={{ textAlign: "center", padding: 24 }}>

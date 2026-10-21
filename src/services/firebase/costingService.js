@@ -48,7 +48,7 @@ export async function getProductCategories() {
     categories = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
   }
 
-  // Ensure Horticulture category has specifications owned by Finance with required: true
+  // Ensure Horticulture category has specifications owned by Finance and rollLength owned by Marketing
   return categories.map(cat => {
     if (cat.id === "horticulture" || cat.name?.toLowerCase().includes("horticulture")) {
       const fields = (cat.fields || []).map(f => {
@@ -60,6 +60,13 @@ export async function getProductCategories() {
             required: true
           };
         }
+        if (f.key === "rollLength") {
+          return {
+            ...f,
+            label: "Roll Length (CM)",
+            owner: "marketing"
+          };
+        }
         return f;
       });
       if (!fields.some(f => f.key === "specifications")) {
@@ -69,6 +76,15 @@ export async function getProductCategories() {
           type: "text",
           required: true,
           owner: "finance"
+        });
+      }
+      if (!fields.some(f => f.key === "rollLength")) {
+        fields.push({
+          key: "rollLength",
+          label: "Roll Length (CM)",
+          type: "text",
+          required: false,
+          owner: "marketing"
         });
       }
       return { ...cat, fields };
@@ -655,6 +671,57 @@ export async function sendToMarketing(requestId) {
     const docRef = doc(db, "costRequests", requestId);
     await updateDoc(docRef, updateData);
     return getCostingRequestById(requestId);
+  }
+}
+
+/**
+ * Mark a costing request status as completed directly from table views
+ */
+export async function markCostingRequestAsCompleted(requestId, user = null) {
+  const now = new Date();
+  const userName = user?.displayName || user?.name || user?.email?.split("@")[0] || "User";
+
+  if (isMockMode) {
+    const requests = JSON.parse(localStorage.getItem("costRequests") || "[]");
+    const index = requests.findIndex(r => r.id === requestId);
+    if (index === -1) throw new Error("Request not found");
+
+    const req = requests[index];
+    req.status = "Costing Completed";
+    req.completionDate = now.toISOString();
+    localStorage.setItem("costRequests", JSON.stringify(requests));
+
+    if (req.marketingOfficer?.uid) {
+      await createNotification({
+        userId: req.marketingOfficer.uid,
+        role: null,
+        costRequestId: req.id,
+        costRequestNo: req.costRequestNo,
+        message: `Costing request #${req.costRequestNo} has been marked as Completed by ${userName}.`
+      });
+    }
+
+    return req;
+  } else {
+    const docRef = doc(db, "costRequests", requestId);
+    await updateDoc(docRef, {
+      status: "Costing Completed",
+      completionDate: Timestamp.fromDate(now)
+    });
+
+    const completedReq = await getCostingRequestById(requestId);
+
+    if (completedReq?.marketingOfficer?.uid) {
+      await createNotification({
+        userId: completedReq.marketingOfficer.uid,
+        role: null,
+        costRequestId: requestId,
+        costRequestNo: completedReq.costRequestNo,
+        message: `Costing request #${completedReq.costRequestNo} has been marked as Completed by ${userName}.`
+      });
+    }
+
+    return completedReq;
   }
 }
 

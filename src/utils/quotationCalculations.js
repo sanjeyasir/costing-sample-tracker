@@ -64,26 +64,25 @@ export function parseRollDimensions(rollLengthStr, rollDiameterStr) {
   let lengthCm = 0;
   let diameterCm = 0;
 
-  if (rollDiameterStr !== undefined && rollDiameterStr !== null) {
-    const cleanD = String(rollDiameterStr).replace(/cm|mm|m/gi, "").trim();
+  if (rollDiameterStr !== undefined && rollDiameterStr !== null && rollDiameterStr !== "") {
+    const rawD = String(rollDiameterStr).trim();
+    const isMeter = /m/i.test(rawD) && !/cm|mm/i.test(rawD);
+    const cleanD = rawD.replace(/cm|mm|m/gi, "").trim();
     const dMatch = cleanD.match(/(\d+(\.\d+)?)/);
     if (dMatch) {
-      diameterCm = parseFloat(dMatch[1]) || 0;
+      const num = parseFloat(dMatch[1]) || 0;
+      diameterCm = isMeter ? num * 100 : num;
     }
   }
 
-  if (rollLengthStr !== undefined && rollLengthStr !== null) {
+  if (rollLengthStr !== undefined && rollLengthStr !== null && rollLengthStr !== "") {
     const rawL = String(rollLengthStr).trim();
     const isMeter = /m/i.test(rawL) && !/cm|mm/i.test(rawL);
     const cleanL = rawL.replace(/cm|mm|m/gi, "").trim();
     const lMatch = cleanL.match(/(\d+(\.\d+)?)/);
     if (lMatch) {
       const num = parseFloat(lMatch[1]) || 0;
-      if (isMeter) {
-        lengthCm = num * 100;
-      } else {
-        lengthCm = num;
-      }
+      lengthCm = isMeter ? num * 100 : num;
     }
   }
 
@@ -275,9 +274,11 @@ export function calculateHorticultureItem(item, params = DEFAULT_FINANCIAL_PARAM
   
   // Normalize packing configuration if specified
   const normConfig = String(item.packingConfiguration || "").trim().toLowerCase();
-  const rollDiaNum = parseFloat(item.rollDiameter || item.roll_diameter) || 0;
-  const rollLenNum = parseFloat(item.rollLength || item.roll_length) || 0;
-  const rollDims = parseRollDimensions(item.rollLength || item.roll_length, item.rollDiameter || item.roll_diameter);
+  const rollDiaRaw = item.rollDiameter || item.roll_diameter || item.rollDia || item.spec_rollDiameter || "";
+  const rollLenRaw = item.rollLength || item.roll_length || item.rollLen || item.spec_rollLength || "";
+  const rollDiaNum = parseFloat(rollDiaRaw) || 0;
+  const rollLenNum = parseFloat(rollLenRaw) || 0;
+  const rollDims = parseRollDimensions(rollLenRaw, rollDiaRaw);
 
   // An item is a roll ONLY if its config is roll, or if loadingType is roll, or if it has positive roll diameter/length and is NOT carton or bundle
   const isRoll = (

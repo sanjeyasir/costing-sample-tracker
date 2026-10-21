@@ -151,7 +151,7 @@ export function getFinanceFieldRules(packingConfig, isHorticulture = false) {
         labels: {
           packing: "Packing (Pieces per Roll)",
           rollDiameter: "Roll Diameter (CM)",
-          rollLength: "Roll Length (CM / M)",
+          rollLength: "Roll Length (CM)",
           unitCost: "Unit Cost"
         }
       };
@@ -166,7 +166,7 @@ export function getFinanceFieldRules(packingConfig, isHorticulture = false) {
         labels: {
           packing: "Packing (Pieces per Roll)",
           rollDiameter: "Roll Diameter (CM)",
-          rollLength: "Roll Length (CM / M)",
+          rollLength: "Roll Length (CM)",
           palletSize: "Pallet Size (CM)",
           unitCost: "Unit Cost"
         }

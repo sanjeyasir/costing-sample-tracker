@@ -3,7 +3,8 @@ import {
   DEFAULT_COMPANY_DETAILS, 
   DEFAULT_FINANCIAL_PARAMS,
   getDisplayPrice,
-  formatMergedDescription 
+  formatMergedDescription,
+  parseRollDimensions 
 } from "./quotationCalculations";
 
 /**
@@ -602,8 +603,8 @@ function buildHortiQuotationSheet(workbook, data, itemImagesBase64 = []) {
     { key: "cartonsPerPallet", dataKey: "cartonsPerPallet", header1: "Cartons / Bundles per Pallet", header2: "AS per cost req", width: 16, align: "center", getVal: (item) => item.cartonsPerPallet || "" },
     { key: "palletsPer20ft", dataKey: "palletsPer20ft", header1: "Pallets per 20ft", header2: "Marketing to fill", width: 16, align: "center", getVal: (item) => item.palletsPer20ft || 0 },
     { key: "palletsPer40ft", dataKey: "palletsPer40ft", header1: "Pallets per 40ft", header2: "Marketing to fill", width: 16, align: "center", getVal: (item) => item.palletsPer40ft || 0 },
-    { key: "rollDiameter", dataKey: "rollDiameter", header1: "Roll diameter (If Roll)", header2: "If applicable", width: 16, align: "center", getVal: (item) => item.rollDiameter || "" },
-    { key: "rollLength", dataKey: "rollLength", header1: "Roll length (If Roll)", header2: "CM / M", width: 16, align: "center", getVal: (item) => item.rollLength || "" },
+    { key: "rollDiameter", dataKey: "rollDiameter", header1: "Roll Diameter (CM)", header2: "CM", width: 16, align: "center", getVal: (item) => item.rollDiameter || "" },
+    { key: "rollLength", dataKey: "rollLength", header1: "Roll Length (CM)", header2: "CM", width: 16, align: "center", getVal: (item) => item.rollLength || "" },
     { key: "margin", dataKey: "margin", header1: "Margin %", header2: "Override global %", width: 14, align: "center", getVal: (item) => item.margin ? (parseFloat(item.margin) > 1 ? `${parseFloat(item.margin)}%` : `${(parseFloat(item.margin) * 100).toFixed(1)}%`) : "" },
     { key: "quotedPrice", dataKey: "quotedPrice", header1: "Price FOB /cif/Ex works", header2: "Auto calculated price", width: 22, align: "center", isPrice: true, getFormula: (rIdx) => `'Data Entry'!${priceCol}${rIdx}`, getVal: (item, idx, dispPrice) => dispPrice.label },
     { key: "cartonsPer20ft", dataKey: "cartonsPer20ft", header1: "Cartons / Bundles per 20ft", header2: "Auto pick", width: 16, align: "center", getFormula: (rIdx) => `'Data Entry'!P${rIdx}`, getVal: (item) => item.cartonsPer20ft || 0 },
@@ -914,8 +915,8 @@ function buildHortiDataEntrySheet(workbook, data) {
     "Carton / Bundle Size (CM) (Fin)",
     "Pallet size-Optional",
     "Cartons / Bundles per Pallet-Optional",
-    "Roll diameter-Optional",
-    "Roll length-Optional",
+    "Roll Diameter (CM)",
+    "Roll Length (CM)",
     "Unit Cost (Fin)",
     "Margin % (Opt)",
     "No of pallets per 40ft",
@@ -949,13 +950,15 @@ function buildHortiDataEntrySheet(workbook, data) {
     const normConfig = String(item.packingConfiguration || "").trim().toLowerCase();
     const rollDiaNum = parseFloat(item.rollDiameter) || 0;
     const rollLenNum = parseFloat(item.rollLength) || 0;
+    const rollDims = parseRollDimensions(item.rollLength, item.rollDiameter);
+    const effectiveRollCbm = (item.rollCbm && item.rollCbm > 0) ? item.rollCbm : rollDims.rollCbm;
     const isPallet = (item.loadingType === "pallet" || item.loadingType === "bundle_pallet" || item.loadingType === "roll_pallet") || item.cartonsPerPallet > 0 || normConfig.includes("pallet");
     const isRoll = (
       normConfig.includes("roll") ||
       item.loadingType === "roll" ||
       item.loadingType === "roll_floor" ||
       item.loadingType === "roll_pallet" ||
-      ((rollDiaNum > 0 || rollLenNum > 0 || (item.rollCbm || 0) > 0) && !normConfig.includes("carton") && !normConfig.includes("bundle"))
+      ((rollDiaNum > 0 || rollLenNum > 0 || effectiveRollCbm > 0) && !normConfig.includes("carton") && !normConfig.includes("bundle"))
     );
     const dims = item.dims || parseDimensions(item.cartonSize || item.carton_size || item.bundleSize || item.bundle_size || item.specifications || "");
     const lineMarginVal = item.margin !== undefined && item.margin !== null && item.margin !== "" 
@@ -990,9 +993,9 @@ function buildHortiDataEntrySheet(workbook, data) {
     } else if (isRoll) {
       dRow.getCell(16).value = 0;
       dRow.getCell(17).value = 0;
-      if (item.rollCbm > 0) {
-        dRow.getCell(18).value = { formula: `ROUND(67/${item.rollCbm}, 0)`, result: Math.round(item.qtyPer40ft || 0) };
-        dRow.getCell(19).value = { formula: `ROUND(27/${item.rollCbm}, 0)`, result: Math.round(item.qtyPer20ft || 0) };
+      if (effectiveRollCbm > 0) {
+        dRow.getCell(18).value = { formula: `ROUND(67/${effectiveRollCbm}, 0)`, result: Math.round(item.qtyPer40ft || (67 / effectiveRollCbm)) };
+        dRow.getCell(19).value = { formula: `ROUND(27/${effectiveRollCbm}, 0)`, result: Math.round(item.qtyPer20ft || (27 / effectiveRollCbm)) };
       } else {
         dRow.getCell(18).value = Math.round(item.qtyPer40ft || 0);
         dRow.getCell(19).value = Math.round(item.qtyPer20ft || 0);
