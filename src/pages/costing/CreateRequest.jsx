@@ -133,10 +133,13 @@ export default function CreateRequest() {
         };
       }
       if (f.key === "latexRatio") {
+        const stdOptions = ["80:20", "70:30", "100:0", "60:40", "50:50", "No Latex"];
+        const customOptions = Array.isArray(f.options) && f.options.length > 0 ? f.options : stdOptions;
+        const finalOptions = Array.from(new Set([...customOptions, "No Latex"]));
         return {
           ...f,
           type: "select",
-          options: f.options && f.options.length > 0 ? f.options : ["80:20", "70:30", "100:0", "60:40", "50:50"],
+          options: finalOptions,
           required: true
         };
       }
@@ -588,7 +591,8 @@ export default function CreateRequest() {
     const isRollField = f.key === "rollLength";
     const colObj = {
       data: f.key,
-      title: (f.required || isRollField) ? `${f.label} *` : f.label
+      title: (f.required || isRollField) ? `${f.label} *` : f.label,
+      wordWrap: true
     };
     if (f.type === "number" || isRollField) {
       colObj.type = "numeric";
@@ -709,6 +713,12 @@ export default function CreateRequest() {
                   colHeaders={table2Columns.map(c => c.title)}
                   rowHeaders={true}
                   height="300"
+                  autoRowSize={true}
+                  renderAllRows={true}
+                  viewportColumnRenderingOffset={30}
+                  autoColumnSize={false}
+                  wordWrap={true}
+                  stretchH="none"
                   licenseKey="non-commercial-and-evaluation"
                   colWidths={(index) => table2Columns[index]?.width || 180}
                   manualColumnResize={true}

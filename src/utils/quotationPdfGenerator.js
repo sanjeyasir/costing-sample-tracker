@@ -136,13 +136,13 @@ export async function downloadQuotationPDF(quotationData) {
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9);
-  doc.text(shipper.shipperName || "Toyo Cushion Lanka", margin + 5, y + 9);
+  doc.text(shipper.shipperName || "Toyo Cushion Lanka (PVT) LTD", margin + 5, y + 9);
   
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7.5);
   doc.text(`COMPANY NO : ${shipper.companyNo || "PV 5492"}`, margin + 5, y + 13);
   doc.text(shipper.address || "400 Deans Road Colombo 10 01000 Sri Lanka", margin + 5, y + 16.5);
-  doc.text(`Tel: ${shipper.phone || "94112232939-Fixed"}`, margin + 5, y + 19.5);
+  doc.text(`Tel: ${shipper.phone || "+9474 216 8231"}   |   Email: ${shipper.email || "Info@hayleysfibre.com"}`, margin + 5, y + 19.5);
 
   // Buyer Block
   doc.setFont("helvetica", "bold");
@@ -246,24 +246,38 @@ export async function downloadQuotationPDF(quotationData) {
     // Vertical grid lines
     doc.line(curX, y, curX, y + totalHeaderHeight);
 
-    // Header Tier 1 Text
+    // Header Tier 1 Text (Wrapped)
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(7.5);
+    doc.setFontSize(7);
     doc.setTextColor(0, 0, 0);
-    if (col.align === "center") {
-      doc.text(col.title, curX + (col.width / 2), y + 4.2, { align: "center" });
+    const splitTitle = doc.splitTextToSize(col.title, Math.max(col.width - 2, 4));
+    if (splitTitle.length > 1) {
+      doc.setFontSize(6);
+      const startY = y + 2.4;
+      splitTitle.slice(0, 2).forEach((line, lIdx) => {
+        if (col.align === "center") {
+          doc.text(line, curX + (col.width / 2), startY + (lIdx * 2.5), { align: "center" });
+        } else {
+          doc.text(line, curX + 1.2, startY + (lIdx * 2.5));
+        }
+      });
     } else {
-      doc.text(col.title, curX + 1.5, y + 4.2);
+      if (col.align === "center") {
+        doc.text(splitTitle[0] || col.title, curX + (col.width / 2), y + 4.2, { align: "center" });
+      } else {
+        doc.text(splitTitle[0] || col.title, curX + 1.2, y + 4.2);
+      }
     }
 
-    // Header Tier 2 Sub-Text
+    // Header Tier 2 Sub-Text (Wrapped)
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(6);
+    doc.setFontSize(5.5);
     doc.setTextColor(70, 70, 70);
+    const splitSub = doc.splitTextToSize(col.subTitle, Math.max(col.width - 2, 4));
     if (col.align === "center") {
-      doc.text(col.subTitle, curX + (col.width / 2), y + headerHeight1 + 3.8, { align: "center" });
+      doc.text(splitSub[0] || col.subTitle, curX + (col.width / 2), y + headerHeight1 + 3.8, { align: "center" });
     } else {
-      doc.text(col.subTitle, curX + 1.5, y + headerHeight1 + 3.8);
+      doc.text(splitSub[0] || col.subTitle, curX + 1.2, y + headerHeight1 + 3.8);
     }
 
     curX += col.width;
@@ -462,8 +476,7 @@ export async function downloadQuotationPDF(quotationData) {
 
   // Bottom Shipper address line
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(7.5);
-  doc.text(`${shipper.shipperName || "Toyo Cushion Lanka"}   |   COMPANY NO : ${shipper.companyNo || "PV 5492"}   |   ${shipper.address || "400 Deans Road Colombo 10 01000 Sri Lanka"}   |   Tel: ${shipper.phone || "94112232939-Fixed"}`, margin + 5, bottomBoxY + 43);
+  doc.text(`${shipper.shipperName || "Toyo Cushion Lanka (PVT) LTD"}   |   COMPANY NO : ${shipper.companyNo || "PV 5492"}   |   ${shipper.address || "400 Deans Road Colombo 10 01000 Sri Lanka"}   |   Tel: ${shipper.phone || "+9474 216 8231"}   |   Email: ${shipper.email || "Info@hayleysfibre.com"}`, margin + 5, bottomBoxY + 43);
 
   // Right Signatory block (Populated Sales Officer Details & Signature)
   const sigX = margin + tableWidth - 90;

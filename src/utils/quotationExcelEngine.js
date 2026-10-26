@@ -63,7 +63,7 @@ export async function generateQuotationExcel(quotationData) {
   );
 
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = "Toyo Cushion Lanka";
+  workbook.creator = "Toyo Cushion Lanka (PVT) LTD";
   workbook.created = new Date();
 
   const isBedding = category.toLowerCase().includes("bed");
@@ -208,7 +208,7 @@ function buildBeddingQuotationSheet(workbook, data, itemImagesBase64 = []) {
 
   r6.getCell(2).value = "Shipper :";
   r6.getCell(2).font = { name: "Arial", size: 9.5, bold: true, color: { argb: "FF1E3A8A" } };
-  r6.getCell(3).value = `${data.shipper.shipperName || "Toyo Cushion Lanka"}\nCOMPANY NO : ${data.shipper.companyNo || "PV 5492"}\n${data.shipper.address || "400 Deans Road Colombo 10 01000 Sri Lanka"}\nTel: ${data.shipper.phone || "94112232939-Fixed"}`;
+  r6.getCell(3).value = `${data.shipper.shipperName || "Toyo Cushion Lanka (PVT) LTD"}\nCOMPANY NO : ${data.shipper.companyNo || "PV 5492"}\n${data.shipper.address || "400 Deans Road Colombo 10 01000 Sri Lanka"}\nTel: ${data.shipper.phone || "+9474 216 8231"}  |  Email: ${data.shipper.email || "Info@hayleysfibre.com"}`;
   r6.getCell(3).font = { name: "Arial", size: 8.5 };
   r6.getCell(3).alignment = { wrapText: true, vertical: "top" };
   if (splitMid >= 3) {
@@ -330,7 +330,7 @@ function buildBeddingQuotationSheet(workbook, data, itemImagesBase64 = []) {
   addTermRow("Utilization Lead time", data.leadTime);
 
   ws.addRow([]);
-  const compRow = ws.addRow(["", `${data.shipper.shipperName || "Toyo Cushion Lanka"}\nCOMPANY NO : ${data.shipper.companyNo || "PV 5492"}\n${data.shipper.address || "400 Deans Road Colombo 10 01000 Sri Lanka"}\nTel: ${data.shipper.phone || "94112232939-Fixed"}`]);
+  const compRow = ws.addRow(["", `${data.shipper.shipperName || "Toyo Cushion Lanka (PVT) LTD"}\nCOMPANY NO : ${data.shipper.companyNo || "PV 5492"}\n${data.shipper.address || "400 Deans Road Colombo 10 01000 Sri Lanka"}\nTel: ${data.shipper.phone || "+9474 216 8231"}  |  Email: ${data.shipper.email || "Info@hayleysfibre.com"}`]);
   compRow.getCell(2).font = { name: "Arial", size: 8.5, color: { argb: "FF475569" } };
   compRow.getCell(2).alignment = { wrapText: true };
   const compEndCol = Math.min(numCols, Math.max(2, Math.floor(numCols / 2)));
@@ -556,7 +556,7 @@ function buildBeddingDataEntrySheet(workbook, data) {
         cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFEF08A" } };
         cell.font = { name: "Arial", size: 9, bold: true, color: { argb: "FF854D0E" } };
       } else if ([19, 20, 21, 22].includes(colIdx)) {
-        cell.numFmt = "$#,##0.0000";
+        cell.numFmt = "$#,##0.00";
       } else if (colIdx === 23) {
         cell.numFmt = "#,##0.00";
       } else if ([15, 16, 17, 18, 24, 25].includes(colIdx)) {
@@ -671,7 +671,7 @@ function buildHortiQuotationSheet(workbook, data, itemImagesBase64 = []) {
 
   r6.getCell(2).value = "Shipper :";
   r6.getCell(2).font = { name: "Arial", size: 9.5, bold: true, color: { argb: "FF1E3A8A" } };
-  r6.getCell(3).value = `${data.shipper.shipperName || "Toyo Cushion Lanka"}\nCOMPANY NO : ${data.shipper.companyNo || "PV 5492"}\n${data.shipper.address || "400 Deans Road Colombo 10 01000 Sri Lanka"}\nTel: ${data.shipper.phone || "94112232939-Fixed"}`;
+  r6.getCell(3).value = `${data.shipper.shipperName || "Toyo Cushion Lanka (PVT) LTD"}\nCOMPANY NO : ${data.shipper.companyNo || "PV 5492"}\n${data.shipper.address || "400 Deans Road Colombo 10 01000 Sri Lanka"}\nTel: ${data.shipper.phone || "+9474 216 8231"}  |  Email: ${data.shipper.email || "Info@hayleysfibre.com"}`;
   r6.getCell(3).font = { name: "Arial", size: 8.5 };
   r6.getCell(3).alignment = { wrapText: true, vertical: "top" };
   if (splitMid >= 3) {
@@ -792,7 +792,7 @@ function buildHortiQuotationSheet(workbook, data, itemImagesBase64 = []) {
   addTermRow("Utilization Lead time", data.leadTime);
 
   ws.addRow([]);
-  const compRowH = ws.addRow(["", `${data.shipper.shipperName || "Toyo Cushion Lanka"}\nCOMPANY NO : ${data.shipper.companyNo || "PV 5492"}\n${data.shipper.address || "400 Deans Road Colombo 10 01000 Sri Lanka"}\nTel: ${data.shipper.phone || "94112232939-Fixed"}`]);
+  const compRowH = ws.addRow(["", `${data.shipper.shipperName || "Toyo Cushion Lanka (PVT) LTD"}\nCOMPANY NO : ${data.shipper.companyNo || "PV 5492"}\n${data.shipper.address || "400 Deans Road Colombo 10 01000 Sri Lanka"}\nTel: ${data.shipper.phone || "+9474 216 8231"}  |  Email: ${data.shipper.email || "Info@hayleysfibre.com"}`]);
   compRowH.getCell(2).font = { name: "Arial", size: 8.5, color: { argb: "FF475569" } };
   compRowH.getCell(2).alignment = { wrapText: true };
   const compEndCol = Math.min(numCols, Math.max(2, Math.floor(numCols / 2)));
@@ -970,7 +970,7 @@ function buildHortiDataEntrySheet(workbook, data) {
       item.description || "-",
       item.specifications || "-",
       item.gsm || "",
-      item.latexRatio || "",
+      (item.latexRatio && String(item.latexRatio).toLowerCase().trim() !== "no latex" && String(item.latexRatio).toLowerCase().trim() !== "none") ? item.latexRatio : "",
       item.packing || "",
       item.cartonSize || "",
       item.palletSize || "",
@@ -1034,7 +1034,7 @@ function buildHortiDataEntrySheet(workbook, data) {
         cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFEF08A" } };
         cell.font = { name: "Arial", size: 9, bold: true, color: { argb: "FF854D0E" } };
       } else if ([20, 21, 22, 23].includes(colIdx)) {
-        cell.numFmt = "$#,##0.0000";
+        cell.numFmt = "$#,##0.00";
       } else if (colIdx === 24) {
         cell.numFmt = "#,##0.00";
       } else if ([16, 17, 18, 19, 25, 26].includes(colIdx)) {

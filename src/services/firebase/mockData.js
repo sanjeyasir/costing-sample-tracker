@@ -129,7 +129,7 @@ export const DEFAULT_CATEGORIES = [
       },
       { key: "rollLength", label: "Roll Length (CM)", type: "number", required: false, owner: "marketing" },
       { key: "gsm", label: "GSM", type: "number", required: true, owner: "marketing" },
-      { key: "latexRatio", label: "Latex Ratio", type: "select", options: ["80:20", "70:30", "100:0", "60:40", "50:50"], required: true, owner: "marketing" },
+      { key: "latexRatio", label: "Latex Ratio", type: "select", options: ["80:20", "70:30", "100:0", "60:40", "50:50", "No Latex"], required: true, owner: "marketing" },
       { key: "marketingRemarks", label: "Marketing Remarks", type: "text", required: false, owner: "marketing" },
       // Finance fields
       { key: "specifications", label: "Product Specifications (L x W x H)", type: "text", required: true, owner: "finance" },

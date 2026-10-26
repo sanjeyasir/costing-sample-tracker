@@ -55,6 +55,8 @@ import {
   TableOutlined,
   CheckOutlined,
   EyeOutlined,
+  EyeInvisibleOutlined,
+  ExclamationCircleOutlined,
   EditOutlined,
   InfoCircleOutlined,
   DeleteOutlined,
@@ -137,6 +139,7 @@ export default function QuotationEditor() {
 
   // Items List (Directly populated from Costing Request report)
   const [items, setItems] = useState([]);
+  const [hiddenItems, setHiddenItems] = useState([]);
 
   // Active Selected Cell indicator for Excel formula bar
   const [activeCellAddress, setActiveCellAddress] = useState("D2");
@@ -206,6 +209,7 @@ export default function QuotationEditor() {
           setPaymentTerms(savedQuote.paymentTerms || DEFAULT_TERMS.paymentTerms);
           setLeadTime(savedQuote.leadTime || DEFAULT_TERMS.leadTime);
           setValidity(savedQuote.validity || defaultValidityStr);
+          setHiddenItems(savedQuote.hiddenItems || []);
           // Clean up savedQuote items to ensure no legacy default values leak in
           let rawItems = [];
           if (Array.isArray(req.specs?.items)) {
@@ -281,6 +285,7 @@ export default function QuotationEditor() {
               packing: finalPacking,
               rollDiameter: isRollConfig ? (costItem.rollDiameter || savedItem?.rollDiameter || specItem?.rollDiameter || "") : (costItem.rollDiameter || savedItem?.rollDiameter || specItem?.rollDiameter || ""),
               rollLength: isRollConfig ? (costItem.rollLength || savedItem?.rollLength || specItem?.rollLength || "") : (costItem.rollLength || savedItem?.rollLength || specItem?.rollLength || ""),
+              latexRatio: (savedItem.latexRatio && String(savedItem.latexRatio).toLowerCase().trim() !== "no latex" && String(savedItem.latexRatio).toLowerCase().trim() !== "none") ? savedItem.latexRatio : ((specItem.latexRatio && String(specItem.latexRatio).toLowerCase().trim() !== "no latex" && String(specItem.latexRatio).toLowerCase().trim() !== "none") ? specItem.latexRatio : ""),
               palletsPer20ft: p20,
               palletsPer40ft: p40,
               // If not pallet (carton floor, bundle floor, roll floor), reset cartonsPer20ft/40ft so calculateHorticultureItem computes them fresh from 27/67 formulas!
@@ -370,7 +375,7 @@ export default function QuotationEditor() {
               density: specItem.density || "",
               qtyPerBundle: costingPacking.parseCleanNumeric(specItem.qtyPerBundle || costItem.qtyPerBundle).value,
               gsm: specItem.gsm || "",
-              latexRatio: specItem.latexRatio || "",
+              latexRatio: (specItem.latexRatio && String(specItem.latexRatio).toLowerCase().trim() !== "no latex" && String(specItem.latexRatio).toLowerCase().trim() !== "none") ? specItem.latexRatio : "",
               packingConfiguration: rawConfig,
               packing: finalPacking,
               cartonSize: (costItem.cartonSize && costItem.cartonSize !== "0") ? costItem.cartonSize : (specItem.cartonSize || ""),
@@ -386,6 +391,7 @@ export default function QuotationEditor() {
           });
 
           setItems(initialItems);
+          setHiddenItems([]);
         }
       } catch (err) {
         console.error("Error loading quotation:", err);
@@ -667,6 +673,7 @@ export default function QuotationEditor() {
         validity,
         selectedColumns: category === "bedding" ? selectedBeddingColumns : selectedHortiColumns,
         items: sanitizedItems,
+        hiddenItems: hiddenItems,
         costRequest: {
           id: request.id,
           costRequestNo: request.costRequestNo,
@@ -823,6 +830,88 @@ export default function QuotationEditor() {
     { key: "sheet3_horti", label: "Quotation Format", sheetNum: "Sheet 3", color: "#059669" },
     { key: "sheet4_horti", label: "Data Entry", sheetNum: "Sheet 4", color: "#047857" }
   ];
+
+  // Row Hiding with Confirmation dialog
+  const handleConfirmHideRow = (rowIndex) => {
+    const itemToHide = items[rowIndex];
+    if (!itemToHide) return;
+
+    const itemLabel = itemToHide.description || itemToHide.specifications || `Item #${rowIndex + 1}`;
+
+    Modal.confirm({
+      title: "Hide Row from Quotation?",
+      icon: <ExclamationCircleOutlined style={{ color: "#ef4444" }} />,
+      centered: true,
+      content: (
+        <div style={{ marginTop: 8 }}>
+          <p style={{ color: "#0f172a", fontWeight: 600, marginBottom: 8 }}>
+            Are you sure you want to hide <strong>"{itemLabel}"</strong> from this quotation?
+          </p>
+          <div style={{ background: "#fef2f2", border: "1px solid #fee2e2", borderRadius: 6, padding: "8px 12px", fontSize: "0.82rem", color: "#991b1b" }}>
+            <p style={{ margin: "0 0 4px 0" }}>• This row will <strong>not</strong> appear in the quotation information, PDF, or Excel export.</p>
+            <p style={{ margin: 0 }}>• The original costing request details will remain <strong>completely intact</strong>.</p>
+          </div>
+        </div>
+      ),
+      okText: "Yes, Hide Row",
+      okType: "danger",
+      cancelText: "Cancel",
+      onOk() {
+        setItems(prev => {
+          const next = [...prev];
+          const [removed] = next.splice(rowIndex, 1);
+          setHiddenItems(hPrev => [...hPrev, removed]);
+          return next;
+        });
+        message.info(`"${itemLabel}" hidden from quotation. Original costing request remains intact.`);
+      }
+    });
+  };
+
+  const handleUnhideRow = (hiddenIndex) => {
+    setHiddenItems(prev => {
+      const nextHidden = [...prev];
+      const [restored] = nextHidden.splice(hiddenIndex, 1);
+      setItems(iPrev => [...iPrev, restored]);
+      message.success(`Restored "${restored.description || 'Item'}" to quotation.`);
+      return nextHidden;
+    });
+  };
+
+  const handleUnhideAll = () => {
+    setItems(prev => [...prev, ...hiddenItems]);
+    setHiddenItems([]);
+    message.success("All hidden rows restored to quotation.");
+  };
+
+  // Custom Action Renderer for Hide Row option
+  const actionRenderer = (instance, td, row, col, prop, value) => {
+    while (td.firstChild) {
+      td.removeChild(td.firstChild);
+    }
+    td.className = "htCenter htMiddle";
+    td.style.padding = "2px 4px";
+
+    const hideBtn = document.createElement("button");
+    hideBtn.innerHTML = "👁️ Hide";
+    hideBtn.title = "Hide this row from the quotation (Costing request remains intact)";
+    hideBtn.style.cssText = "background:#fef2f2;border:1px solid #fecaca;color:#dc2626;font-weight:600;border-radius:4px;padding:2px 7px;font-size:11px;cursor:pointer;display:inline-flex;align-items:center;gap:3px;transition:all 0.15s ease;";
+    hideBtn.onmouseover = () => {
+      hideBtn.style.background = "#fee2e2";
+      hideBtn.style.borderColor = "#f87171";
+    };
+    hideBtn.onmouseout = () => {
+      hideBtn.style.background = "#fef2f2";
+      hideBtn.style.borderColor = "#fecaca";
+    };
+    hideBtn.onclick = (e) => {
+      e.stopPropagation();
+      handleConfirmHideRow(row);
+    };
+
+    td.appendChild(hideBtn);
+    return td;
+  };
 
   // Custom Handsontable Image Renderer (supports preview, upload, preset selection, and delete)
   const imageRenderer = (instance, td, row, col, prop, value) => {
@@ -1021,6 +1110,7 @@ export default function QuotationEditor() {
 
     return {
       idx: idx + 1,
+      action: "",
       quotedPrice: dispPrice.label,
       ...item,
       margin: rowMargin,
@@ -1036,6 +1126,7 @@ export default function QuotationEditor() {
 
     return {
       idx: idx + 1,
+      action: "",
       ...item,
       margin: rowMargin
     };
@@ -1043,65 +1134,67 @@ export default function QuotationEditor() {
 
   // Handsontable Columns for Sheet 1: Quotation format Bedding
   const beddingTemplateHotColumns = [
-    { data: "idx", title: "#", subTitle: "#", readOnly: true, width: 45, className: "htCenter htMiddle" },
+    { data: "idx", title: "#", subTitle: "#", readOnly: true, width: 45, className: "htCenter htMiddle", wordWrap: true },
+    { data: "action", title: "Action", subTitle: "Hide Row", renderer: actionRenderer, readOnly: true, width: 75, className: "htCenter htMiddle", wordWrap: true },
     { data: "imageUrl", title: "Image", subTitle: "Images common", renderer: imageRenderer, readOnly: true, width: 140 },
-    { data: "description", title: "Product spec", subTitle: "As per cost req data", width: 220, className: "htLeft htMiddle" },
-    { data: "length", title: "L (CM)", subTitle: "As per req", type: "numeric", width: 75, className: "htCenter htMiddle" },
-    { data: "width", title: "W (CM)", subTitle: "As per req", type: "numeric", width: 75, className: "htCenter htMiddle" },
-    { data: "height", title: "H (CM)", subTitle: "As per req", type: "numeric", width: 75, className: "htCenter htMiddle" },
-    { data: "organic", title: "Organic/Non Org", subTitle: "Organic/Non-Org", type: "dropdown", source: ["Non-Organic", "Organic", "100% Organic"], width: 120, className: "htCenter htMiddle" },
-    { data: "ncRcRatio", title: "NC/RC Ratio", subTitle: "80:20 (As req)", type: "dropdown", source: ["80:20", "70:30", "100:0", "60:40", "50:50"], width: 105, className: "htCenter htMiddle" },
-    { data: "density", title: "Density", subTitle: "80 kg/m3", type: "dropdown", source: ["80 kg/m3", "100 kg/m3", "65 kg/m3", "120 kg/m3", "70 kg/m3"], width: 100, className: "htCenter htMiddle" },
-    { data: "qtyPerBundle", title: "Qty per BUNDLE", subTitle: "As per req", type: "numeric", width: 110, className: "htCenter htMiddle" },
-    { data: "palletSize", title: "Pallet size (Opt)", subTitle: "If applicable", width: 100, className: "htCenter htMiddle" },
-    { data: "bundlesPerPallet", title: "Bundles per pallet", subTitle: "As per cost req", type: "numeric", width: 120, className: "htCenter htMiddle" },
-    { data: "palletsPer20ft", title: "Pallets per 20ft", subTitle: "Marketing to fill", type: "numeric", width: 110, className: "htCenter htMiddle" },
-    { data: "palletsPer40ft", title: "Pallets per 40ft", subTitle: "Marketing to fill", type: "numeric", width: 110, className: "htCenter htMiddle" },
-    { data: "margin", title: "Margin % (Opt)", subTitle: "Override global %", type: "numeric", renderer: marginRenderer, width: 115, className: "htCenter htMiddle" },
-    { data: "quotedPrice", title: "Price FOB /cif/Ex works", subTitle: "Auto calculated price", renderer: priceRenderer, readOnly: true, width: 140 },
-    { data: "bundlesPer20ft", title: "Bundles per 20ft", subTitle: "Auto cal", renderer: formulaRenderer, readOnly: true, width: 105 },
-    { data: "qtyPer20ft", title: "Qty per 20ft", subTitle: "Auto pick", renderer: formulaRenderer, readOnly: true, width: 110 },
-    { data: "bundlesPer40ft", title: "Bundles per 40ft", subTitle: "Auto cal", renderer: formulaRenderer, readOnly: true, width: 105 },
-    { data: "qtyPer40ft", title: "Qty per 40ft", subTitle: "Auto pick", renderer: formulaRenderer, readOnly: true, width: 110 },
-    { data: "orderVolume", title: "Customer Order Volume", subTitle: "Manual Entry (Pcs)", type: "numeric", width: 145, className: "htCenter htMiddle" },
-    { data: "orderCartons", title: "Order Bundles", subTitle: "Auto cal (Vol / Pcs)", renderer: formulaRenderer, readOnly: true, width: 125 },
-    { data: "orderPallets", title: "Order Pallets", subTitle: "Auto cal (Vol / Plt Qty)", renderer: formulaRenderer, readOnly: true, width: 125 },
-    { data: "orderTotalCbm", title: "Total CBM", subTitle: "Auto cal (CBM x Bdls)", renderer: formulaRenderer, readOnly: true, width: 125 }
+    { data: "description", title: "Product spec", subTitle: "As per cost req data", width: 220, className: "htLeft htMiddle", wordWrap: true },
+    { data: "length", title: "L (CM)", subTitle: "As per req", type: "numeric", width: 75, className: "htCenter htMiddle", wordWrap: true },
+    { data: "width", title: "W (CM)", subTitle: "As per req", type: "numeric", width: 75, className: "htCenter htMiddle", wordWrap: true },
+    { data: "height", title: "H (CM)", subTitle: "As per req", type: "numeric", width: 75, className: "htCenter htMiddle", wordWrap: true },
+    { data: "organic", title: "Organic/Non Org", subTitle: "Organic/Non-Org", type: "dropdown", source: ["Non-Organic", "Organic", "100% Organic"], width: 120, className: "htCenter htMiddle", wordWrap: true },
+    { data: "ncRcRatio", title: "NC/RC Ratio", subTitle: "80:20 (As req)", type: "dropdown", source: ["80:20", "70:30", "100:0", "60:40", "50:50"], width: 105, className: "htCenter htMiddle", wordWrap: true },
+    { data: "density", title: "Density", subTitle: "80 kg/m3", type: "dropdown", source: ["80 kg/m3", "100 kg/m3", "65 kg/m3", "120 kg/m3", "70 kg/m3"], width: 100, className: "htCenter htMiddle", wordWrap: true },
+    { data: "qtyPerBundle", title: "Qty per BUNDLE", subTitle: "As per req", type: "numeric", width: 110, className: "htCenter htMiddle", wordWrap: true },
+    { data: "palletSize", title: "Pallet size (Opt)", subTitle: "If applicable", width: 100, className: "htCenter htMiddle", wordWrap: true },
+    { data: "bundlesPerPallet", title: "Bundles per pallet", subTitle: "As per cost req", type: "numeric", width: 120, className: "htCenter htMiddle", wordWrap: true },
+    { data: "palletsPer20ft", title: "Pallets per 20ft", subTitle: "Marketing to fill", type: "numeric", width: 110, className: "htCenter htMiddle", wordWrap: true },
+    { data: "palletsPer40ft", title: "Pallets per 40ft", subTitle: "Marketing to fill", type: "numeric", width: 110, className: "htCenter htMiddle", wordWrap: true },
+    { data: "margin", title: "Margin % (Opt)", subTitle: "Override global %", type: "numeric", renderer: marginRenderer, width: 115, className: "htCenter htMiddle", wordWrap: true },
+    { data: "quotedPrice", title: "Price FOB /cif/Ex works", subTitle: "Auto calculated price", renderer: priceRenderer, readOnly: true, width: 140, wordWrap: true },
+    { data: "bundlesPer20ft", title: "Bundles per 20ft", subTitle: "Auto cal", renderer: formulaRenderer, readOnly: true, width: 105, wordWrap: true },
+    { data: "qtyPer20ft", title: "Qty per 20ft", subTitle: "Auto pick", renderer: formulaRenderer, readOnly: true, width: 110, wordWrap: true },
+    { data: "bundlesPer40ft", title: "Bundles per 40ft", subTitle: "Auto cal", renderer: formulaRenderer, readOnly: true, width: 105, wordWrap: true },
+    { data: "qtyPer40ft", title: "Qty per 40ft", subTitle: "Auto pick", renderer: formulaRenderer, readOnly: true, width: 110, wordWrap: true },
+    { data: "orderVolume", title: "Customer Order Volume", subTitle: "Manual Entry (Pcs)", type: "numeric", width: 145, className: "htCenter htMiddle", wordWrap: true },
+    { data: "orderCartons", title: "Order Bundles", subTitle: "Auto cal (Vol / Pcs)", renderer: formulaRenderer, readOnly: true, width: 125, wordWrap: true },
+    { data: "orderPallets", title: "Order Pallets", subTitle: "Auto cal (Vol / Plt Qty)", renderer: formulaRenderer, readOnly: true, width: 125, wordWrap: true },
+    { data: "orderTotalCbm", title: "Total CBM", subTitle: "Auto cal (CBM x Bdls)", renderer: formulaRenderer, readOnly: true, width: 125, wordWrap: true }
   ];
 
   // Handsontable Columns for Sheet 3: Quotation format Horticulture (NO DUPLICATES)
   const hortiTemplateHotColumns = [
-    { data: "idx", title: "#", subTitle: "#", readOnly: true, width: 45, className: "htCenter htMiddle" },
+    { data: "idx", title: "#", subTitle: "#", readOnly: true, width: 45, className: "htCenter htMiddle", wordWrap: true },
+    { data: "action", title: "Action", subTitle: "Hide Row", renderer: actionRenderer, readOnly: true, width: 75, className: "htCenter htMiddle", wordWrap: true },
     { data: "imageUrl", title: "Image", subTitle: "Images common", renderer: imageRenderer, readOnly: true, width: 140 },
-    { data: "description", title: "Product spec", subTitle: "As per cost req data", width: 230, className: "htLeft htMiddle" },
-    { data: "packing", title: "Packing (Pcs / Ctn or Bdl)", subTitle: "AS per cost req", type: "numeric", width: 130, className: "htCenter htMiddle" },
-    { data: "cartonSize", title: "Carton / Bundle Size (CM)", subTitle: "L x W x H", width: 140, className: "htCenter htMiddle" },
-    { data: "palletSize", title: "Pallet size (Opt)", subTitle: "If applicable", width: 100, className: "htCenter htMiddle" },
-    { data: "cartonsPerPallet", title: "Cartons / Bundles per Pallet", subTitle: "AS per cost req", type: "numeric", width: 145, className: "htCenter htMiddle" },
-    { data: "palletsPer20ft", title: "Pallets per 20ft", subTitle: "Marketing to fill", type: "numeric", width: 110, className: "htCenter htMiddle" },
-    { data: "palletsPer40ft", title: "Pallets per 40ft", subTitle: "Marketing to fill", type: "numeric", width: 110, className: "htCenter htMiddle" },
-    { data: "rollDiameter", title: "Roll Diameter (CM)", subTitle: "Roll mode (CM)", width: 120, className: "htCenter htMiddle" },
-    { data: "rollLength", title: "Roll Length (CM)", subTitle: "Roll mode (CM)", width: 120, className: "htCenter htMiddle" },
-    { data: "margin", title: "Margin % (Opt)", subTitle: "Override global %", type: "numeric", renderer: marginRenderer, width: 115, className: "htCenter htMiddle" },
-    { data: "quotedPrice", title: "Price FOB /cif/Ex works", subTitle: "Auto calculated price", renderer: priceRenderer, readOnly: true, width: 140 },
-    { data: "cartonsPer20ft", title: "Cartons / Bundles per 20ft", subTitle: "Auto / Manual", type: "numeric", width: 130, className: "htCenter htMiddle" },
-    { data: "qtyPer20ft", title: "Qty per 20ft", subTitle: "Auto pick", renderer: formulaRenderer, readOnly: true, width: 110 },
-    { data: "cartonsPer40ft", title: "Cartons / Bundles per 40ft", subTitle: "Auto / Manual", type: "numeric", width: 130, className: "htCenter htMiddle" },
-    { data: "qtyPer40ft", title: "Qty per 40ft", subTitle: "Auto pick", renderer: formulaRenderer, readOnly: true, width: 110 },
-    { data: "orderVolume", title: "Customer Order Volume", subTitle: "Manual Entry (Pcs)", type: "numeric", width: 145, className: "htCenter htMiddle" },
-    { data: "orderCartons", title: "Order Ctns/Bdls/Rolls", subTitle: "Auto cal (Vol / Packing)", renderer: formulaRenderer, readOnly: true, width: 140 },
-    { data: "orderPallets", title: "Order Pallets", subTitle: "Auto cal (Vol / Plt Qty)", renderer: formulaRenderer, readOnly: true, width: 125 },
-    { data: "orderTotalCbm", title: "Total CBM", subTitle: "Auto cal (CBM x Units)", renderer: formulaRenderer, readOnly: true, width: 125 }
+    { data: "description", title: "Product spec", subTitle: "As per cost req data", width: 230, className: "htLeft htMiddle", wordWrap: true },
+    { data: "packing", title: "Packing (Pcs / Ctn or Bdl)", subTitle: "AS per cost req", type: "numeric", width: 130, className: "htCenter htMiddle", wordWrap: true },
+    { data: "cartonSize", title: "Carton / Bundle Size (CM)", subTitle: "L x W x H", width: 140, className: "htCenter htMiddle", wordWrap: true },
+    { data: "palletSize", title: "Pallet size (Opt)", subTitle: "If applicable", width: 100, className: "htCenter htMiddle", wordWrap: true },
+    { data: "cartonsPerPallet", title: "Cartons / Bundles per Pallet", subTitle: "AS per cost req", type: "numeric", width: 145, className: "htCenter htMiddle", wordWrap: true },
+    { data: "palletsPer20ft", title: "Pallets per 20ft", subTitle: "Marketing to fill", type: "numeric", width: 110, className: "htCenter htMiddle", wordWrap: true },
+    { data: "palletsPer40ft", title: "Pallets per 40ft", subTitle: "Marketing to fill", type: "numeric", width: 110, className: "htCenter htMiddle", wordWrap: true },
+    { data: "rollDiameter", title: "Roll Diameter (CM)", subTitle: "Roll mode (CM)", width: 120, className: "htCenter htMiddle", wordWrap: true },
+    { data: "rollLength", title: "Roll Length (CM)", subTitle: "Roll mode (CM)", width: 120, className: "htCenter htMiddle", wordWrap: true },
+    { data: "margin", title: "Margin % (Opt)", subTitle: "Override global %", type: "numeric", renderer: marginRenderer, width: 115, className: "htCenter htMiddle", wordWrap: true },
+    { data: "quotedPrice", title: "Price FOB /cif/Ex works", subTitle: "Auto calculated price", renderer: priceRenderer, readOnly: true, width: 140, wordWrap: true },
+    { data: "cartonsPer20ft", title: "Cartons / Bundles per 20ft", subTitle: "Auto / Manual", type: "numeric", width: 130, className: "htCenter htMiddle", wordWrap: true },
+    { data: "qtyPer20ft", title: "Qty per 20ft", subTitle: "Auto pick", renderer: formulaRenderer, readOnly: true, width: 110, wordWrap: true },
+    { data: "cartonsPer40ft", title: "Cartons / Bundles per 40ft", subTitle: "Auto / Manual", type: "numeric", width: 130, className: "htCenter htMiddle", wordWrap: true },
+    { data: "qtyPer40ft", title: "Qty per 40ft", subTitle: "Auto pick", renderer: formulaRenderer, readOnly: true, width: 110, wordWrap: true },
+    { data: "orderVolume", title: "Customer Order Volume", subTitle: "Manual Entry (Pcs)", type: "numeric", width: 145, className: "htCenter htMiddle", wordWrap: true },
+    { data: "orderCartons", title: "Order Ctns/Bdls/Rolls", subTitle: "Auto cal (Vol / Packing)", renderer: formulaRenderer, readOnly: true, width: 140, wordWrap: true },
+    { data: "orderPallets", title: "Order Pallets", subTitle: "Auto cal (Vol / Plt Qty)", renderer: formulaRenderer, readOnly: true, width: 125, wordWrap: true },
+    { data: "orderTotalCbm", title: "Total CBM", subTitle: "Auto cal (CBM x Units)", renderer: formulaRenderer, readOnly: true, width: 125, wordWrap: true }
   ];
 
   // Dynamic filtered column definitions and nested headers based on user-selected checkboxes
-  const activeBeddingColumns = beddingTemplateHotColumns.filter(c => selectedBeddingColumns.includes(c.data));
+  const activeBeddingColumns = beddingTemplateHotColumns.filter(c => c.data === "idx" || c.data === "action" || selectedBeddingColumns.includes(c.data));
   const activeBeddingNestedHeaders = [
     activeBeddingColumns.map(c => c.title),
     activeBeddingColumns.map(c => c.subTitle || c.title)
   ];
 
-  const activeHortiColumns = hortiTemplateHotColumns.filter(c => selectedHortiColumns.includes(c.data));
+  const activeHortiColumns = hortiTemplateHotColumns.filter(c => c.data === "idx" || c.data === "action" || selectedHortiColumns.includes(c.data));
   const activeHortiNestedHeaders = [
     activeHortiColumns.map(c => c.title),
     activeHortiColumns.map(c => c.subTitle || c.title)
@@ -1129,66 +1222,68 @@ export default function QuotationEditor() {
 
   // Handsontable Columns for Sheet 2: Data entry for Bedding
   const beddingDataEntryHotColumns = [
-    { data: "idx", title: "#", readOnly: true, width: 45, className: "htCenter htMiddle" },
-    { data: "description", title: "Description", width: 170, className: "htLeft htMiddle" },
-    { data: "organic", title: "Organic/Non Org", width: 110, className: "htCenter htMiddle" },
-    { data: "length", title: "L (CM)", type: "numeric", width: 75, className: "htCenter htMiddle" },
-    { data: "width", title: "W (CM)", type: "numeric", width: 75, className: "htCenter htMiddle" },
-    { data: "height", title: "H (CM)", type: "numeric", width: 75, className: "htCenter htMiddle" },
-    { data: "ncRcRatio", title: "NC/RC Ratio", width: 95, className: "htCenter htMiddle" },
-    { data: "density", title: "Density", width: 90, className: "htCenter htMiddle" },
-    { data: "qtyPerBundle", title: "Qty/BUNDLE", type: "numeric", width: 95, className: "htCenter htMiddle" },
-    { data: "palletSize", title: "Pallet size (Opt)", width: 95, className: "htCenter htMiddle" },
-    { data: "bundlesPerPallet", title: "Bundles per pallet", type: "numeric", width: 115, className: "htCenter htMiddle" },
-    { data: "unitCost", title: "Unit Cost (Fin)", type: "numeric", numericFormat: { pattern: "$0,0.00" }, width: 110, className: "htCenter htMiddle" },
-    { data: "margin", title: "Margin % (Opt)", type: "numeric", renderer: marginRenderer, width: 115, className: "htCenter htMiddle" },
-    { data: "palletsPer20ft", title: "Pallets (20ft)", type: "numeric", width: 100, className: "htCenter htMiddle" },
-    { data: "palletsPer40ft", title: "Pallets (40ft)", type: "numeric", width: 100, className: "htCenter htMiddle" },
-    { data: "bundlesPer20ft", title: "Bundles 20ft", readOnly: true, width: 95, className: "htCenter htMiddle" },
-    { data: "qtyPer20ft", title: "Qty per 20ft", readOnly: true, type: "numeric", numericFormat: { pattern: "0,0" }, width: 100, className: "htCenter htMiddle htBold" },
-    { data: "bundlesPer40ft", title: "Bundles 40ft", readOnly: true, width: 95, className: "htCenter htMiddle" },
-    { data: "qtyPer40ft", title: "Qty per 40ft", readOnly: true, type: "numeric", numericFormat: { pattern: "0,0" }, width: 100, className: "htCenter htMiddle htBold" },
-    { data: "fobPrice20ft", title: "FOB Price (20ft)", readOnly: true, type: "numeric", numericFormat: { pattern: "$0,0.0000" }, width: 115, className: "htCenter htMiddle" },
-    { data: "fobPrice40ft", title: "FOB Price (40ft)", readOnly: true, type: "numeric", numericFormat: { pattern: "$0,0.0000" }, width: 115, className: "htCenter htMiddle" },
-    { data: "cifPrice20ft", title: "CIF Price (20ft)", readOnly: true, type: "numeric", numericFormat: { pattern: "$0,0.0000" }, width: 115, className: "htCenter htMiddle" },
-    { data: "cifPrice40ft", title: "CIF Price (40ft)", readOnly: true, type: "numeric", numericFormat: { pattern: "$0,0.0000" }, width: 115, className: "htCenter htMiddle" },
-    { data: "exWorksPrice", title: "Ex work price", readOnly: true, type: "numeric", numericFormat: { pattern: "0,0.00" }, width: 105, className: "htCenter htMiddle" },
-    { data: "orderVolume", title: "Order Volume", type: "numeric", width: 120, className: "htCenter htMiddle" },
-    { data: "orderCartons", title: "Order Bundles", readOnly: true, type: "numeric", numericFormat: { pattern: "0,0" }, width: 110, className: "htCenter htMiddle" },
-    { data: "orderPallets", title: "Order Pallets", readOnly: true, type: "numeric", numericFormat: { pattern: "0,0.00" }, width: 110, className: "htCenter htMiddle" },
-    { data: "orderTotalCbm", title: "Total CBM", readOnly: true, type: "numeric", numericFormat: { pattern: "0,0.000" }, width: 110, className: "htCenter htMiddle" }
+    { data: "idx", title: "#", readOnly: true, width: 45, className: "htCenter htMiddle", wordWrap: true },
+    { data: "action", title: "Action", renderer: actionRenderer, readOnly: true, width: 75, className: "htCenter htMiddle", wordWrap: true },
+    { data: "description", title: "Description", width: 170, className: "htLeft htMiddle", wordWrap: true },
+    { data: "organic", title: "Organic/Non Org", width: 110, className: "htCenter htMiddle", wordWrap: true },
+    { data: "length", title: "L (CM)", type: "numeric", width: 75, className: "htCenter htMiddle", wordWrap: true },
+    { data: "width", title: "W (CM)", type: "numeric", width: 75, className: "htCenter htMiddle", wordWrap: true },
+    { data: "height", title: "H (CM)", type: "numeric", width: 75, className: "htCenter htMiddle", wordWrap: true },
+    { data: "ncRcRatio", title: "NC/RC Ratio", width: 95, className: "htCenter htMiddle", wordWrap: true },
+    { data: "density", title: "Density", width: 90, className: "htCenter htMiddle", wordWrap: true },
+    { data: "qtyPerBundle", title: "Qty/BUNDLE", type: "numeric", width: 95, className: "htCenter htMiddle", wordWrap: true },
+    { data: "palletSize", title: "Pallet size (Opt)", width: 95, className: "htCenter htMiddle", wordWrap: true },
+    { data: "bundlesPerPallet", title: "Bundles per pallet", type: "numeric", width: 115, className: "htCenter htMiddle", wordWrap: true },
+    { data: "unitCost", title: "Unit Cost (Fin)", type: "numeric", numericFormat: { pattern: "$0,0.00" }, width: 110, className: "htCenter htMiddle", wordWrap: true },
+    { data: "margin", title: "Margin % (Opt)", type: "numeric", renderer: marginRenderer, width: 115, className: "htCenter htMiddle", wordWrap: true },
+    { data: "palletsPer20ft", title: "Pallets (20ft)", type: "numeric", width: 100, className: "htCenter htMiddle", wordWrap: true },
+    { data: "palletsPer40ft", title: "Pallets (40ft)", type: "numeric", width: 100, className: "htCenter htMiddle", wordWrap: true },
+    { data: "bundlesPer20ft", title: "Bundles 20ft", readOnly: true, width: 95, className: "htCenter htMiddle", wordWrap: true },
+    { data: "qtyPer20ft", title: "Qty per 20ft", readOnly: true, type: "numeric", numericFormat: { pattern: "0,0" }, width: 100, className: "htCenter htMiddle htBold", wordWrap: true },
+    { data: "bundlesPer40ft", title: "Bundles 40ft", readOnly: true, width: 95, className: "htCenter htMiddle", wordWrap: true },
+    { data: "qtyPer40ft", title: "Qty per 40ft", readOnly: true, type: "numeric", numericFormat: { pattern: "0,0" }, width: 100, className: "htCenter htMiddle htBold", wordWrap: true },
+    { data: "fobPrice20ft", title: "FOB Price (20ft)", readOnly: true, type: "numeric", numericFormat: { pattern: "$0,0.00" }, width: 115, className: "htCenter htMiddle", wordWrap: true },
+    { data: "fobPrice40ft", title: "FOB Price (40ft)", readOnly: true, type: "numeric", numericFormat: { pattern: "$0,0.00" }, width: 115, className: "htCenter htMiddle", wordWrap: true },
+    { data: "cifPrice20ft", title: "CIF Price (20ft)", readOnly: true, type: "numeric", numericFormat: { pattern: "$0,0.00" }, width: 115, className: "htCenter htMiddle", wordWrap: true },
+    { data: "cifPrice40ft", title: "CIF Price (40ft)", readOnly: true, type: "numeric", numericFormat: { pattern: "$0,0.00" }, width: 115, className: "htCenter htMiddle", wordWrap: true },
+    { data: "exWorksPrice", title: "Ex work price", readOnly: true, type: "numeric", numericFormat: { pattern: "0,0.00" }, width: 105, className: "htCenter htMiddle", wordWrap: true },
+    { data: "orderVolume", title: "Order Volume", type: "numeric", width: 120, className: "htCenter htMiddle", wordWrap: true },
+    { data: "orderCartons", title: "Order Bundles", readOnly: true, type: "numeric", numericFormat: { pattern: "0,0" }, width: 110, className: "htCenter htMiddle", wordWrap: true },
+    { data: "orderPallets", title: "Order Pallets", readOnly: true, type: "numeric", numericFormat: { pattern: "0,0.00" }, width: 110, className: "htCenter htMiddle", wordWrap: true },
+    { data: "orderTotalCbm", title: "Total CBM", readOnly: true, type: "numeric", numericFormat: { pattern: "0,0.000" }, width: 110, className: "htCenter htMiddle", wordWrap: true }
   ];
 
   // Handsontable Columns for Sheet 4: Data entry for Horti (NO DUPLICATES)
   const hortiDataEntryHotColumns = [
-    { data: "idx", title: "#", readOnly: true, width: 45, className: "htCenter htMiddle" },
-    { data: "description", title: "Product Description (Mkt)", width: 160, className: "htLeft htMiddle" },
-    { data: "specifications", title: "Product Specifications (Mkt)", width: 230, className: "htLeft htMiddle" },
-    { data: "gsm", title: "GSM (Mkt)", width: 85, className: "htCenter htMiddle" },
-    { data: "latexRatio", title: "Latex Ratio (Mkt)", width: 95, className: "htCenter htMiddle" },
-    { data: "packing", title: "Packing (Pcs / Ctn or Bdl)", type: "numeric", width: 120, className: "htCenter htMiddle" },
-    { data: "cartonSize", title: "Carton / Bundle Size (CM)", width: 130, className: "htCenter htMiddle" },
-    { data: "palletSize", title: "Pallet size (Opt)", width: 95, className: "htCenter htMiddle" },
-    { data: "cartonsPerPallet", title: "Cartons / Bundles per Pallet", type: "numeric", width: 125, className: "htCenter htMiddle" },
-    { data: "rollDiameter", title: "Roll Diameter (CM)", width: 120, className: "htCenter htMiddle" },
-    { data: "rollLength", title: "Roll Length (CM)", width: 120, className: "htCenter htMiddle" },
-    { data: "unitCost", title: "Unit Cost (Fin)", type: "numeric", numericFormat: { pattern: "$0,0.00" }, width: 110, className: "htCenter htMiddle" },
-    { data: "margin", title: "Margin % (Opt)", type: "numeric", renderer: marginRenderer, width: 115, className: "htCenter htMiddle" },
-    { data: "palletsPer20ft", title: "Pallets (20ft)", type: "numeric", width: 100, className: "htCenter htMiddle" },
-    { data: "palletsPer40ft", title: "Pallets (40ft)", type: "numeric", width: 100, className: "htCenter htMiddle" },
-    { data: "cartonsPer20ft", title: "Cartons / Bundles 20ft", readOnly: true, width: 110, className: "htCenter htMiddle" },
-    { data: "qtyPer20ft", title: "Qty per 20ft", readOnly: true, type: "numeric", numericFormat: { pattern: "0,0" }, width: 100, className: "htCenter htMiddle htBold" },
-    { data: "cartonsPer40ft", title: "Cartons / Bundles 40ft", readOnly: true, width: 110, className: "htCenter htMiddle" },
-    { data: "qtyPer40ft", title: "Qty per 40ft", readOnly: true, type: "numeric", numericFormat: { pattern: "0,0" }, width: 100, className: "htCenter htMiddle htBold" },
-    { data: "fobPrice20ft", title: "FOB Price (20ft)", readOnly: true, type: "numeric", numericFormat: { pattern: "$0,0.0000" }, width: 115, className: "htCenter htMiddle" },
-    { data: "fobPrice40ft", title: "FOB Price (40ft)", readOnly: true, type: "numeric", numericFormat: { pattern: "$0,0.0000" }, width: 115, className: "htCenter htMiddle" },
-    { data: "cifPrice20ft", title: "CIF Price (20ft)", readOnly: true, type: "numeric", numericFormat: { pattern: "$0,0.0000" }, width: 115, className: "htCenter htMiddle" },
-    { data: "cifPrice40ft", title: "CIF Price (40ft)", readOnly: true, type: "numeric", numericFormat: { pattern: "$0,0.0000" }, width: 115, className: "htCenter htMiddle" },
-    { data: "exWorksPrice", title: "Ex work price", readOnly: true, type: "numeric", numericFormat: { pattern: "0,0.00" }, width: 105, className: "htCenter htMiddle" },
-    { data: "orderVolume", title: "Order Volume", type: "numeric", width: 120, className: "htCenter htMiddle" },
-    { data: "orderCartons", title: "Order Ctns/Bdls/Rolls", readOnly: true, type: "numeric", numericFormat: { pattern: "0,0" }, width: 125, className: "htCenter htMiddle" },
-    { data: "orderPallets", title: "Order Pallets", readOnly: true, type: "numeric", numericFormat: { pattern: "0,0.00" }, width: 110, className: "htCenter htMiddle" },
-    { data: "orderTotalCbm", title: "Total CBM", readOnly: true, type: "numeric", numericFormat: { pattern: "0,0.000" }, width: 110, className: "htCenter htMiddle" }
+    { data: "idx", title: "#", readOnly: true, width: 45, className: "htCenter htMiddle", wordWrap: true },
+    { data: "action", title: "Action", renderer: actionRenderer, readOnly: true, width: 75, className: "htCenter htMiddle", wordWrap: true },
+    { data: "description", title: "Product Description (Mkt)", width: 160, className: "htLeft htMiddle", wordWrap: true },
+    { data: "specifications", title: "Product Specifications (Mkt)", width: 230, className: "htLeft htMiddle", wordWrap: true },
+    { data: "gsm", title: "GSM (Mkt)", width: 85, className: "htCenter htMiddle", wordWrap: true },
+    { data: "latexRatio", title: "Latex Ratio (Mkt)", width: 95, className: "htCenter htMiddle", wordWrap: true },
+    { data: "packing", title: "Packing (Pcs / Ctn or Bdl)", type: "numeric", width: 120, className: "htCenter htMiddle", wordWrap: true },
+    { data: "cartonSize", title: "Carton / Bundle Size (CM)", width: 130, className: "htCenter htMiddle", wordWrap: true },
+    { data: "palletSize", title: "Pallet size (Opt)", width: 95, className: "htCenter htMiddle", wordWrap: true },
+    { data: "cartonsPerPallet", title: "Cartons / Bundles per Pallet", type: "numeric", width: 125, className: "htCenter htMiddle", wordWrap: true },
+    { data: "rollDiameter", title: "Roll Diameter (CM)", width: 120, className: "htCenter htMiddle", wordWrap: true },
+    { data: "rollLength", title: "Roll Length (CM)", width: 120, className: "htCenter htMiddle", wordWrap: true },
+    { data: "unitCost", title: "Unit Cost (Fin)", type: "numeric", numericFormat: { pattern: "$0,0.00" }, width: 110, className: "htCenter htMiddle", wordWrap: true },
+    { data: "margin", title: "Margin % (Opt)", type: "numeric", renderer: marginRenderer, width: 115, className: "htCenter htMiddle", wordWrap: true },
+    { data: "palletsPer20ft", title: "Pallets (20ft)", type: "numeric", width: 100, className: "htCenter htMiddle", wordWrap: true },
+    { data: "palletsPer40ft", title: "Pallets (40ft)", type: "numeric", width: 100, className: "htCenter htMiddle", wordWrap: true },
+    { data: "cartonsPer20ft", title: "Cartons / Bundles 20ft", readOnly: true, width: 110, className: "htCenter htMiddle", wordWrap: true },
+    { data: "qtyPer20ft", title: "Qty per 20ft", readOnly: true, type: "numeric", numericFormat: { pattern: "0,0" }, width: 100, className: "htCenter htMiddle htBold", wordWrap: true },
+    { data: "cartonsPer40ft", title: "Cartons / Bundles 40ft", readOnly: true, width: 110, className: "htCenter htMiddle", wordWrap: true },
+    { data: "qtyPer40ft", title: "Qty per 40ft", readOnly: true, type: "numeric", numericFormat: { pattern: "0,0" }, width: 100, className: "htCenter htMiddle htBold", wordWrap: true },
+    { data: "fobPrice20ft", title: "FOB Price (20ft)", readOnly: true, type: "numeric", numericFormat: { pattern: "$0,0.00" }, width: 115, className: "htCenter htMiddle", wordWrap: true },
+    { data: "fobPrice40ft", title: "FOB Price (40ft)", readOnly: true, type: "numeric", numericFormat: { pattern: "$0,0.00" }, width: 115, className: "htCenter htMiddle", wordWrap: true },
+    { data: "cifPrice20ft", title: "CIF Price (20ft)", readOnly: true, type: "numeric", numericFormat: { pattern: "$0,0.00" }, width: 115, className: "htCenter htMiddle", wordWrap: true },
+    { data: "cifPrice40ft", title: "CIF Price (40ft)", readOnly: true, type: "numeric", numericFormat: { pattern: "$0,0.00" }, width: 115, className: "htCenter htMiddle", wordWrap: true },
+    { data: "exWorksPrice", title: "Ex work price", readOnly: true, type: "numeric", numericFormat: { pattern: "0,0.00" }, width: 105, className: "htCenter htMiddle", wordWrap: true },
+    { data: "orderVolume", title: "Order Volume", type: "numeric", width: 120, className: "htCenter htMiddle", wordWrap: true },
+    { data: "orderCartons", title: "Order Ctns/Bdls/Rolls", readOnly: true, type: "numeric", numericFormat: { pattern: "0,0" }, width: 125, className: "htCenter htMiddle", wordWrap: true },
+    { data: "orderPallets", title: "Order Pallets", readOnly: true, type: "numeric", numericFormat: { pattern: "0,0.00" }, width: 110, className: "htCenter htMiddle", wordWrap: true },
+    { data: "orderTotalCbm", title: "Total CBM", readOnly: true, type: "numeric", numericFormat: { pattern: "0,0.000" }, width: 110, className: "htCenter htMiddle", wordWrap: true }
   ];
 
   return (
@@ -1526,15 +1621,16 @@ export default function QuotationEditor() {
                 
                 {/* Shipper Block (B6:I8) */}
                 <div 
-                  onClick={() => { setActiveCellAddress("B6"); setActiveCellValue("Shipper: Toyo Cushion Lanka"); }}
+                  onClick={() => { setActiveCellAddress("B6"); setActiveCellValue("Shipper: Toyo Cushion Lanka (PVT) LTD"); }}
                   style={{ padding: "14px 18px", borderRight: excelGridBorder, background: "#fcfdfe" }}
                 >
                   <Text strong style={{ color: "#1e3a8a", display: "block", marginBottom: 6, fontSize: "0.9rem" }}>Shipper :</Text>
                   <div style={{ fontSize: "0.85rem", color: "#1e293b", lineHeight: 1.5 }}>
-                    <strong style={{ color: "#0f172a" }}>{shipper.shipperName || "Toyo Cushion Lanka"}</strong><br />
+                    <strong style={{ color: "#0f172a" }}>{shipper.shipperName || "Toyo Cushion Lanka (PVT) LTD"}</strong><br />
                     COMPANY NO : {shipper.companyNo || "PV 5492"}<br />
                     {shipper.address || "400 Deans Road Colombo 10 01000 Sri Lanka"}<br />
-                    Tel: {shipper.phone || "94112232939-Fixed"}
+                    Tel: {shipper.phone || "+9474 216 8231"}<br />
+                    Email: {shipper.email || "Info@hayleysfibre.com"}
                   </div>
                 </div>
 
@@ -1668,7 +1764,9 @@ export default function QuotationEditor() {
                   }}
                   style={{ display: "flex", flexWrap: "wrap", gap: "6px 14px" }}
                 >
-                  {(isBedding ? beddingTemplateHotColumns : hortiTemplateHotColumns).map(col => (
+                  {(isBedding ? beddingTemplateHotColumns : hortiTemplateHotColumns)
+                    .filter(col => col.data !== "action")
+                    .map(col => (
                     <Checkbox key={col.data} value={col.data} disabled={col.data === "idx"} style={{ fontSize: "0.8rem" }}>
                       {col.title.replace("Price FOB /cif/Ex works", "Quoted Price")}
                     </Checkbox>
@@ -1677,23 +1775,81 @@ export default function QuotationEditor() {
               </div>
             </div>
 
+            {/* Hidden Rows Notice & Restore Bar */}
+            {hiddenItems.length > 0 && (
+              <div style={{ 
+                margin: "12px 14px 4px", 
+                background: "#fff1f2", 
+                border: "1px solid #fecdd3", 
+                borderRadius: 8, 
+                padding: "8px 14px", 
+                display: "flex", 
+                alignItems: "center", 
+                justifyContent: "space-between",
+                flexWrap: "wrap",
+                gap: 8
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <EyeInvisibleOutlined style={{ color: "#e11d48", fontSize: 16 }} />
+                  <Text strong style={{ color: "#9f1239", fontSize: "0.85rem" }}>
+                    {hiddenItems.length} {hiddenItems.length === 1 ? "Row hidden" : "Rows hidden"} from quotation
+                  </Text>
+                  <Tag color="red" style={{ margin: 0, fontSize: "0.72rem" }}>
+                    Original Costing Request Intact
+                  </Tag>
+                </div>
+                <Space wrap size="small">
+                  {hiddenItems.map((hItem, hIdx) => (
+                    <Tooltip key={hIdx} title="Click to unhide / restore this row to quotation">
+                      <Button 
+                        size="small" 
+                        icon={<EyeOutlined />}
+                        onClick={() => handleUnhideRow(hIdx)}
+                        style={{ fontSize: "0.75rem", borderRadius: 4, background: "#ffffff", borderColor: "#fca5a5", color: "#b91c1c" }}
+                      >
+                        Unhide: {hItem.description || `Item #${hIdx + 1}`} ↩
+                      </Button>
+                    </Tooltip>
+                  ))}
+                  <Button 
+                    size="small" 
+                    type="primary" 
+                    danger 
+                    ghost
+                    onClick={handleUnhideAll}
+                    style={{ fontSize: "0.75rem", borderRadius: 4 }}
+                  >
+                    Restore All
+                  </Button>
+                </Space>
+              </div>
+            )}
+
             {/* Handsontable Template Grid */}
-            <div className="hot-container" style={{ padding: 12, overflowX: "auto" }}>
+            <div className="hot-container" style={{ padding: 8, background: "#ffffff", borderRadius: 12, border: "1px solid #e2e8f0" }}>
               <HotTable
                 ref={templateHotRef}
                 data={templateHotData}
                 columns={activeTab === "sheet1_bedding" ? activeBeddingColumns : activeHortiColumns}
                 nestedHeaders={activeTab === "sheet1_bedding" ? activeBeddingNestedHeaders : activeHortiNestedHeaders}
-                colHeaders={true}
                 rowHeaders={false}
-                fixedColumnsStart={3}
-                height="auto"
+                fixedColumnsStart={4}
+                height={Math.min(600, Math.max(380, (items.length || 1) * 48 + 120))}
+                width="100%"
+                stretchH="none"
+                autoRowSize={true}
+                renderAllRows={true}
+                viewportColumnRenderingOffset={50}
+                autoColumnSize={false}
+                manualColumnMove={false}
+                manualColumnResize={true}
+                autoWrapRow={true}
+                autoWrapCol={true}
+                wordWrap={true}
                 licenseKey="non-commercial-and-evaluation"
                 afterChange={handleHotChange}
                 afterSelection={handleCellSelection}
                 cells={getHotCellProperties}
-                manualColumnResize={true}
-                stretchH="all"
               />
             </div>
 
@@ -1766,10 +1922,11 @@ export default function QuotationEditor() {
                     <Tag color="blue" style={{ fontSize: "0.72rem", margin: 0 }}>Official Exporter</Tag>
                   </div>
                   <div style={{ fontSize: "0.84rem", color: "#334155", lineHeight: 1.6 }}>
-                    <strong style={{ color: "#0f172a", fontSize: "0.9rem" }}>{shipper.shipperName || "Toyo Cushion Lanka"}</strong><br />
+                    <strong style={{ color: "#0f172a", fontSize: "0.9rem" }}>{shipper.shipperName || "Toyo Cushion Lanka (PVT) LTD"}</strong><br />
                     COMPANY NO : {shipper.companyNo || "PV 5492"}<br />
                     {shipper.address || "400 Deans Road Colombo 10 01000 Sri Lanka"}<br />
-                    Tel: {shipper.phone || "94112232939-Fixed"}
+                    Tel: {shipper.phone || "+9474 216 8231"}<br />
+                    Email: {shipper.email || "Info@hayleysfibre.com"}
                   </div>
                 </div>
 
@@ -2045,22 +2202,81 @@ export default function QuotationEditor() {
               <Tag color="green">Formula Engine Active</Tag>
             </div>
 
+            {/* Hidden Rows Notice & Restore Bar for Data Entry */}
+            {hiddenItems.length > 0 && (
+              <div style={{ 
+                margin: "12px 14px 4px", 
+                background: "#fff1f2", 
+                border: "1px solid #fecdd3", 
+                borderRadius: 8, 
+                padding: "8px 14px", 
+                display: "flex", 
+                alignItems: "center", 
+                justifyContent: "space-between",
+                flexWrap: "wrap",
+                gap: 8
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <EyeInvisibleOutlined style={{ color: "#e11d48", fontSize: 16 }} />
+                  <Text strong style={{ color: "#9f1239", fontSize: "0.85rem" }}>
+                    {hiddenItems.length} {hiddenItems.length === 1 ? "Row hidden" : "Rows hidden"} from quotation
+                  </Text>
+                  <Tag color="red" style={{ margin: 0, fontSize: "0.72rem" }}>
+                    Original Costing Request Intact
+                  </Tag>
+                </div>
+                <Space wrap size="small">
+                  {hiddenItems.map((hItem, hIdx) => (
+                    <Tooltip key={hIdx} title="Click to unhide / restore this row to quotation">
+                      <Button 
+                        size="small" 
+                        icon={<EyeOutlined />}
+                        onClick={() => handleUnhideRow(hIdx)}
+                        style={{ fontSize: "0.75rem", borderRadius: 4, background: "#ffffff", borderColor: "#fca5a5", color: "#b91c1c" }}
+                      >
+                        Unhide: {hItem.description || `Item #${hIdx + 1}`} ↩
+                      </Button>
+                    </Tooltip>
+                  ))}
+                  <Button 
+                    size="small" 
+                    type="primary" 
+                    danger 
+                    ghost
+                    onClick={handleUnhideAll}
+                    style={{ fontSize: "0.75rem", borderRadius: 4 }}
+                  >
+                    Restore All
+                  </Button>
+                </Space>
+              </div>
+            )}
+
             {/* Handsontable Calculation Grid */}
-            <div className="hot-container" style={{ padding: 12, overflowX: "auto" }}>
+            <div className="hot-container" style={{ padding: 8, background: "#ffffff", borderRadius: 12, border: "1px solid #e2e8f0" }}>
               <HotTable
                 ref={dataEntryHotRef}
                 data={dataEntryHotData}
                 columns={isBedding ? beddingDataEntryHotColumns : hortiDataEntryHotColumns}
-                colHeaders={true}
+                colHeaders={isBedding ? beddingDataEntryHotColumns.map(c => c.title) : hortiDataEntryHotColumns.map(c => c.title)}
                 rowHeaders={false}
-                fixedColumnsStart={2}
-                height="auto"
+                fixedColumnsStart={isBedding ? 3 : 4}
+                height={Math.min(600, Math.max(380, (items.length || 1) * 48 + 120))}
+                width="100%"
+                stretchH="none"
+                autoRowSize={true}
+                renderAllRows={true}
+                viewportColumnRenderingOffset={50}
+                autoColumnSize={false}
+                manualColumnMove={false}
+                manualColumnResize={true}
+                autoWrapRow={true}
+                autoWrapCol={true}
+                wordWrap={true}
                 licenseKey="non-commercial-and-evaluation"
                 afterChange={handleHotChange}
                 afterSelection={handleCellSelection}
                 cells={getHotCellProperties}
-                manualColumnResize={true}
-                stretchH="all"
               />
             </div>
 

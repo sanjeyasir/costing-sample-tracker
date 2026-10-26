@@ -12,10 +12,11 @@ export const DEFAULT_FINANCIAL_PARAMS = {
 };
 
 export const DEFAULT_COMPANY_DETAILS = {
-  shipperName: "Toyo Cushion Lanka",
+  shipperName: "Toyo Cushion Lanka (PVT) LTD",
   companyNo: "PV 5492",
   address: "400 Deans Road Colombo 10 01000 Sri Lanka",
-  phone: "94112232939-Fixed",
+  phone: "+9474 216 8231",
+  email: "Info@hayleysfibre.com",
   signatory: "Manager - Sales & Marketing"
 };
 
@@ -101,7 +102,8 @@ export function formatMergedDescription(item, fallback = "") {
   const desc = (item.description || item.productDescription || item.name || "").trim();
   const spec = (item.specifications || item.productionSpec || item.productSpecifications || "").trim();
   const gsm = item.gsm ? (String(item.gsm).toLowerCase().includes("gsm") ? String(item.gsm).trim() : `${item.gsm} GSM`) : "";
-  const latex = item.latexRatio ? (String(item.latexRatio).toLowerCase().includes("latex") ? String(item.latexRatio).trim() : `${item.latexRatio} Latex`) : "";
+  const isNoLatex = !item.latexRatio || String(item.latexRatio).toLowerCase().trim() === "no latex" || String(item.latexRatio).toLowerCase().trim() === "none";
+  const latex = !isNoLatex ? (String(item.latexRatio).toLowerCase().includes("latex") ? String(item.latexRatio).trim() : `${item.latexRatio} Latex`) : "";
 
   const parts = [];
   if (desc) parts.push(desc);
@@ -245,11 +247,11 @@ export function calculateBeddingItem(item, params = DEFAULT_FINANCIAL_PARAMS) {
     bundlesPer40ft: isFinite(bundlesPer40ft) ? Math.round(bundlesPer40ft) : 0,
     qtyPer40ft: isFinite(qtyPer40ft) ? Math.round(qtyPer40ft) : 0,
     qtyPer20ft: isFinite(qtyPer20ft) ? Math.round(qtyPer20ft) : 0,
-    fobPrice40ft,
-    fobPrice20ft,
-    cifPrice40ft,
-    cifPrice20ft,
-    exWorksPrice,
+    fobPrice40ft: Number(fobPrice40ft.toFixed(2)),
+    fobPrice20ft: Number(fobPrice20ft.toFixed(2)),
+    cifPrice40ft: Number(cifPrice40ft.toFixed(2)),
+    cifPrice20ft: Number(cifPrice20ft.toFixed(2)),
+    exWorksPrice: Number(exWorksPrice.toFixed(2)),
     orderVolume: isFinite(orderVolume) ? orderVolume : 0,
     orderCartons: isFinite(orderCartons) ? orderCartons : 0,
     orderPallets,
@@ -461,11 +463,11 @@ export function calculateHorticultureItem(item, params = DEFAULT_FINANCIAL_PARAM
     cartonsPer40ft: isFinite(cartonsPer40ft) ? Math.round(cartonsPer40ft) : 0,
     qtyPer40ft: isFinite(qtyPer40ft) ? Math.round(qtyPer40ft) : 0,
     qtyPer20ft: isFinite(qtyPer20ft) ? Math.round(qtyPer20ft) : 0,
-    fobPrice40ft,
-    fobPrice20ft,
-    cifPrice40ft,
-    cifPrice20ft,
-    exWorksPrice,
+    fobPrice40ft: Number(fobPrice40ft.toFixed(2)),
+    fobPrice20ft: Number(fobPrice20ft.toFixed(2)),
+    cifPrice40ft: Number(cifPrice40ft.toFixed(2)),
+    cifPrice20ft: Number(cifPrice20ft.toFixed(2)),
+    exWorksPrice: Number(exWorksPrice.toFixed(2)),
     orderVolume: isFinite(orderVolume) ? orderVolume : 0,
     orderCartons: isFinite(orderCartons) ? orderCartons : 0,
     orderPallets,
@@ -488,21 +490,21 @@ export function getDisplayPrice(calculatedItem, priceTerm, containerSize, cifRat
   switch (priceTerm) {
     case "FOB":
       return {
-        label: `$${(fob || 0).toFixed(4)}`,
-        value: fob || 0,
+        label: `$${(fob || 0).toFixed(2)}`,
+        value: Number((fob || 0).toFixed(2)),
         subText: `FOB ${is20ft ? "20ft" : "40ft"}`
       };
     case "CIF":
       return {
-        label: `$${(cif || 0).toFixed(4)}`,
-        value: cif || 0,
+        label: `$${(cif || 0).toFixed(2)}`,
+        value: Number((cif || 0).toFixed(2)),
         subText: `CIF ${is20ft ? "20ft" : "40ft"}`
       };
     case "EX_WORKS":
     case "EX works":
       return {
         label: `LKR ${(exw || 0).toFixed(2)}`,
-        value: exw || 0,
+        value: Number((exw || 0).toFixed(2)),
         subText: "EX Works"
       };
     case "FOB_SEPARATE_CIF":
@@ -510,17 +512,17 @@ export function getDisplayPrice(calculatedItem, priceTerm, containerSize, cifRat
       {
         const freightPerUnit = qty > 0 ? (cifRate / qty) : 0;
         return {
-          label: `$${(fob || 0).toFixed(4)}`,
-          value: fob || 0,
-          freightPerUnit,
-          exWorksPrice: exw,
-          subText: `FOB + CIF ($${freightPerUnit.toFixed(4)} freight/unit)`
+          label: `$${(fob || 0).toFixed(2)}`,
+          value: Number((fob || 0).toFixed(2)),
+          freightPerUnit: Number(freightPerUnit.toFixed(2)),
+          exWorksPrice: Number((exw || 0).toFixed(2)),
+          subText: `FOB + CIF ($${freightPerUnit.toFixed(2)} freight/unit)`
         };
       }
     default:
       return {
-        label: `$${(fob || 0).toFixed(4)}`,
-        value: fob || 0,
+        label: `$${(fob || 0).toFixed(2)}`,
+        value: Number((fob || 0).toFixed(2)),
         subText: priceTerm
       };
   }

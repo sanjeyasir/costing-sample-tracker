@@ -131,10 +131,13 @@ export default function RequestDetails() {
       };
     }
     if (f.key === "latexRatio") {
+      const stdOptions = ["80:20", "70:30", "100:0", "60:40", "50:50", "No Latex"];
+      const customOptions = Array.isArray(f.options) && f.options.length > 0 ? f.options : stdOptions;
+      const finalOptions = Array.from(new Set([...customOptions, "No Latex"]));
       return {
         ...f,
         type: "select",
-        options: f.options && f.options.length > 0 ? f.options : ["80:20", "70:30", "100:0", "60:40", "50:50"],
+        options: finalOptions,
         required: true
       };
     }
@@ -1175,7 +1178,8 @@ export default function RequestDetails() {
     title: "#",
     readOnly: true,
     width: 45,
-    className: "htCenter htMiddle"
+    className: "htCenter htMiddle",
+    wordWrap: true
   });
 
   marketingFields.forEach(f => {
@@ -1183,7 +1187,8 @@ export default function RequestDetails() {
       data: `spec_${f.key}`,
       title: `${f.label} (Mkt)`,
       readOnly: !isCorrectingDetails,
-      className: "htCenter htMiddle"
+      className: "htCenter htMiddle",
+      wordWrap: true
     };
     if (f.key === "packingConfiguration") {
       col.width = 200;
@@ -1210,7 +1215,8 @@ export default function RequestDetails() {
       data: `cost_${f.key}`,
       title: f.required ? `${f.label} * (Fin)` : `${f.label} (Fin)`,
       readOnly: !isCostingActive && !isCorrectingDetails,
-      className: "htCenter htMiddle"
+      className: "htCenter htMiddle",
+      wordWrap: true
     };
     if (f.type === "number") {
       col.type = "numeric";
@@ -1601,6 +1607,12 @@ export default function RequestDetails() {
                   colHeaders={gridColumns.map(c => c.title)}
                   rowHeaders={false}
                   height="auto"
+                  autoRowSize={true}
+                  renderAllRows={true}
+                  viewportColumnRenderingOffset={30}
+                  autoColumnSize={false}
+                  wordWrap={true}
+                  stretchH="none"
                   licenseKey="non-commercial-and-evaluation"
                   colWidths={(index) => gridColumns[index]?.width || 150}
                   afterChange={handleDetailsTableChange}
