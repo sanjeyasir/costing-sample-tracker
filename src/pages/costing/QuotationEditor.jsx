@@ -1831,6 +1831,7 @@ export default function QuotationEditor() {
                 ref={templateHotRef}
                 data={templateHotData}
                 columns={activeTab === "sheet1_bedding" ? activeBeddingColumns : activeHortiColumns}
+                colHeaders={true}
                 nestedHeaders={activeTab === "sheet1_bedding" ? activeBeddingNestedHeaders : activeHortiNestedHeaders}
                 rowHeaders={false}
                 fixedColumnsStart={4}

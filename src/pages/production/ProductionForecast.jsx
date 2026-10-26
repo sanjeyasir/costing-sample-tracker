@@ -1281,13 +1281,13 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
             const val = String(value || "").toLowerCase();
             td.className = "htCenter htMiddle ht-locked-cell";
             if (val === "met") {
-              td.innerHTML = `<span style="background-color:#dcfce7;color:#15803d;padding:3px 8px;border-radius:12px;font-size:11px;font-weight:700;display:inline-block;">✓ MET</span>`;
+              td.innerHTML = `<span style="background-color:#dcfce7;color:#15803d;padding:0px 4px;border-radius:3px;font-size:10px;font-weight:700;display:inline-block;line-height:14px;">✓ MET</span>`;
             } else if (val === "new") {
-              td.innerHTML = `<span style="background-color:#dbeafe;color:#1d4ed8;padding:3px 8px;border-radius:12px;font-size:11px;font-weight:700;display:inline-block;">★ NEW</span>`;
+              td.innerHTML = `<span style="background-color:#dbeafe;color:#1d4ed8;padding:0px 4px;border-radius:3px;font-size:10px;font-weight:700;display:inline-block;line-height:14px;">★ NEW</span>`;
             } else if (val === "variance") {
-              td.innerHTML = `<span style="background-color:#fee2e2;color:#b91c1c;padding:3px 8px;border-radius:12px;font-size:11px;font-weight:700;display:inline-block;">⚠ VARIANCE</span>`;
+              td.innerHTML = `<span style="background-color:#fee2e2;color:#b91c1c;padding:0px 4px;border-radius:3px;font-size:10px;font-weight:700;display:inline-block;line-height:14px;">⚠ VARIANCE</span>`;
             } else {
-              td.innerHTML = `<span style="background-color:#f1f5f9;color:#64748b;padding:3px 8px;border-radius:12px;font-size:11px;font-weight:600;display:inline-block;">PENDING</span>`;
+              td.innerHTML = `<span style="background-color:#f1f5f9;color:#64748b;padding:0px 4px;border-radius:3px;font-size:10px;font-weight:600;display:inline-block;line-height:14px;">PENDING</span>`;
             }
             return td;
           },
@@ -1433,13 +1433,13 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
           const val = String(value || "").toLowerCase();
           td.className = "htCenter htMiddle ht-locked-cell";
           if (val === "met") {
-            td.innerHTML = `<span style="background-color:#dcfce7;color:#15803d;padding:3px 8px;border-radius:12px;font-size:11px;font-weight:700;display:inline-block;">✓ MET</span>`;
+            td.innerHTML = `<span style="background-color:#dcfce7;color:#15803d;padding:0px 4px;border-radius:3px;font-size:10px;font-weight:700;display:inline-block;line-height:14px;">✓ MET</span>`;
           } else if (val === "new") {
-            td.innerHTML = `<span style="background-color:#dbeafe;color:#1d4ed8;padding:3px 8px;border-radius:12px;font-size:11px;font-weight:700;display:inline-block;">★ NEW</span>`;
+            td.innerHTML = `<span style="background-color:#dbeafe;color:#1d4ed8;padding:0px 4px;border-radius:3px;font-size:10px;font-weight:700;display:inline-block;line-height:14px;">★ NEW</span>`;
           } else if (val === "variance") {
-            td.innerHTML = `<span style="background-color:#fee2e2;color:#b91c1c;padding:3px 8px;border-radius:12px;font-size:11px;font-weight:700;display:inline-block;">⚠ VARIANCE</span>`;
+            td.innerHTML = `<span style="background-color:#fee2e2;color:#b91c1c;padding:0px 4px;border-radius:3px;font-size:10px;font-weight:700;display:inline-block;line-height:14px;">⚠ VARIANCE</span>`;
           } else {
-            td.innerHTML = `<span style="background-color:#f1f5f9;color:#64748b;padding:3px 8px;border-radius:12px;font-size:11px;font-weight:600;display:inline-block;">PENDING</span>`;
+            td.innerHTML = `<span style="background-color:#f1f5f9;color:#64748b;padding:0px 4px;border-radius:3px;font-size:10px;font-weight:600;display:inline-block;line-height:14px;">PENDING</span>`;
           }
           return td;
         },
@@ -2127,20 +2127,20 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
         </Row>
       </Card>
 
-      {/* Handsontable Main Grid Container */}
-      <div className="hot-container" style={{ minHeight: 480, background: "#ffffff", borderRadius: 12, border: "1px solid #e2e8f0", overflow: "hidden" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 16px", borderBottom: "1px solid #e2e8f0", backgroundColor: "#f8fafc", flexWrap: "wrap", gap: 10 }}>
-          <Space size="middle" wrap align="center">
+      {/* Handsontable Main Grid Container - Exclusively styled for Production Forecast */}
+      <div className="production-forecast-container">
+        <div className="production-forecast-grid-header">
+          <Space size="middle" align="center" style={{ flexShrink: 0 }}>
             <Space size="small">
               <TableOutlined style={{ color: "#3b82f6" }} />
-              <Text strong style={{ fontSize: 13, color: "#334155" }}>
+              <Text strong style={{ fontSize: 13, color: "#334155", whiteSpace: "nowrap" }}>
                 {activePeriodLabel} • {filteredData.length} records
               </Text>
             </Space>
 
             {/* Factory Review Status Indicator - STRICTLY FACTORY VIEW ONLY */}
             {activeRoleView === "factory_performance" && (
-              <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#f0fdfa", padding: "4px 12px", borderRadius: 8, border: "1px solid #ccfbf1" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#f0fdfa", padding: "4px 12px", borderRadius: 8, border: "1px solid #ccfbf1", whiteSpace: "nowrap" }}>
                 <Tag color="teal" style={{ fontWeight: 700, margin: 0, fontSize: 12 }}>
                   🏭 Factory Confirmation: {filteredData.filter(r => (parseFloat(r.factoryTeu) || 0) > 0).length}/{filteredData.length} Confirmed ({summaryMetrics.confirmedTeu} TEUs)
                 </Tag>
@@ -2150,12 +2150,12 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
               </div>
             )}
 
-            <Tag color="blue" style={{ borderRadius: 6, fontSize: 11 }}>
+            <Tag color="blue" style={{ borderRadius: 6, fontSize: 11, margin: 0, whiteSpace: "nowrap" }}>
               First 4 columns (Plan &amp; Customer Info) are frozen • Scroll horizontally for Budget, Actuals &amp; Factory
             </Tag>
           </Space>
 
-          <Space size="small">
+          <Space size="small" style={{ flexShrink: 0 }}>
             {isProdAdmin && (
               <>
                 <Button 
@@ -2181,23 +2181,24 @@ export default function ProductionForecast({ fixedRoleView, pageTitle, pageSubti
           </Space>
         </div>
 
-        {/* Handsontable with fixedColumnsLeft: 4 for freezing Plan & Customer Info and rowHeights: 38 for straight single-row scrolling */}
+        {/* Handsontable with fixedColumnsLeft: 4 for freezing Plan & Customer Info and fit to text autoRowSize */}
         <HotTable
           ref={hotTableRef}
+          className="production-forecast-grid"
           data={filteredData}
           columns={columns}
           nestedHeaders={nestedHeaders}
           colHeaders={true}
           rowHeaders={true}
-          height={540}
+          height={700}
           width="100%"
           stretchH="none"
           fixedColumnsStart={4}
-          rowHeights={38}
-          autoRowSize={false}
+          autoRowSize={true}
           manualColumnResize={true}
           manualRowResize={false}
           columnSorting={true}
+          wordWrap={false}
           contextMenu={{
             items: {
               spill_order: {

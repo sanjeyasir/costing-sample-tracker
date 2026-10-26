@@ -185,16 +185,14 @@ export function getFinanceFieldRules(packingConfig, isHorticulture = false) {
       break;
   }
 
-  // If Horticulture setting, specifications (L x W x H) is a compulsory field for Finance
+  // If Horticulture setting, specifications (L x W x H) is an optional field for Finance (non-mandatory)
   if (isHorticulture) {
-    if (!baseRules.required.includes("specifications")) {
-      baseRules.required.unshift("specifications");
-    }
     if (!baseRules.applicable.includes("specifications")) {
       baseRules.applicable.unshift("specifications");
     }
     baseRules.nonApplicable = baseRules.nonApplicable.filter(k => k !== "specifications");
     baseRules.labels.specifications = "Product Specifications (L x W x H)";
+    baseRules.required = baseRules.required.filter(k => k !== "specifications");
   }
 
   return baseRules;

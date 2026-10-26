@@ -147,7 +147,7 @@ export default function CreateRequest() {
         return {
           ...f,
           label: "Product Specifications (L x W x H)",
-          required: true
+          required: !isHorticulture
         };
       }
       return f;
@@ -420,9 +420,10 @@ export default function CreateRequest() {
           }
         }
 
-        // 2. Reinforce Product Specifications column to contain L x W x H sequence
+        // 2. Reinforce Product Specifications column to contain L x W x H sequence (for Bedding / Non-Horticulture)
+        const isHorti = activeCategory?.id === "horticulture" || activeCategory?.name?.toLowerCase().includes("horticulture");
         const hasSpecField = marketingFields.some(f => f.key === "specifications");
-        if (hasSpecField) {
+        if (hasSpecField && !isHorti) {
           const specVal = item.specifications;
           if (!specVal || String(specVal).trim() === "" || String(specVal).trim() === "-") {
             validationErrors.push(`Item #${i + 1}: "Product Specifications" is required and must contain the L x W x H dimension sequence (e.g. 57X51X58 CM or 30x30x5 CM).`);

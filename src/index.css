@@ -48,9 +48,6 @@ body {
   border-color: #cbd5e1 !important;
   padding: 6px 8px !important;
   vertical-align: middle !important;
-  white-space: normal !important;
-  word-wrap: break-word !important;
-  word-break: break-word !important;
   box-sizing: border-box !important;
   line-height: 1.25 !important;
 }
@@ -59,15 +56,12 @@ body {
   border-color: #e2e8f0 !important;
   padding: 6px 8px !important;
   vertical-align: middle !important;
-  white-space: normal !important;
-  word-wrap: break-word !important;
-  word-break: break-word !important;
   box-sizing: border-box !important;
   line-height: 1.35 !important;
 }
 
-/* Allow Handsontable overlay synchronization engine to manage exact row heights without !important collision */
-.handsontable tr {
+/* Allow Handsontable overlay synchronization engine in Quotation editor to manage exact row heights without !important collision */
+.hot-container .handsontable tr {
   min-height: 38px;
 }
 
@@ -133,14 +127,30 @@ body {
 .handsontable .ht_clone_left th,
 .handsontable .ht_clone_top_left_corner th {
   background-color: #f1f5f9 !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+.handsontable .ht_clone_left {
+  z-index: 10 !important;
 }
 
 .handsontable .ht_clone_top {
-  z-index: 11 !important;
+  z-index: 20 !important;
+  visibility: visible !important;
 }
 
 .handsontable .ht_clone_top_left_corner {
-  z-index: 12 !important;
+  z-index: 30 !important;
+  visibility: visible !important;
+  display: block !important;
+  opacity: 1 !important;
+}
+
+.handsontable .ht_clone_top_left_corner th .colHeader,
+.handsontable .ht_clone_top th .colHeader {
+  visibility: visible !important;
+  opacity: 1 !important;
 }
 
 /* Premium styling for Handsontable Autocomplete Dropdown popup */
@@ -174,6 +184,163 @@ body {
 .htAutocompleteHolder .handsontable td.current {
   background-color: #6366f1 !important;
   color: white !important;
+}
+
+/* ==========================================================================
+   Exclusive Production Forecast Handsontable Grid System
+   - Dedicated styling class isolated completely from Quotation grid (.hot-container)
+   - Increased grid height (700px) for high-productivity multi-row view
+   - Prevents excessive feature & text wrapping for crisp single-line alignment
+   ========================================================================== */
+.production-forecast-container {
+  border-radius: 12px;
+  overflow: hidden;
+  max-width: 100%;
+  border: 1px solid #cbd5e1;
+  box-shadow: 0 4px 12px -2px rgba(15, 23, 42, 0.08), 0 2px 6px -2px rgba(15, 23, 42, 0.04);
+  background: #ffffff;
+  margin-bottom: 24px;
+}
+
+.production-forecast-grid-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 16px;
+  border-bottom: 1px solid #e2e8f0;
+  background-color: #f8fafc;
+  flex-wrap: nowrap;
+  gap: 12px;
+  overflow-x: auto;
+}
+
+/* Exclusive Handson Grid Class with increased height */
+.production-forecast-grid {
+  height: 700px !important;
+  min-height: 700px !important;
+  width: 100% !important;
+}
+
+.production-forecast-container .handsontable {
+  font-family: 'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+  font-size: 12.5px !important;
+  color: #0f172a !important;
+}
+
+/* Strict unwrapped column headers: crisp, single-line with ellipsis */
+.production-forecast-container .handsontable thead th,
+.production-forecast-container .handsontable thead th .colHeader {
+  white-space: nowrap !important;
+  word-wrap: normal !important;
+  word-break: normal !important;
+  text-overflow: ellipsis !important;
+  overflow: hidden !important;
+  line-height: 26px !important;
+  padding: 4px 8px !important;
+  vertical-align: middle !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.01em !important;
+  user-select: none !important;
+}
+
+/* Row headers (row numbers) in tbody - fit strictly to text */
+.production-forecast-container .handsontable tbody th {
+  padding: 1px 4px !important;
+  line-height: 18px !important;
+  font-size: 11px !important;
+  vertical-align: middle !important;
+  color: #64748b !important;
+  font-weight: 600 !important;
+  height: auto !important;
+  min-height: 0 !important;
+}
+
+/* Strict unwrapped data cells: fit strictly to text */
+.production-forecast-container .handsontable td {
+  white-space: nowrap !important;
+  word-wrap: normal !important;
+  word-break: normal !important;
+  text-overflow: ellipsis !important;
+  overflow: hidden !important;
+  padding: 1px 6px !important;
+  vertical-align: middle !important;
+  line-height: 18px !important;
+  font-size: 12px !important;
+  box-sizing: border-box !important;
+  height: auto !important;
+  min-height: 0 !important;
+}
+
+/* Fit to text: allow natural single-line text row height without forced minimums */
+.production-forecast-container .handsontable tr,
+.production-forecast-container .handsontable tbody tr {
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+}
+
+.production-forecast-container .handsontable thead tr {
+  height: auto !important;
+}
+
+/* Pinned left 4 columns (Plan & Customer Info) */
+.production-forecast-container .handsontable .ht_clone_left {
+  box-shadow: 4px 0 10px -2px rgba(15, 23, 42, 0.14) !important;
+  z-index: 10 !important;
+  background-color: #ffffff !important;
+  border-right: 2px solid #cbd5e1 !important;
+}
+
+.production-forecast-container .handsontable .ht_clone_left td {
+  background-color: #ffffff !important;
+}
+
+.production-forecast-container .handsontable .ht_clone_left tr:hover td {
+  background-color: #f8fafc !important;
+}
+
+.production-forecast-container .handsontable .ht_clone_left th,
+.production-forecast-container .handsontable .ht_clone_top_left_corner th {
+  background-color: #f1f5f9 !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+.production-forecast-container .handsontable .ht_clone_top {
+  z-index: 20 !important;
+  visibility: visible !important;
+}
+
+.production-forecast-container .handsontable .ht_clone_top_left_corner {
+  z-index: 30 !important;
+  visibility: visible !important;
+  display: block !important;
+  opacity: 1 !important;
+}
+
+.production-forecast-container .handsontable .ht_clone_top_left_corner th .colHeader,
+.production-forecast-container .handsontable .ht_clone_top th .colHeader {
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+/* Sleek custom scrollbars */
+.production-forecast-container .handsontable .wtHolder::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.production-forecast-container .handsontable .wtHolder::-webkit-scrollbar-track {
+  background: #f8fafc;
+}
+
+.production-forecast-container .handsontable .wtHolder::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 5px;
+}
+
+.production-forecast-container .handsontable .wtHolder::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }
 
 /* Production Forecast Spreadsheet Styling */
@@ -254,11 +421,6 @@ body {
   border-left: 2px solid #22c55e !important;
 }
 
-/* Frozen Column Pinned Border */
-.handsontable .ht_clone_left {
-  box-shadow: 4px 0 8px -2px rgba(0, 0, 0, 0.08) !important;
-  z-index: 100 !important;
-}
 
 /* Spill Orders Indicator - Yellow Highlight for Spilled Buyer / Customer */
 .ht-spill-cell {

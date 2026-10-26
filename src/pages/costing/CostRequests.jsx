@@ -41,6 +41,7 @@ export default function CostRequests() {
   const [dateFrom, setDateFrom] = useState(null);
   const [dateTo, setDateTo] = useState(null);
   const [selectedCustomer, setSelectedCustomer] = useState("");
+  const [selectedOfficer, setSelectedOfficer] = useState("");
 
   // Pagination States
   const [pageSize, setPageSize] = useState(10);
@@ -82,6 +83,7 @@ export default function CostRequests() {
     setDateFrom(null);
     setDateTo(null);
     setSelectedCustomer("");
+    setSelectedOfficer("");
     const newParams = new URLSearchParams();
     if (view !== "all") newParams.set("view", view);
     setSearchParams(newParams);
@@ -125,6 +127,10 @@ export default function CostRequests() {
     );
   };
 
+  const getOfficerName = (r) => {
+    return r.marketingOfficer?.name || r.marketingOfficerName || r.createdByEmail || "";
+  };
+
   const isCompletedStatus = (st) => ["Costing Completed", "Sent to Marketing", "Completed"].includes(st);
 
   const incompleteRequests = requests.filter(r => !isCompletedStatus(r.status));
@@ -134,6 +140,11 @@ export default function CostRequests() {
   // Extract unique customers of completed requests only
   const uniqueCompletedCustomers = Array.from(
     new Set(completedRequests.map(r => r.customerName?.trim()).filter(Boolean))
+  ).sort((a, b) => a.localeCompare(b));
+
+  // Extract unique marketing officers of completed requests only
+  const uniqueCompletedOfficers = Array.from(
+    new Set(completedRequests.map(getOfficerName).filter(Boolean))
   ).sort((a, b) => a.localeCompare(b));
 
   const activeCount = incompleteRequests.length;
@@ -173,6 +184,37 @@ export default function CostRequests() {
       }
     } else {
       displayedRequests = []; // Zero data loaded until a customer is chosen
+    }
+  } else if (view === "officer_completed") {
+    // In officer completed view: only present requests for the selected marketing officer
+    if (selectedOfficer) {
+      displayedRequests = completedRequests.filter(r => getOfficerName(r) === selectedOfficer);
+
+      if (search.trim()) {
+        const q = search.toLowerCase();
+        displayedRequests = displayedRequests.filter(r => 
+          (r.costRequestNo || "").toLowerCase().includes(q) ||
+          (r.customerName || "").toLowerCase().includes(q) ||
+          (r.productDescription || "").toLowerCase().includes(q)
+        );
+      }
+      if (productUnit) {
+        displayedRequests = displayedRequests.filter(r => r.productCategory === productUnit || r.productUnit === productUnit);
+      }
+      if (dateFrom) {
+        displayedRequests = displayedRequests.filter(r => {
+          const reqD = r.requestDate || r.createdAt;
+          return reqD && new Date(reqD) >= dateFrom.startOf("day").toDate();
+        });
+      }
+      if (dateTo) {
+        displayedRequests = displayedRequests.filter(r => {
+          const reqD = r.requestDate || r.createdAt;
+          return reqD && new Date(reqD) <= dateTo.endOf("day").toDate();
+        });
+      }
+    } else {
+      displayedRequests = []; // Zero data loaded until an officer is chosen
     }
   } else {
     // In "all" or "my" view: present only incomplete/active requests
@@ -239,8 +281,20 @@ export default function CostRequests() {
       label: (
         <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 600 }}>
           <CheckCircleOutlined style={{ color: "#10b981" }} />
-          <span>Completed Archive</span>
+          <span>Customer Completed Archive</span>
           <Tag color="success" style={{ borderRadius: 10, fontWeight: 700, marginInlineStart: 2 }}>
+            {completedCount}
+          </Tag>
+        </span>
+      )
+    },
+    {
+      key: "officer_completed",
+      label: (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 600 }}>
+          <UserOutlined style={{ color: "#0284c7" }} />
+          <span>Officer Completed Archive</span>
+          <Tag color="cyan" style={{ borderRadius: 10, fontWeight: 700, marginInlineStart: 2 }}>
             {completedCount}
           </Tag>
         </span>
@@ -656,7 +710,102 @@ export default function CostRequests() {
         style={{ marginBottom: 24, background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 12 }}
         styles={{ body: { padding: 24 } }}
       >
-        {view === "completed" ? (
+        {view === "officer_completed" ? (
+          <Row gutter={[16, 16]} align="bottom">
+            <Col xs={24} sm={12} md={8}>
+              <div style={{ marginBottom: 8, color: "#0f172a", fontWeight: 700 }}>
+                👔 Select Marketing Officer <span style={{ color: "#ef4444" }}>*</span>
+              </div>
+              <Select
+                showSearch
+                placeholder="Choose Marketing Officer to View Completed Costings..."
+                value={selectedOfficer || undefined}
+                onChange={(val) => {
+                  setSelectedOfficer(val || "");
+                  setCurrentPage(1);
+                }}
+                size="large"
+                style={{ width: "100%", borderRadius: 8 }}
+                allowClear
+                options={uniqueCompletedOfficers.map(o => ({
+                  label: `👔 ${o}`,
+                  value: o
+                }))}
+              />
+            </Col>
+            <Col xs={24} sm={12} md={5}>
+              <div style={{ marginBottom: 8, color: "#475569", fontWeight: 600 }}>Search within Officer</div>
+              <Input
+                prefix={<SearchOutlined />}
+                placeholder="No., Customer, Description..."
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setCurrentPage(1);
+                }}
+                size="large"
+                style={{ borderRadius: 8 }}
+                disabled={!selectedOfficer}
+              />
+            </Col>
+            <Col xs={24} sm={12} md={4}>
+              <div style={{ marginBottom: 8, color: "#475569", fontWeight: 600 }}>Category</div>
+              <Select
+                placeholder="All Categories"
+                value={productUnit}
+                onChange={(val) => {
+                  setProductUnit(val);
+                  setCurrentPage(1);
+                }}
+                size="large"
+                style={{ width: "100%", borderRadius: 8 }}
+                allowClear
+                disabled={!selectedOfficer}
+              >
+                <Option value="">All Categories</Option>
+                {categories.map((c) => (
+                  <Option key={c.id} value={c.id}>{c.name}</Option>
+                ))}
+              </Select>
+            </Col>
+            <Col xs={12} sm={6} md={3}>
+              <div style={{ marginBottom: 8, color: "#475569", fontWeight: 600 }}>From Date</div>
+              <DatePicker
+                value={dateFrom}
+                onChange={(date) => {
+                  setDateFrom(date);
+                  setCurrentPage(1);
+                }}
+                size="large"
+                style={{ width: "100%", borderRadius: 8 }}
+                disabled={!selectedOfficer}
+              />
+            </Col>
+            <Col xs={12} sm={6} md={3}>
+              <div style={{ marginBottom: 8, color: "#475569", fontWeight: 600 }}>To Date</div>
+              <DatePicker
+                value={dateTo}
+                onChange={(date) => {
+                  setDateTo(date);
+                  setCurrentPage(1);
+                }}
+                size="large"
+                style={{ width: "100%", borderRadius: 8 }}
+                disabled={!selectedOfficer}
+              />
+            </Col>
+            <Col xs={24} md={1}>
+              <Tooltip title="Clear Filters">
+                <Button
+                  icon={<FilterOutlined />}
+                  onClick={handleClearFilters}
+                  size="large"
+                  style={{ width: "100%", borderRadius: 8, border: "1px solid #cbd5e1", background: "transparent" }}
+                />
+              </Tooltip>
+            </Col>
+          </Row>
+        ) : view === "completed" ? (
           <Row gutter={[16, 16]} align="bottom">
             <Col xs={24} sm={12} md={8}>
               <div style={{ marginBottom: 8, color: "#0f172a", fontWeight: 700 }}>
@@ -870,7 +1019,21 @@ export default function CostRequests() {
           style: { marginTop: 16 }
         }}
         locale={{
-          emptyText: view === "completed" && !selectedCustomer ? (
+          emptyText: view === "officer_completed" && !selectedOfficer ? (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description={
+                <div style={{ padding: "16px 0" }}>
+                  <div style={{ fontWeight: 700, color: "#0f172a", fontSize: 15 }}>
+                    Select a Marketing Officer to View Completed Archive
+                  </div>
+                  <div style={{ color: "#64748b", fontSize: 13, marginTop: 4 }}>
+                    Choose a marketing officer from the dropdown above to load and display their completed costing records.
+                  </div>
+                </div>
+              }
+            />
+          ) : view === "completed" && !selectedCustomer ? (
             <Empty
               image={Empty.PRESENTED_IMAGE_SIMPLE}
               description={

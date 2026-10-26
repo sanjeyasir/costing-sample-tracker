@@ -132,7 +132,7 @@ export const DEFAULT_CATEGORIES = [
       { key: "latexRatio", label: "Latex Ratio", type: "select", options: ["80:20", "70:30", "100:0", "60:40", "50:50", "No Latex"], required: true, owner: "marketing" },
       { key: "marketingRemarks", label: "Marketing Remarks", type: "text", required: false, owner: "marketing" },
       // Finance fields
-      { key: "specifications", label: "Product Specifications (L x W x H)", type: "text", required: true, owner: "finance" },
+      { key: "specifications", label: "Product Specifications (L x W x H)", type: "text", required: false, owner: "finance" },
       { key: "packing", label: "Packing - Pieces per Carton/Bundle/Roll", type: "text", required: false, owner: "finance" },
       { key: "cartonSize", label: "Carton / Bundle Size (CM)", type: "text", required: false, owner: "finance" },
       { key: "palletSize", label: "Pallet Size (CM)", type: "text", required: false, owner: "finance" },
@@ -211,7 +211,7 @@ export function initializeLocalStorageState() {
                 ...f,
                 label: "Product Specifications (L x W x H)",
                 owner: "finance",
-                required: true
+                required: false
               };
             }
             return f;
@@ -222,7 +222,7 @@ export function initializeLocalStorageState() {
               key: "specifications",
               label: "Product Specifications (L x W x H)",
               type: "text",
-              required: true,
+              required: false,
               owner: "finance"
             });
           }

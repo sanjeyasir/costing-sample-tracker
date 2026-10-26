@@ -159,60 +159,60 @@ export async function downloadQuotationPDF(quotationData) {
 
   y += 22;
 
-  // 3. Master Table Column Layouts
+  // 3. Master Table Column Layouts (Full non-shortened wording, wrapped cleanly)
   let masterCols = [];
   if (isBedding) {
     // Bedding Master Columns
     masterCols = [
-      { key: "idx", dataKey: "idx", title: "#", subTitle: "#", baseWidth: 7, align: "center" },
-      { key: "image", dataKey: "imageUrl", title: "Image", subTitle: "Images", baseWidth: 14, align: "center" },
-      { key: "spec", dataKey: "description", title: "Product spec", subTitle: "As per cost req", baseWidth: 44, align: "left" },
-      { key: "length", dataKey: "length", title: "L(CM)", subTitle: "As req", baseWidth: 10, align: "center" },
-      { key: "width", dataKey: "width", title: "W(CM)", subTitle: "As req", baseWidth: 10, align: "center" },
-      { key: "height", dataKey: "height", title: "H(CM)", subTitle: "As req", baseWidth: 10, align: "center" },
-      { key: "organic", dataKey: "organic", title: "Org/Non", subTitle: "Type", baseWidth: 13, align: "center" },
-      { key: "ncrc", dataKey: "ncRcRatio", title: "NC/RC", subTitle: "Ratio", baseWidth: 11, align: "center" },
-      { key: "density", dataKey: "density", title: "Density", subTitle: "kg/m3", baseWidth: 11, align: "center" },
-      { key: "qtyBdl", dataKey: "qtyPerBundle", title: "Qty/Bdl", subTitle: "Bundle", baseWidth: 11, align: "center" },
-      { key: "pltSize", dataKey: "palletSize", title: "Pallet", subTitle: "Size", baseWidth: 12, align: "center" },
-      { key: "bdlPlt", dataKey: "bundlesPerPallet", title: "Bdl/Plt", subTitle: "As req", baseWidth: 12, align: "center" },
-      { key: "plts20", dataKey: "palletsPer20ft", title: "Plt20", subTitle: "20ft", baseWidth: 11, align: "center" },
-      { key: "plts40", dataKey: "palletsPer40ft", title: "Plt40", subTitle: "40ft", baseWidth: 11, align: "center" },
-      { key: "margin", dataKey: "margin", title: "Margin %", subTitle: "Override", baseWidth: 12, align: "center" },
-      { key: "price", dataKey: "quotedPrice", title: `Price (${priceTerm})`, subTitle: "Auto cal", baseWidth: 18, align: "center" },
-      { key: "bdl20", dataKey: "bundlesPer20ft", title: "Bdl20ft", subTitle: "Auto cal", baseWidth: 12, align: "center" },
-      { key: "qty20", dataKey: "qtyPer20ft", title: "Qty 20ft", subTitle: "Auto pick", baseWidth: 15, align: "center" },
-      { key: "bdl40", dataKey: "bundlesPer40ft", title: "Bdl40ft", subTitle: "Auto cal", baseWidth: 12, align: "center" },
-      { key: "qty40", dataKey: "qtyPer40ft", title: "Qty 40ft", subTitle: "Auto pick", baseWidth: 15, align: "center" },
-      { key: "ordVol", dataKey: "orderVolume", title: "Order Vol", subTitle: "Pcs", baseWidth: 14, align: "center" },
-      { key: "ordCtns", dataKey: "orderCartons", title: "Order Bdls", subTitle: "Auto cal", baseWidth: 14, align: "center" },
-      { key: "ordPlts", dataKey: "orderPallets", title: "Order Plts", subTitle: "Auto cal", baseWidth: 14, align: "center" },
-      { key: "ordCbm", dataKey: "orderTotalCbm", title: "Total CBM", subTitle: "Auto cal", baseWidth: 14, align: "center" }
+      { key: "idx", dataKey: "idx", title: "#", baseWidth: 7, align: "center" },
+      { key: "image", dataKey: "imageUrl", title: "Image", baseWidth: 14, align: "center" },
+      { key: "spec", dataKey: "description", title: "Product Description / Specifications", baseWidth: 44, align: "left" },
+      { key: "length", dataKey: "length", title: "Length (CM)", baseWidth: 10, align: "center" },
+      { key: "width", dataKey: "width", title: "Width (CM)", baseWidth: 10, align: "center" },
+      { key: "height", dataKey: "height", title: "Height (CM)", baseWidth: 10, align: "center" },
+      { key: "organic", dataKey: "organic", title: "Organic / Non-Organic", baseWidth: 13, align: "center" },
+      { key: "ncrc", dataKey: "ncRcRatio", title: "NC / RC Ratio", baseWidth: 11, align: "center" },
+      { key: "density", dataKey: "density", title: "Density", baseWidth: 11, align: "center" },
+      { key: "qtyBdl", dataKey: "qtyPerBundle", title: "Quantity per Bundle", baseWidth: 11, align: "center" },
+      { key: "pltSize", dataKey: "palletSize", title: "Pallet Size", baseWidth: 12, align: "center" },
+      { key: "bdlPlt", dataKey: "bundlesPerPallet", title: "Bundles per Pallet", baseWidth: 12, align: "center" },
+      { key: "plts20", dataKey: "palletsPer20ft", title: "Pallets (20ft)", baseWidth: 11, align: "center" },
+      { key: "plts40", dataKey: "palletsPer40ft", title: "Pallets (40ft)", baseWidth: 11, align: "center" },
+      { key: "margin", dataKey: "margin", title: "Margin %", baseWidth: 12, align: "center" },
+      { key: "price", dataKey: "quotedPrice", title: `Price (${priceTerm})`, baseWidth: 18, align: "center" },
+      { key: "bdl20", dataKey: "bundlesPer20ft", title: "Bundles (20ft)", baseWidth: 12, align: "center" },
+      { key: "qty20", dataKey: "qtyPer20ft", title: "Qty per 20ft", baseWidth: 15, align: "center" },
+      { key: "bdl40", dataKey: "bundlesPer40ft", title: "Bundles (40ft)", baseWidth: 12, align: "center" },
+      { key: "qty40", dataKey: "qtyPer40ft", title: "Qty per 40ft", baseWidth: 15, align: "center" },
+      { key: "ordVol", dataKey: "orderVolume", title: "Order Volume", baseWidth: 14, align: "center" },
+      { key: "ordCtns", dataKey: "orderCartons", title: "Order Bundles", baseWidth: 14, align: "center" },
+      { key: "ordPlts", dataKey: "orderPallets", title: "Order Pallets", baseWidth: 14, align: "center" },
+      { key: "ordCbm", dataKey: "orderTotalCbm", title: "Total CBM", baseWidth: 14, align: "center" }
     ];
   } else {
     // Horticulture Master Columns
     masterCols = [
-      { key: "idx", dataKey: "idx", title: "#", subTitle: "#", baseWidth: 7, align: "center" },
-      { key: "image", dataKey: "imageUrl", title: "Image", subTitle: "Images", baseWidth: 15, align: "center" },
-      { key: "spec", dataKey: "description", title: "Product spec", subTitle: "As per cost req data", baseWidth: 55, align: "left" },
-      { key: "packing", dataKey: "packing", title: "Pack (Ctn/Bdl)", subTitle: "As req", baseWidth: 16, align: "center" },
-      { key: "ctnSize", dataKey: "cartonSize", title: "Ctn/Bdl Size", subTitle: "CM", baseWidth: 18, align: "center" },
-      { key: "pltSize", dataKey: "palletSize", title: "Pallet", subTitle: "Size", baseWidth: 13, align: "center" },
-      { key: "ctnPlt", dataKey: "cartonsPerPallet", title: "Ctns/Bdls/Plt", subTitle: "As req", baseWidth: 14, align: "center" },
-      { key: "plts20", dataKey: "palletsPer20ft", title: "Plt 20ft", subTitle: "Marketing", baseWidth: 12, align: "center" },
-      { key: "plts40", dataKey: "palletsPer40ft", title: "Plt 40ft", subTitle: "Marketing", baseWidth: 12, align: "center" },
-      { key: "rollDiameter", dataKey: "rollDiameter", title: "Roll Dia", subTitle: "CM", baseWidth: 12, align: "center" },
-      { key: "rollLength", dataKey: "rollLength", title: "Roll Len", subTitle: "CM", baseWidth: 12, align: "center" },
-      { key: "margin", dataKey: "margin", title: "Margin %", subTitle: "Override", baseWidth: 12, align: "center" },
-      { key: "price", dataKey: "quotedPrice", title: `Price (${priceTerm})`, subTitle: "Auto cal", baseWidth: 20, align: "center" },
-      { key: "ctn20", dataKey: "cartonsPer20ft", title: "Ctn/Bdl 20ft", subTitle: "Auto pick", baseWidth: 16, align: "center" },
-      { key: "qty20", dataKey: "qtyPer20ft", title: "Qty 20ft", subTitle: "Auto pick", baseWidth: 18, align: "center" },
-      { key: "ctn40", dataKey: "cartonsPer40ft", title: "Ctn/Bdl 40ft", subTitle: "Auto pick", baseWidth: 16, align: "center" },
-      { key: "qty40", dataKey: "qtyPer40ft", title: "Qty 40ft", subTitle: "Auto pick", baseWidth: 18, align: "center" },
-      { key: "ordVol", dataKey: "orderVolume", title: "Order Vol", subTitle: "Pcs", baseWidth: 15, align: "center" },
-      { key: "ordCtns", dataKey: "orderCartons", title: "Order Ctns", subTitle: "Auto cal", baseWidth: 15, align: "center" },
-      { key: "ordPlts", dataKey: "orderPallets", title: "Order Plts", subTitle: "Auto cal", baseWidth: 14, align: "center" },
-      { key: "ordCbm", dataKey: "orderTotalCbm", title: "Total CBM", subTitle: "Auto cal", baseWidth: 14, align: "center" }
+      { key: "idx", dataKey: "idx", title: "#", baseWidth: 7, align: "center" },
+      { key: "image", dataKey: "imageUrl", title: "Image", baseWidth: 15, align: "center" },
+      { key: "spec", dataKey: "description", title: "Product Description / Specifications", baseWidth: 55, align: "left" },
+      { key: "packing", dataKey: "packing", title: "Packing (Pcs / Ctn or Bdl)", baseWidth: 16, align: "center" },
+      { key: "ctnSize", dataKey: "cartonSize", title: "Carton / Bundle Size (CM)", baseWidth: 18, align: "center" },
+      { key: "pltSize", dataKey: "palletSize", title: "Pallet Size (CM)", baseWidth: 13, align: "center" },
+      { key: "ctnPlt", dataKey: "cartonsPerPallet", title: "Cartons / Bundles per Pallet", baseWidth: 14, align: "center" },
+      { key: "plts20", dataKey: "palletsPer20ft", title: "Pallets (20ft)", baseWidth: 12, align: "center" },
+      { key: "plts40", dataKey: "palletsPer40ft", title: "Pallets (40ft)", baseWidth: 12, align: "center" },
+      { key: "rollDiameter", dataKey: "rollDiameter", title: "Roll Diameter (CM)", baseWidth: 12, align: "center" },
+      { key: "rollLength", dataKey: "rollLength", title: "Roll Length (CM)", baseWidth: 12, align: "center" },
+      { key: "margin", dataKey: "margin", title: "Margin %", baseWidth: 12, align: "center" },
+      { key: "price", dataKey: "quotedPrice", title: `Price (${priceTerm})`, baseWidth: 20, align: "center" },
+      { key: "ctn20", dataKey: "cartonsPer20ft", title: "Cartons / Bundles (20ft)", baseWidth: 16, align: "center" },
+      { key: "qty20", dataKey: "qtyPer20ft", title: "Qty per 20ft", baseWidth: 18, align: "center" },
+      { key: "ctn40", dataKey: "cartonsPer40ft", title: "Cartons / Bundles (40ft)", baseWidth: 16, align: "center" },
+      { key: "qty40", dataKey: "qtyPer40ft", title: "Qty per 40ft", baseWidth: 18, align: "center" },
+      { key: "ordVol", dataKey: "orderVolume", title: "Order Volume", baseWidth: 15, align: "center" },
+      { key: "ordCtns", dataKey: "orderCartons", title: "Order Cartons / Bundles", baseWidth: 15, align: "center" },
+      { key: "ordPlts", dataKey: "orderPallets", title: "Order Pallets", baseWidth: 14, align: "center" },
+      { key: "ordCbm", dataKey: "orderTotalCbm", title: "Total CBM", baseWidth: 14, align: "center" }
     ];
   }
 
@@ -231,62 +231,45 @@ export async function downloadQuotationPDF(quotationData) {
     width: (c.baseWidth || 10) * scaleRatio
   }));
 
-  // Draw 2-Tier Table Header Rows (matching Excel Row 9 & Row 10)
-  const headerHeight1 = 6;
-  const headerHeight2 = 5.5;
-  const totalHeaderHeight = headerHeight1 + headerHeight2;
+  // Single-Tier Table Header Row (Clean, wrapped column headers without second sub-header line)
+  const headerHeight = 11;
 
-  doc.setFillColor(235, 235, 235);
-  doc.rect(margin + 2, y, tableWidth, headerHeight1, "FD");
-  doc.setFillColor(245, 245, 245);
-  doc.rect(margin + 2, y + headerHeight1, tableWidth, headerHeight2, "FD");
+  doc.setFillColor(240, 240, 240);
+  doc.rect(margin + 2, y, tableWidth, headerHeight, "FD");
 
   let curX = margin + 2;
   cols.forEach(col => {
-    // Vertical grid lines
-    doc.line(curX, y, curX, y + totalHeaderHeight);
+    // Vertical grid line
+    doc.line(curX, y, curX, y + headerHeight);
 
-    // Header Tier 1 Text (Wrapped)
+    // Header Text (Wrapped without shortening)
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(7);
+    doc.setFontSize(6.5);
     doc.setTextColor(0, 0, 0);
-    const splitTitle = doc.splitTextToSize(col.title, Math.max(col.width - 2, 4));
-    if (splitTitle.length > 1) {
-      doc.setFontSize(6);
-      const startY = y + 2.4;
-      splitTitle.slice(0, 2).forEach((line, lIdx) => {
-        if (col.align === "center") {
-          doc.text(line, curX + (col.width / 2), startY + (lIdx * 2.5), { align: "center" });
-        } else {
-          doc.text(line, curX + 1.2, startY + (lIdx * 2.5));
-        }
-      });
-    } else {
-      if (col.align === "center") {
-        doc.text(splitTitle[0] || col.title, curX + (col.width / 2), y + 4.2, { align: "center" });
-      } else {
-        doc.text(splitTitle[0] || col.title, curX + 1.2, y + 4.2);
-      }
-    }
 
-    // Header Tier 2 Sub-Text (Wrapped)
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(5.5);
-    doc.setTextColor(70, 70, 70);
-    const splitSub = doc.splitTextToSize(col.subTitle, Math.max(col.width - 2, 4));
-    if (col.align === "center") {
-      doc.text(splitSub[0] || col.subTitle, curX + (col.width / 2), y + headerHeight1 + 3.8, { align: "center" });
-    } else {
-      doc.text(splitSub[0] || col.subTitle, curX + 1.2, y + headerHeight1 + 3.8);
-    }
+    const splitTitle = doc.splitTextToSize(col.title, Math.max(col.width - 2, 4));
+    const lineCount = splitTitle.length;
+    const lineHeight = 2.6;
+    const totalTextHeight = lineCount * lineHeight;
+    const startY = y + (headerHeight - totalTextHeight) / 2 + 2.1;
+
+    splitTitle.forEach((line, lIdx) => {
+      const lineY = startY + (lIdx * lineHeight);
+      if (col.align === "center") {
+        doc.text(line, curX + (col.width / 2), lineY, { align: "center" });
+      } else {
+        doc.text(line, curX + 1.2, lineY);
+      }
+    });
 
     curX += col.width;
   });
-  doc.line(curX, y, curX, y + totalHeaderHeight);
-  doc.line(margin + 2, y + headerHeight1, margin + 2 + tableWidth, y + headerHeight1);
-  doc.line(margin + 2, y + totalHeaderHeight, margin + 2 + tableWidth, y + totalHeaderHeight);
 
-  y += totalHeaderHeight;
+  // End vertical line and bottom border line
+  doc.line(curX, y, curX, y + headerHeight);
+  doc.line(margin + 2, y + headerHeight, margin + 2 + tableWidth, y + headerHeight);
+
+  y += headerHeight;
 
   // Table Body Rows
   for (let i = 0; i < items.length; i++) {
@@ -332,9 +315,11 @@ export async function downloadQuotationPDF(quotationData) {
       } else if (col.key === "spec") {
         const fullDesc = formatMergedDescription(item, item.description || `Item #${i + 1}`);
         doc.setFont("helvetica", "bold");
-        doc.setFontSize(7);
+        doc.setFontSize(6.5);
         const splitLines = doc.splitTextToSize(fullDesc, col.width - 2);
-        doc.text(splitLines.slice(0, 4), curX + 1.5, y + 5);
+        splitLines.slice(0, 5).forEach((line, lIdx) => {
+          doc.text(line, curX + 1.2, y + 4 + (lIdx * 2.5));
+        });
       } else if (col.key === "length") {
         doc.setFontSize(7.5);
         doc.text(String(item.length || "-"), curX + (col.width / 2), y + 9, { align: "center" });
@@ -357,11 +342,25 @@ export async function downloadQuotationPDF(quotationData) {
         doc.setFontSize(7.5);
         doc.text(String(item.qtyPerBundle || "-"), curX + (col.width / 2), y + 9, { align: "center" });
       } else if (col.key === "packing") {
-        doc.setFontSize(7.5);
-        doc.text(String(item.packing || "-"), curX + (col.width / 2), y + 9, { align: "center" });
+        doc.setFontSize(7);
+        const pLines = doc.splitTextToSize(String(item.packing || "-"), col.width - 2);
+        if (pLines.length > 1) {
+          pLines.slice(0, 3).forEach((line, lIdx) => {
+            doc.text(line, curX + (col.width / 2), y + 6 + (lIdx * 2.8), { align: "center" });
+          });
+        } else {
+          doc.text(pLines[0] || "-", curX + (col.width / 2), y + 9, { align: "center" });
+        }
       } else if (col.key === "ctnSize") {
-        doc.setFontSize(7.5);
-        doc.text(String(item.cartonSize || "-"), curX + (col.width / 2), y + 9, { align: "center" });
+        doc.setFontSize(7);
+        const cLines = doc.splitTextToSize(String(item.cartonSize || "-"), col.width - 2);
+        if (cLines.length > 1) {
+          cLines.slice(0, 3).forEach((line, lIdx) => {
+            doc.text(line, curX + (col.width / 2), y + 6 + (lIdx * 2.8), { align: "center" });
+          });
+        } else {
+          doc.text(cLines[0] || "-", curX + (col.width / 2), y + 9, { align: "center" });
+        }
       } else if (col.key === "pltSize") {
         doc.setFontSize(7.5);
         doc.text(String(item.palletSize || "-"), curX + (col.width / 2), y + 9, { align: "center" });
